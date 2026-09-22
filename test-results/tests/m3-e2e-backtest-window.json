@@ -1,0 +1,44 @@
+{
+    "strategy": "sma",
+    "params": {
+        "fast": 50,
+        "slow": 200
+    },
+    "from": "2024-01-01",
+    "to": "2026-01-01",
+    "results": {
+        "AAPL": {
+            "ticker": "AAPL",
+            "strategy": "sma",
+            "fast": 50,
+            "slow": 200,
+            "start_date": "2024-01-02T00:00:00Z",
+            "end_date": "2025-12-31T00:00:00Z",
+            "initial_capital": 10000,
+            "final_capital": 9020.434441241472,
+            "total_return": -0.09795655587585284,
+            "total_return_pct": -9.795655587585284,
+            "cagr": -0.05034105135696898,
+            "sharpe": 0.7101818108644125,
+            "max_drawdown": -0.3336050254750269,
+            "trades": [
+                {
+                    "entry_date": "2024-10-16T00:00:00Z",
+                    "entry_price": 229.8572,
+                    "exit_date": "2025-04-07T00:00:00Z",
+                    "exit_price": 180.3507,
+                    "return_pct": -21.53793746726229
+                },
+                {
+                    "entry_date": "2025-09-15T00:00:00Z",
+                    "entry_price": 235.8289,
+                    "exit_date": "2025-12-31T00:00:00Z",
+                    "exit_price": 271.122,
+                    "return_pct": 14.965553416057153,
+                    "open": true
+                }
+            ],
+            "total_trades": 2
+        }
+    }
+}

@@ -1,0 +1,26 @@
+{
+  "input": {
+    "ticker": "AAPL",
+    "price": 230,
+    "graham_intrinsic": 144.45,
+    "dcf_intrinsic": 121.16,
+    "metrics": {
+      "pe_ratio": 26.2,
+      "pb_ratio": 43.0,
+      "fcf_yield": 4.1,
+      "roe": 1.61,
+      "de_ratio": 4.7
+    },
+    "sector_count": 2,
+    "sma50": 250,
+    "sma200": 200,
+    "momentum6m": 0.2,
+    "momentum12m": 0.35,
+    "margin_of_safety": 30
+  },
+  "expect": {
+    "score": 36,
+    "signal": "vender",
+    "model_version": "1.0.0"
+  }
+}

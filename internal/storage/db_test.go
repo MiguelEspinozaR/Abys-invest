@@ -78,11 +78,11 @@ func TestRunMigrationsIdempotent(t *testing.T) {
 
 	var tables int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.tables
-		WHERE table_schema = 'public' AND table_name IN ('securities','fundamentals','edgar_staging','xbrl_concept_map','daily_prices','macro_series','derived_metrics')`).Scan(&tables); err != nil {
+		WHERE table_schema = 'public' AND table_name IN ('securities','fundamentals','edgar_staging','xbrl_concept_map','daily_prices','macro_series','derived_metrics','scores')`).Scan(&tables); err != nil {
 		t.Fatalf("query tablas falló: %v", err)
 	}
-	if tables != 7 {
-		t.Fatalf("se esperaban 7 tablas, hay %d", tables)
+	if tables != 8 {
+		t.Fatalf("se esperaban 8 tablas (7 M1/M2 + scores M3), hay %d", tables)
 	}
 
 	var concepts int

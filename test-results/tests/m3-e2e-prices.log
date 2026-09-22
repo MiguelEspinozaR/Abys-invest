@@ -1,0 +1,7 @@
+time=2026-09-22T12:25:13.559-04:00 level=WARN msg="SEC_EDGAR_USER_AGENT no definido, usando fallback de desarrollo"
+time=2026-09-22T12:25:13.599-04:00 level=INFO msg="base lista, migraciones aplicadas"
+time=2026-09-22T12:25:14.961-04:00 level=INFO msg="precios históricos ingeridos" ticker=AAPL barras=1255
+time=2026-09-22T12:25:15.493-04:00 level=INFO msg="quote actual ingerido" ticker=AAPL
+time=2026-09-22T12:25:16.172-04:00 level=INFO msg="precios históricos ingeridos" ticker=MSFT barras=1255
+time=2026-09-22T12:25:16.476-04:00 level=INFO msg="quote actual ingerido" ticker=MSFT
+time=2026-09-22T12:25:16.476-04:00 level=INFO msg="job prices terminado" exitosos=2 total=2

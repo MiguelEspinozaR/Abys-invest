@@ -1,0 +1,88 @@
+{
+    "ticker": "AAPL",
+    "sector": "Technology",
+    "peers": [
+        {
+            "id": 3508,
+            "ticker": "MSFT",
+            "metrics": [
+                {
+                    "metric": "de_ratio",
+                    "value": 3.872187
+                },
+                {
+                    "metric": "de_ratio",
+                    "value": 0.714282
+                },
+                {
+                    "metric": "eps",
+                    "value": 7.580355
+                },
+                {
+                    "metric": "eps",
+                    "value": 18.01201
+                },
+                {
+                    "metric": "fcf_yield",
+                    "value": 1.952567
+                },
+                {
+                    "metric": "fcf_yield",
+                    "value": 1.821205
+                },
+                {
+                    "metric": "pb_ratio",
+                    "value": 68.603136
+                },
+                {
+                    "metric": "pb_ratio",
+                    "value": 8.314371
+                },
+                {
+                    "metric": "pcf_ratio",
+                    "value": 51.214627
+                },
+                {
+                    "metric": "pcf_ratio",
+                    "value": 54.908709
+                },
+                {
+                    "metric": "peg_ratio",
+                    "value": 3.928649
+                },
+                {
+                    "metric": "peg_ratio",
+                    "value": 6.451356
+                },
+                {
+                    "metric": "pe_ratio",
+                    "value": 45.159495
+                },
+                {
+                    "metric": "pe_ratio",
+                    "value": 27.50054
+                },
+                {
+                    "metric": "roe",
+                    "value": 1.51913
+                },
+                {
+                    "metric": "roe",
+                    "value": 0.302335
+                }
+            ]
+        }
+    ],
+    "peer_count": 1,
+    "medians": {
+        "de_ratio": 0.714282,
+        "eps": 18.01201,
+        "fcf_yield": 1.821205,
+        "pb_ratio": 8.314371,
+        "pcf_ratio": 54.908709,
+        "pe_ratio": 27.50054,
+        "peg_ratio": 3.928649,
+        "roe": 0.302335
+    },
+    "security_id": 7013
+}

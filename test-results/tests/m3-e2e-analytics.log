@@ -1,0 +1,6 @@
+time=2026-09-22T12:25:43.599-04:00 level=INFO msg="métricas calculadas y persistidas" ticker=AAPL as_of=2026-09-22 métricas=8
+time=2026-09-22T12:25:43.604-04:00 level=INFO msg="métricas calculadas y persistidas" ticker=MSFT as_of=2026-09-22 métricas=8
+time=2026-09-22T12:25:43.604-04:00 level=INFO msg="job metrics terminado" exitosos=2 total=2 dry_run=false
+time=2026-09-22T12:25:43.627-04:00 level=INFO msg="score persistido" ticker=AAPL as_of=2026-09-22 score=37 signal=vender
+time=2026-09-22T12:25:43.642-04:00 level=INFO msg="score persistido" ticker=MSFT as_of=2026-09-22 score=36 signal=vender
+time=2026-09-22T12:25:43.642-04:00 level=INFO msg="job scores terminado" exitosos=2 total=2 dry_run=false

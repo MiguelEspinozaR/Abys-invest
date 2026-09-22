@@ -1,0 +1,6 @@
+time=2026-09-22T13:00:59.962-04:00 level=INFO msg="base lista, migraciones aplicadas"
+time=2026-09-22T13:01:01.254-04:00 level=INFO msg="precios históricos ingeridos" ticker=AAPL barras=1255
+time=2026-09-22T13:01:01.563-04:00 level=INFO msg="quote actual ingerido" ticker=AAPL
+time=2026-09-22T13:01:02.234-04:00 level=INFO msg="precios históricos ingeridos" ticker=MSFT barras=1255
+time=2026-09-22T13:01:02.700-04:00 level=INFO msg="quote actual ingerido" ticker=MSFT
+time=2026-09-22T13:01:02.700-04:00 level=INFO msg="job prices terminado" exitosos=2 total=2

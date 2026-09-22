@@ -1,11 +1,13 @@
 // Command collector is the ingestion worker of Abys-Invest: SEC EDGAR
-// fundamentals (M1), Yahoo Finance daily prices and BLS macro series (M2).
+// fundamentals (M1), Yahoo Finance daily prices and BLS macro series (M2),
+// and sector/industry enrichment (M3, Yahoo quoteSummary + Finviz fallback).
 //
 // Usage:
 //
 //	go run ./cmd/collector -job edgar -companies AAPL
 //	go run ./cmd/collector -job prices -tickers AAPL
 //	go run ./cmd/collector -job macro -macro-series CPI
+//	go run ./cmd/collector -job sector -tickers AAPL
 //	go run ./cmd/collector -job all
 package main
 
@@ -39,6 +41,7 @@ const (
 	jobEdgar  = "edgar"
 	jobPrices = "prices"
 	jobMacro  = "macro"
+	jobSector = "sector"
 	jobAll    = "all"
 )
 
@@ -66,7 +69,7 @@ func main() {
 
 	flag.Var(&companies, "companies", "tickers/CIKs a ingerir por EDGAR (CSV); por defecto: "+defaultCompany)
 	flag.BoolVar(&dryRun, "dry-run", false, "job edgar: descarga y canoniza en memoria sin escribir en la BD")
-	flag.StringVar(&job, "job", jobAll, "job a ejecutar: edgar | prices | macro | all")
+	flag.StringVar(&job, "job", jobAll, "job a ejecutar: edgar | prices | macro | sector | all")
 	flag.StringVar(&tickers, "tickers", "", "tickers para precios/analytics (CSV); vacío = todos los securities activos en BD")
 	flag.StringVar(&macroSeries, "macro-series", "CPI", "series macro a ingerir (CSV)")
 	flag.IntVar(&years, "years", 5, "años de histórico macro (startYear = año actual - years)")
@@ -79,9 +82,9 @@ func main() {
 	slog.SetDefault(logger)
 
 	switch job {
-	case jobEdgar, jobPrices, jobMacro, jobAll:
+	case jobEdgar, jobPrices, jobMacro, jobSector, jobAll:
 	default:
-		slog.Error("job desconocido", "job", job, "esperado", "edgar|prices|macro|all")
+		slog.Error("job desconocido", "job", job, "esperado", "edgar|prices|macro|sector|all")
 		os.Exit(2)
 	}
 
@@ -123,10 +126,14 @@ func main() {
 	case jobMacro:
 		runMacroJob(ctx, pool, macroSeries, years)
 
+	case jobSector:
+		runSectorJob(ctx, pool, tickers)
+
 	case jobAll:
 		runEdgarJob(ctx, pool, companies, dryRun, ua)
 		runPricesJob(ctx, pool, tickers)
 		runMacroJob(ctx, pool, macroSeries, years)
+		runSectorJob(ctx, pool, tickers)
 	}
 }
 
@@ -255,6 +262,30 @@ func runMacroJob(ctx context.Context, pool *pgxpool.Pool, seriesCSV string, year
 		succeeded++
 	}
 	slog.Info("job macro terminado", "exitosos", succeeded, "total", len(series))
+}
+
+// runSectorJob enriches sector/industry of the selected tickers (Yahoo
+// quoteSummary primary, Finviz fallback; job sector de M3).
+func runSectorJob(ctx context.Context, pool *pgxpool.Pool, tickers string) {
+	securities, err := resolveSecurities(ctx, pool, tickers)
+	if err != nil {
+		slog.Error("resolución de tickers para sector", "error", err)
+		os.Exit(1)
+	}
+	if len(securities) == 0 {
+		slog.Warn("sin securities activas para enriquecer sector")
+		return
+	}
+	var ts []string
+	for _, s := range securities {
+		ts = append(ts, s.Ticker)
+	}
+	updated, err := yahoo.EnrichSectors(ctx, pool, ts)
+	if err != nil {
+		slog.Error("enriquecimiento de sector falló", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("job sector terminado", "exitosos", updated, "total", len(ts))
 }
 
 // resolveSecurities turns -tickers into securities rows; an empty flag means

@@ -1,9 +1,9 @@
-// Command api serves the Abys-Invest HTTP API (M1: health check).
+// Command api serves the Abys-Invest HTTP API (M1 health + M3: securities,
+// prices, metrics, valuation, score, comparables y backtest SMA).
 package main
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/miky/abys-invest/internal/api"
 	"github.com/miky/abys-invest/internal/storage"
 )
 
@@ -46,12 +47,13 @@ func main() {
 		defer pool.Close()
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", healthHandler(pool))
+	// El router del paquete api expone todas las rutas M3; /health usa el
+	// mismo HealthHandler que los tests package-main verifican.
+	handler := api.WithMiddleware(api.NewRouter(pool))
 
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -72,21 +74,9 @@ func main() {
 	}
 }
 
+// healthHandler se mantiene como wrapper para los tests package-main
+// existentes (health_test.go, health_integration_test.go); la ruta /health la
+// sirve el router vía api.HealthHandler con el mismo contrato.
 func healthHandler(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		dbOK := pool != nil && storage.Ping(r.Context(), pool) == nil
-
-		w.Header().Set("Content-Type", "application/json")
-		if dbOK {
-			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"status": "ok", "database": "connected", "version": version,
-			})
-			return
-		}
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"status": "degraded", "database": "disconnected", "version": version,
-		})
-	}
+	return api.HealthHandler(pool)
 }

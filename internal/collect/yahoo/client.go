@@ -57,6 +57,13 @@ type Client struct {
 	userAgent  string
 	limiter    *rateLimiter
 	retryBase  time.Duration
+
+	// crumb session (plan D1): cookie jar + token con expiración.
+	crumb              string
+	crumbExpiry        time.Time
+	cookieBase         string
+	crumbBase          string
+	cookieBootstrapped bool
 }
 
 // Option customizes a Client (tests use these to avoid real network).
@@ -97,11 +104,26 @@ func NewClient(opts ...Option) *Client {
 		userAgent:  defaultUserAgent,
 		limiter:    newRateLimiter(MaxRequestsPerSec),
 		retryBase:  defaultRetryBase,
+		cookieBase: CookieBootstrapURL,
+		crumbBase:  DefaultBaseURL,
 	}
+	// El jar permite la sesión crumb requerida por quoteSummary (D1); sin él
+	// el resto de endpoints (chart) siguen funcionando igual.
+	c.httpClient.Jar = ensureJar(nil)
 	for _, opt := range opts {
 		opt(c)
 	}
 	return c
+}
+
+// WithCookieBase overrides the cookie bootstrap host (tests use httptest).
+func WithCookieBase(u string) Option {
+	return func(cl *Client) { cl.cookieBase = strings.TrimRight(u, "/") }
+}
+
+// WithCrumbBase overrides the base used for the /v1/test/getcrumb endpoint.
+func WithCrumbBase(u string) Option {
+	return func(cl *Client) { cl.crumbBase = strings.TrimRight(u, "/") }
 }
 
 // get performs a GET with rate limiting and retries on transient failures

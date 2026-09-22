@@ -1,4 +1,4 @@
-# Abys-Invest M1+M2 — Makefile (fundación + precios + métricas)
+# Abys-Invest M1+M2+M3 — Makefile (fundación + precios + métricas + score/API)
 # Los secretos (DATABASE_URL, SEC_EDGAR_USER_AGENT, BLS_API_KEY) se leen del
 # entorno, nunca están hardcodeados en el repo.
 
@@ -11,12 +11,15 @@ DATABASE_URL   ?= postgres://abys:abys@localhost:5432/abys?sslmode=disable
 SEC_EDGAR_UA   ?= AbysInvest/1.0 (contact@abys-invest.dev)
 API_PORT       ?= 8080
 
-# Configuración de jobs M2
-TICKERS       ?= AAPL
-MACRO_SERIES  ?= CPI
-G             ?= 7
+# Configuración de jobs M2/M3
+TICKERS          ?= AAPL
+MACRO_SERIES     ?= CPI
+G                ?= 7
+MARGIN_SAFETY    ?= 30
+DCF_DISCOUNT     ?= 10
+COMP_MIN_SEC     ?= 5
 
-.PHONY: build test lint vet docker-up docker-down migrate run-api run-collector run-prices run-macro run-analytics integration clean
+.PHONY: build test lint vet docker-up docker-down migrate run-api run-collector run-prices run-macro run-sector run-analytics run-scores integration clean
 
 ## build: compila api, collector y analytics en bin/
 build:
@@ -67,9 +70,23 @@ run-prices:
 run-macro:
 	DATABASE_URL=$(DATABASE_URL) BLS_API_KEY="$(BLS_API_KEY)" go run ./cmd/collector -job macro -macro-series $(MACRO_SERIES)
 
-## run-analytics: cálculo de métricas derivadas
+## run-analytics: cálculo de métricas derivadas (8 métricas §13)
 run-analytics:
 	DATABASE_URL=$(DATABASE_URL) GROWTH_RATE_DEFAULT=$(G) go run ./cmd/analytics -tickers $(TICKERS)
+
+## run-sector: enriquece sector/industria de los tickers (Yahoo + fallback Finviz)
+run-sector:
+	DATABASE_URL=$(DATABASE_URL) go run ./cmd/collector -job sector -tickers $(TICKERS)
+
+## run-scores: calcula y persiste el score 0-100 para los tickers (job scores)
+run-scores:
+	DATABASE_URL=$(DATABASE_URL) GROWTH_RATE_DEFAULT=$(G) MARGIN_OF_SAFETY=$(MARGIN_SAFETY) \
+		DCF_DISCOUNT_RATE=$(DCF_DISCOUNT) COMPARABLES_MIN_SECURITIES=$(COMP_MIN_SEC) \
+		go run ./cmd/analytics -job scores -tickers $(TICKERS)
+
+## run-all-data: pipeline E2E M3 (migrate → ingesta → sector → métricas → score)
+run-all-data:
+	$(MAKE) migrate run-collector run-prices run-macro run-sector run-analytics run-scores
 
 ## integration: tests de integración end-to-end (requiere BD levantada)
 ## Se usan -p 1 (secuencial): los paquetes comparten la misma BD de desarrollo

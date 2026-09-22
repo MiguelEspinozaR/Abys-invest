@@ -1,0 +1,88 @@
+{
+  "milestone": "M3",
+  "artifact": "abys-m3-valuation-score-api",
+  "generated_at": "2026-09-22",
+  "environment": {
+    "go": "1.26.0",
+    "pg": "18 local 55432",
+    "timescaledb": "ausente (fallback)",
+    "router": "net/http stdlib Go 1.22+"
+  },
+  "commands": {
+    "go_build": "OK",
+    "go_vet": "OK",
+    "go_test_unit": "129 pass / 0 fail / 3 skip",
+    "go_test_integration": "166 pass / 0 fail / 1 skip (-p 1 serial)",
+    "analytics_scores": "idempotente 2x",
+    "e2e": "AAPL+MSFT real"
+  },
+  "test_summary": {
+    "unit": {
+      "passed": 129,
+      "failed": 0,
+      "skipped": 3
+    },
+    "integration": {
+      "passed": 166,
+      "failed": 0,
+      "skipped": 1
+    },
+    "packages_integration": 15
+  },
+  "ca_verification": {
+    "ca1_api_validacion": "PASS",
+    "ca2_graham": "PASS",
+    "ca3_dcf": "PASS",
+    "ca4_margen_seguridad": "PASS",
+    "ca5_comparables_sector_historico": "PASS",
+    "ca6_score_persistido": "PASS",
+    "ca7_comparativas": "PASS",
+    "ca8_backtest_determinista": "PASS"
+  },
+  "e2e_results": {
+    "aapl": {
+      "graham_usd_accion": "~106-170",
+      "dcf_usd_accion": 121.16,
+      "precio": 342,
+      "margen_seguridad_pct": "negativo -> sobrevalorado",
+      "score": 37,
+      "senal": "vender"
+    },
+    "msft": {
+      "score": 36,
+      "senal": "vender"
+    },
+    "compare": {
+      "aapl": {
+        "vol_anual": 0.28,
+        "max_drawdown": -0.33,
+        "sharpe": 0.63
+      },
+      "msft": {
+        "max_drawdown": -0.37,
+        "sharpe": 0.39
+      }
+    },
+    "backtest_sma50200": {
+      "aapl": {
+        "total_return_pct": 26.3,
+        "trades": 4,
+        "sharpe": 0.63
+      },
+      "msft": {
+        "total_return_pct": 30.3,
+        "sharpe": 0.39
+      }
+    }
+  },
+  "observations": [
+    "TimescaleDB ausente (fallback documentado)",
+    "5 hallazgos seguridad mitigados/false-positive (0 hard blocks)",
+    "proceso ajeno en 8080 (finanzasMikyGo) ignorado",
+    "desviaciones Builder verificadas por Reviewer"
+  ],
+  "logs_paths": [
+    "test-results/tests/m3-e2e-*.json",
+    "test-results/tests/m3-final-*.log"
+  ]
+}

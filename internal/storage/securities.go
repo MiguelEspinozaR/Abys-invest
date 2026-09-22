@@ -75,6 +75,25 @@ func ListSecurities(ctx context.Context, q DBTX, limit, offset int) ([]Security,
 	return out, nil
 }
 
+// UpdateSecuritySector sets sector/industry for a ticker, overwriting any
+// previous value (the enricher runs on demand). Returns pgx.ErrNoRows when
+// the ticker is not cataloged.
+func UpdateSecuritySector(ctx context.Context, q DBTX, ticker string, sector, industry *string) error {
+	tag, err := q.Exec(ctx, `
+UPDATE securities
+SET sector     = $2,
+    industry   = $3,
+    updated_at = now()
+WHERE ticker = $1`, ticker, sector, industry)
+	if err != nil {
+		return fmt.Errorf("storage: update security sector %s: %w", ticker, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("storage: update security sector %s: %w", ticker, pgx.ErrNoRows)
+	}
+	return nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }

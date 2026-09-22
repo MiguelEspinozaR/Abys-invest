@@ -102,3 +102,18 @@ type DerivedMetric struct {
 	ModelVersion   string    `json:"model_version" db:"model_version"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 }
+
+// Score is one persisted score row (migrations/009). It holds the score 0-100,
+// the Spanish signal (comprar/mantener/vender), the template-generated
+// justification and the JSONB snapshot of the exact inputs used (ADR-0004).
+type Score struct {
+	ID             int64     `json:"id" db:"id"`
+	SecurityID     int64     `json:"security_id" db:"security_id"`
+	AsOf           time.Time `json:"as_of" db:"as_of"`
+	Score          int       `json:"score" db:"score"`
+	Signal         string    `json:"signal" db:"signal"`
+	Justification  string    `json:"justification" db:"justification"`
+	InputsSnapshot []byte    `json:"inputs_snapshot,omitempty" db:"inputs_snapshot"`
+	ModelVersion   string    `json:"model_version" db:"model_version"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+}

@@ -1,0 +1,11 @@
+{
+    "id": 4,
+    "security_id": 7013,
+    "as_of": "2026-09-22T00:00:00Z",
+    "score": 37,
+    "signal": "vender",
+    "justification": "AAPL: score 37/100 \u2014 VENDER. Valoraci\u00f3n: precio 342.32 vs Graham 170.56 y DCF 106.09 con margen 30% (dimensi\u00f3n 0/100) M\u00e9tricas: P/E 27.50, ROE 0.30, FCF Yield 1.82% (dimensi\u00f3n 48/100) Comparables: sin suficientes pares de sector (1 < 5; dimensi\u00f3n neutral 50/100) Tendencia: alcista (SMA50>SMA200) (dimensi\u00f3n 83/100).",
+    "inputs_snapshot": "eyJwcmljZSI6IDM0Mi4zMjUsICJzbWE1MCI6IDMyMS4wMDk2ODgsICJzbWEyMDAiOiAyODYuNTA2MjE0OTk5OTk5OTQsICJ0aWNrZXIiOiAiQUFQTCIsICJtZXRyaWNzIjogeyJlcHMiOiAxOC4wMTIwMSwgInJvZSI6IDAuMzAyMzM1LCAiZGVfcmF0aW8iOiAwLjcxNDI4MiwgInBiX3JhdGlvIjogOC4zMTQzNzEsICJwZV9yYXRpbyI6IDI3LjUwMDU0LCAiZmNmX3lpZWxkIjogMS44MjEyMDUsICJwY2ZfcmF0aW8iOiA1NC45MDg3MDksICJwZWdfcmF0aW8iOiA2LjQ1MTM1Nn0sICJtb21lbnR1bTZtIjogMC4zNjM2MTY0NDY2NTAzNjEzLCAibW9tZW50dW0xMm0iOiAwLjM5OTU0OTg3MDkwOTg0NTUsICJzZWN0b3JfY291bnQiOiAxLCAiZGNmX2ludHJpbnNpYyI6IDEwNi4wOTI5MzA2NzQ5NjcxNSwgInNlY3Rvcl9tZWRpYW4iOiB7ImVwcyI6IDE4LjAxMjAxLCAicm9lIjogMC4zMDIzMzUsICJkZV9yYXRpbyI6IDAuNzE0MjgyLCAicGJfcmF0aW8iOiA4LjMxNDM3MSwgInBlX3JhdGlvIjogMjcuNTAwNTQsICJmY2ZfeWllbGQiOiAxLjgyMTIwNSwgInBjZl9yYXRpbyI6IDU0LjkwODcwOSwgInBlZ19yYXRpbyI6IDMuOTI4NjQ5fSwgImdyYWhhbV9pbnRyaW5zaWMiOiAxNzAuNTU3OTg1NDUxNDg0NTQsICJtYXJnaW5fb2Zfc2FmZXR5IjogMzAsICJoaXN0b3JpY2FsX21lZGlhbiI6IHsiZXBzIjogNy41ODAzNTUsICJyb2UiOiAxLjUxOTEzLCAiZGVfcmF0aW8iOiAzLjg3MjE4NywgInBiX3JhdGlvIjogNjguNjAzMTM2LCAicGVfcmF0aW8iOiA0NS4xNTk0OTUsICJmY2ZfeWllbGQiOiAxLjk1MjU2NywgInBjZl9yYXRpbyI6IDUxLjIxNDYyNywgInBlZ19yYXRpbyI6IDYuNDUxMzU2fSwgImNvbXBhcmFibGVzX21pbl9zZWN1cml0aWVzIjogNX0=",
+    "model_version": "1.0.0",
+    "created_at": "2026-09-22T12:25:43.624674-04:00"
+}

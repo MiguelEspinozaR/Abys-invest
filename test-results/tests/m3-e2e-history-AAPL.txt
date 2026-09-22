@@ -1,0 +1,1 @@
+{"ticker": "AAPL", "years": 5, "rows": 1255}

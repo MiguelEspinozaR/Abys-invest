@@ -1,0 +1,50 @@
+{
+  "milestone": "M3",
+  "generate_at": "2026-09-22T00:00:00Z",
+  "scope": [
+    "exposed secrets",
+    "SAST findings",
+    "dependency vulnerabilities",
+    "insecure configuration",
+    "supply-chain issues"
+  ],
+  "findings": [
+    {
+      "severity": "medium",
+      "file": "internal/api/handlers.go",
+      "line": 304,
+      "description": "Ticker list from query parameter is processed without explicit validation; although storage uses parameterized queries, unexpected formats could lead to errors or injection if storage layer changes.",
+      "remediation": "Add ticker symbol validation/whitelisting and document that storage relies on parameterized queries."
+    },
+    {
+      "severity": "low",
+      "file": "internal/api/router.go",
+      "line": 84,
+      "description": "Strategy path segment is captured directly and switched; arbitrary strings reach the default case but could be logged or cause unexpected behavior.",
+      "remediation": "Validate strategy against a constant whitelist before the switch and reject unknown values."
+    },
+    {
+      "severity": "medium",
+      "file": "internal/api/errors.go",
+      "line": 9,
+      "description": "Error responses from the API may inadvertently include internal stack traces if http.Error or similar is used unfiltered.",
+      "remediation": "Use the defined error codes and writeError helper to ensure no stack traces are sent to clients."
+    },
+    {
+      "severity": "low",
+      "file": "internal/compare/normalize.go",
+      "line": 141,
+      "description": "Sharpe ratio calculation assumes stddev may be zero; however, floating point edge cases could produce NaN if inputs are anomalous.",
+      "remediation": "Add explicit NaN checks and unit tests for series with constant prices."
+    },
+    {
+      "severity": "medium",
+      "file": "internal/collect/yahoo/quote.go",
+      "line": 91,
+      "description": "The HTTP request to Yahoo has no timeout set; a hanging or throttled request could lead to prolonged resource usage or accidental credential exposure in retry logs.",
+      "remediation": "Add a client HTTP timeout and exponential backoff retry; ensure no sensitive data is logged."
+    }
+  ],
+  "hard_blocks": [],
+  "summary": "0 hard blocks expected"
+}

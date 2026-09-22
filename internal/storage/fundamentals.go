@@ -103,6 +103,36 @@ func GetFundamentalsBySecurity(ctx context.Context, q DBTX, securityID int64, op
 	return out, nil
 }
 
+// GetLatestFYFundamentals returns the newest FY row of every requested
+// concept (DISTINCT ON concept ordered by period_end DESC). Missing concepts
+// are simply absent from the map (conservative engine rule).
+func GetLatestFYFundamentals(ctx context.Context, q DBTX, securityID int64, concepts []string) (map[string]*float64, error) {
+	out := map[string]*float64{}
+	if len(concepts) == 0 {
+		return out, nil
+	}
+	rows, err := q.Query(ctx, `SELECT DISTINCT ON (concept) concept, value
+		FROM fundamentals
+		WHERE security_id = $1 AND concept = ANY($2) AND fiscal_period = 'FY'
+		ORDER BY concept, period_end DESC`, securityID, concepts)
+	if err != nil {
+		return nil, fmt.Errorf("storage: fundamentales FY security %d: %w", securityID, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var concept string
+		var value *float64
+		if err := rows.Scan(&concept, &value); err != nil {
+			return nil, fmt.Errorf("storage: scan fundamentales FY: %w", err)
+		}
+		out[concept] = value
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("storage: rows fundamentales FY: %w", err)
+	}
+	return out, nil
+}
+
 func scanFundamental(row rowScanner, f *Fundamental) error {
 	return row.Scan(
 		&f.ID, &f.SecurityID, &f.Concept, &f.Value, &f.Unit, &f.PeriodType,
