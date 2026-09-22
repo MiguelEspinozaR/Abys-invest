@@ -1,0 +1,40 @@
+{
+  "milestone": "M1",
+  "artifact": "abys-foundation-security",
+  "generated_at": "2026-09-22T01:35:00-04:00",
+  "scanner": "regex-advisory (gitleaks no disponible en este entorno)",
+  "scope": "archivos de producto commiteables (excluye .ai/, test-results/, bin/, .env)",
+  "findings": [
+    {
+      "severity": "info",
+      "file": ".env.example",
+      "detail": "DSN de desarrollo postgres://abys:abys@localhost:5432/abys con las mismas credenciales del docker-compose de dev (no es un secreto de produccion; es documentacion de placeholders)."
+    },
+    {
+      "severity": "info",
+      "file": "docker-compose.yml / Makefile",
+      "detail": "Credenciales de desarrollo del stack compose (abys/abys) y user-agent de dev. Definidas por el plan M1 como valores por defecto locales; nunca aplican a produccion."
+    }
+  ],
+  "hard_blocks_detected": 0,
+  "checks": {
+    "aws_access_key": "sin coincidencias",
+    "private_keys": "sin coincidencias",
+    "github_pat": "sin coincidencias",
+    "api_keys_sk": "sin coincidencias",
+    "jwt": "sin coincidencias",
+    "secrets_in_product_go_sql_yaml": "sin coincidencias"
+  },
+  "env_handling": {
+    "DATABASE_URL": "leida solo de entorno en cmd/api y cmd/collector",
+    "SEC_EDGAR_USER_AGENT": "leida solo de entorno en cmd/collector; NewClient exige UA no vacia",
+    "API_PORT": "leida solo de entorno en cmd/api (default 8080)",
+    ".env_gitignored": true,
+    "test-results_gitignored": true,
+    "bin_gitignored": true
+  },
+  "recommendations": [
+    "En produccion usar gitleaks en CI y secret store real (vault/secret manager)",
+    "Rotar las credenciales de dev si el stack compose llega a exponerse"
+  ]
+}

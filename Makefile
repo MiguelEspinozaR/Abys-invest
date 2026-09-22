@@ -1,0 +1,60 @@
+# Abys-Invest M1 — Makefile (fundación)
+# Los secretos (DATABASE_URL, SEC_EDGAR_USER_AGENT) se leen del entorno,
+# nunca están hardcodeados en el repo.
+
+BIN_DIR        := bin
+API_BIN        := $(BIN_DIR)/api
+COLLECTOR_BIN  := $(BIN_DIR)/collector
+
+DATABASE_URL   ?= postgres://abys:abys@localhost:5432/abys?sslmode=disable
+SEC_EDGAR_UA   ?= AbysInvest/1.0 (contact@abys-invest.dev)
+API_PORT       ?= 8080
+
+.PHONY: build test lint vet docker-up docker-down migrate run-api run-collector integration clean
+
+## build: compila api y collector en bin/
+build:
+	mkdir -p $(BIN_DIR)
+	go build -o $(API_BIN) ./cmd/api
+	go build -o $(COLLECTOR_BIN) ./cmd/collector
+
+## test: ejecuta todos los tests (unidad)
+test:
+	go test ./... -count=1
+
+## lint: go vet sobre todos los paquetes
+lint: vet
+
+vet:
+	go vet ./...
+
+## docker-up: levanta PostgreSQL 16 + TimescaleDB local
+docker-up:
+	docker compose up -d
+
+## docker-down: detiene los servicios
+docker-down:
+	docker compose down
+
+## migrate: aplica las migraciones SQL en orden (usa psql directamente;
+## compatible con docker y con una BD local/remota vía DATABASE_URL)
+migrate:
+	@for f in migrations/*.sql; do \
+		echo "==> $$f"; \
+		psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -q -f "$$f"; \
+	done
+
+## run-api: ejecuta el binario api con env de entorno
+run-api:
+	API_PORT=$(API_PORT) DATABASE_URL=$(DATABASE_URL) go run ./cmd/api
+
+## run-collector: ejecuta el binario collector (empresas por defecto: AAPL)
+run-collector:
+	DATABASE_URL=$(DATABASE_URL) SEC_EDGAR_USER_AGENT="$(SEC_EDGAR_UA)" go run ./cmd/collector -companies AAPL
+
+## integration: tests de integración end-to-end (requiere BD levantada)
+integration:
+	go test ./... -count=1 -tags=integration
+
+clean:
+	rm -rf $(BIN_DIR)

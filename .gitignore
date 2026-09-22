@@ -1,0 +1,19 @@
+# Binaries
+/bin/
+
+# Local environment / secrets (values never committed)
+.env
+.env.local
+
+# AI infrastructure (SDD artifacts live outside product history)
+/.ai/
+
+# Go build artifacts
+*.test
+*.out
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

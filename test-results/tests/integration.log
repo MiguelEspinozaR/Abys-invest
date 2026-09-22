@@ -1,0 +1,74 @@
+=== RUN   TestHealthConnectedAfterMigrations
+--- PASS: TestHealthConnectedAfterMigrations (0.03s)
+=== RUN   TestHealthDegradedWithoutDB
+--- PASS: TestHealthDegradedWithoutDB (0.00s)
+=== RUN   TestHealthHandlerNeverPanics
+--- PASS: TestHealthHandlerNeverPanics (0.00s)
+PASS
+ok  	github.com/miky/abys-invest/cmd/api	0.037s
+=== RUN   TestWorkerDoesNotPanicOnProviderError
+--- PASS: TestWorkerDoesNotPanicOnProviderError (0.30s)
+PASS
+ok  	github.com/miky/abys-invest/cmd/collector	0.312s
+=== RUN   TestClientCompanyFactsFallbackAltPath
+--- PASS: TestClientCompanyFactsFallbackAltPath (0.00s)
+=== RUN   TestNewClientRequiresUserAgent
+--- PASS: TestNewClientRequiresUserAgent (0.00s)
+=== RUN   TestClientUserAgentAndPath
+--- PASS: TestClientUserAgentAndPath (0.00s)
+=== RUN   TestClientRetryOn429ThenSuccess
+--- PASS: TestClientRetryOn429ThenSuccess (0.02s)
+=== RUN   TestClientRetryOnServerError
+--- PASS: TestClientRetryOnServerError (0.01s)
+=== RUN   TestClientNoRetryOnClientError
+--- PASS: TestClientNoRetryOnClientError (0.00s)
+=== RUN   TestClientRetriesNetworkErrors
+--- PASS: TestClientRetriesNetworkErrors (0.01s)
+=== RUN   TestClientGetXBRLFiling
+--- PASS: TestClientGetXBRLFiling (0.00s)
+=== RUN   TestRateLimiterEnforcesRate
+--- PASS: TestRateLimiterEnforcesRate (0.40s)
+=== RUN   TestRateLimiterContextCancel
+--- PASS: TestRateLimiterContextCancel (1.02s)
+=== RUN   TestParseCompanyTickers
+--- PASS: TestParseCompanyTickers (0.00s)
+=== RUN   TestParseCompanyTickersInvalid
+--- PASS: TestParseCompanyTickersInvalid (0.00s)
+=== RUN   TestNormalizeCIK
+--- PASS: TestNormalizeCIK (0.00s)
+=== RUN   TestParseCompanyFactsAAPLFixture
+--- PASS: TestParseCompanyFactsAAPLFixture (0.05s)
+=== RUN   TestParseCompanyFactsInvalidJSON
+--- PASS: TestParseCompanyFactsInvalidJSON (0.00s)
+=== RUN   TestParseCompanyFactsEdgeCases
+--- PASS: TestParseCompanyFactsEdgeCases (0.00s)
+=== RUN   TestParseCompanyFactsSkipsEmptyPayload
+--- PASS: TestParseCompanyFactsSkipsEmptyPayload (0.00s)
+=== RUN   TestCanonicalConceptsDictionary
+--- PASS: TestCanonicalConceptsDictionary (0.00s)
+=== RUN   TestMapToCanonical
+--- PASS: TestMapToCanonical (0.00s)
+=== RUN   TestMapToCanonicalRejects
+--- PASS: TestMapToCanonicalRejects (0.00s)
+=== RUN   TestComputeDerived
+--- PASS: TestComputeDerived (0.00s)
+=== RUN   TestComputeDerivedSkipsIncompletePeriods
+--- PASS: TestComputeDerivedSkipsIncompletePeriods (0.00s)
+=== RUN   TestAAPLFixtureEndToEndExtraction
+--- PASS: TestAAPLFixtureEndToEndExtraction (0.04s)
+=== RUN   TestNormalizeStagingAAPL
+--- PASS: TestNormalizeStagingAAPL (0.65s)
+=== RUN   TestNormalizePendingAAPL
+--- PASS: TestNormalizePendingAAPL (0.39s)
+PASS
+ok  	github.com/miky/abys-invest/internal/collect/edgar	2.629s
+=== RUN   TestRunMigrationsIdempotent
+--- PASS: TestRunMigrationsIdempotent (0.02s)
+=== RUN   TestUpsertSecurityIdempotent
+--- PASS: TestUpsertSecurityIdempotent (0.02s)
+=== RUN   TestInsertStagingAndMarkNormalized
+--- PASS: TestInsertStagingAndMarkNormalized (0.02s)
+=== RUN   TestUpsertFundamentalsIdempotentBatch
+--- PASS: TestUpsertFundamentalsIdempotentBatch (0.02s)
+PASS
+ok  	github.com/miky/abys-invest/internal/storage	0.102s

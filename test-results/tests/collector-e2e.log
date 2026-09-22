@@ -1,0 +1,4 @@
+time=2026-09-22T01:33:00.381-04:00 level=INFO msg="base lista, migraciones aplicadas"
+time=2026-09-22T01:33:05.551-04:00 level=INFO msg="catálogo persistido" securities=10459 total=10459
+time=2026-09-22T01:33:05.552-04:00 level=INFO msg="ingesta de empresa" ticker=AAPL cik=0000320193 dry_run=false
+time=2026-09-22T01:33:07.215-04:00 level=INFO msg="empresa normalizada" ticker=AAPL

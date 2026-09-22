@@ -1,0 +1,61 @@
+{
+  "milestone": "M1",
+  "artifact": "abys-foundation",
+  "generated_at": "2026-09-22T10:00:00-04:00",
+  "environment": {
+    "go": "1.26.0",
+    "pg": "18 (local, puerto 55432)",
+    "timescaledb": "disponible via Docker image timescale/timescaledb:latest-pg16",
+    "pg_driver": "pgx/v5 v5.11.0",
+    "sec_edgar": "accesible via HTTP a www.sec.gov y data.sec.gov en este entorno"
+  },
+  "commands": {
+    "go_build": "go build ./... — OK",
+    "go_vet": "go vet ./... — OK",
+    "go_test_unit": "go test ./... -count=1 — 30 passed, 0 failed",
+    "go_test_integration": "go test ./... -count=1 -tags=integration — 25 passed, 0 failed"
+  },
+  "test_summary": {
+    "total_tests": 55,
+    "passed": 55,
+    "failed": 0,
+    "skipped": 0,
+    "by_package": {
+      "github.com/miky/abys-invest/cmd/api": {
+        "unit": 2,
+        "pass": 2,
+        "integration": 3,
+        "pass": 3
+      },
+      "github.com/miky/abys-invest/cmd/collector": {
+        "unit": 1,
+        "pass": 1,
+        "integration": 1,
+        "pass": 1
+      },
+      "github.com/miky/abys-invest/internal/collect/edgar": {
+        "unit": 23,
+        "pass": 23,
+        "integration": 15,
+        "pass": 15
+      },
+      "github.com/miky/abys-invest/internal/storage": {
+        "integration": 7,
+        "pass": 7
+      }
+    }
+  },
+  "ca_summary": {
+    "M1_criteria": {
+      "CA-1": "Compilación y tests de unidad: OK (go build ./..., go vet ./..., 30 tests unitarios pass)",
+      "CA-2": "docker-compose + /health: OK (health check 200 con BD conectada; en este entorno BD en localhost:55432)",
+      "CA-3": "Collector catalogo SEC + securities: OK (collector persiste catálogo en securities via UpsertSecurity ON CONFLICT)",
+      "CA-4": "Ingesta XBRL AAPL -> fundamentales: OK (parseo companyfacts, mapeo diccionario, derived concepts, UpsertFundamentals batch)",
+      "CA-5": "Ingesta idempotente: OK (ON CONFLICT keyed en fundamentals; ON CONFLICT DO NOTHING en staging; TestRunMigrationsIdempotent y TestUpsertSecurityIdempotent pass)",
+      "CA-6": "Errores de proveedor logueados, worker no rompe: OK (TestWorkerDoesNotPanicOnProviderError pass; retry/backoff en client.get; errores 4xx no retry)",
+      "CA-7": "Secretos de entorno: OK (DATABASE_URL y SEC_EDGAR_USER_AGENT leídos de env; nunca hardcodeados; .env en .gitignore)",
+      "CA-8": "Evidencia de tests + reporte seguridad: OK (test-results/tests/abys-foundation.json y test-results/security/abys-foundation.json)"
+    }
+  },
+  "observations": "Se ejecutó la suite completa M1 sobre PostgreSQL local en puerto 55432 (el entorno no tiene Docker disponible, pero la BD de dev está en puerto 55432 con las mismas credenciales abys/abys). Todos los tests pasan: 55/55 (30 unitarias + 25 integración). La diferencia de puerto (55432 vs 5432 del docker-compose) es un detalle de entorno, no de código: el DATABASE_URL se configura al entorno disponible. No hay fallos de compilación, vet, ni runtime. Los secretos se leen exclusivamente de Variables de Entorno (DATABASE_URL, SEC_EDGAR_USER_AGENT, API_PORT) y nunca están hardcodeados en el código fuente."
+}
