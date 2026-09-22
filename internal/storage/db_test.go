@@ -57,7 +57,7 @@ func truncateDataTables(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	_, err := pool.Exec(ctx, `TRUNCATE fundamentals, edgar_staging, securities RESTART IDENTITY CASCADE`)
+	_, err := pool.Exec(ctx, `TRUNCATE derived_metrics, daily_prices, macro_series, fundamentals, edgar_staging, securities RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("TRUNCATE falló: %v", err)
 	}
@@ -78,11 +78,11 @@ func TestRunMigrationsIdempotent(t *testing.T) {
 
 	var tables int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.tables
-		WHERE table_schema = 'public' AND table_name IN ('securities','fundamentals','edgar_staging','xbrl_concept_map')`).Scan(&tables); err != nil {
+		WHERE table_schema = 'public' AND table_name IN ('securities','fundamentals','edgar_staging','xbrl_concept_map','daily_prices','macro_series','derived_metrics')`).Scan(&tables); err != nil {
 		t.Fatalf("query tablas falló: %v", err)
 	}
-	if tables != 4 {
-		t.Fatalf("se esperaban 4 tablas, hay %d", tables)
+	if tables != 7 {
+		t.Fatalf("se esperaban 7 tablas, hay %d", tables)
 	}
 
 	var concepts int

@@ -1,0 +1,12 @@
+{
+  "security_id": 1,
+  "ticker": "AAPL",
+  "as_of": "2026-09-22T00:00:00Z",
+  "net_earnings": 100000000000,
+  "shares_outstanding": 15000000000,
+  "price": 175.0,
+  "shareholders_equity": 62000000000,
+  "total_liabilities": 290000000000,
+  "free_cash_flow": 110000000000,
+  "growth_rate": 7.0
+}

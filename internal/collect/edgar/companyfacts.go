@@ -9,11 +9,18 @@ import (
 )
 
 // CompanyFacts mirrors the SEC companyfacts JSON payload (fields used by M1).
+//
+// SEC groups XBRL facts by namespace. US-GAAP concepts (income statement,
+// balance, cash flow) live under "us-gaap"; company-level "dei" (data
+// extensions for financial reporting) concepts such as
+// EntityCommonStockSharesOutstanding live under "dei". Both are required to
+// populate the canonical dictionary (§2.3).
 type CompanyFacts struct {
 	CIK        int64  `json:"cik"`
 	EntityName string `json:"entityName"`
 	Facts      struct {
 		USGAAP map[string]CompanyFactsConcept `json:"us-gaap"`
+		DEI    map[string]CompanyFactsConcept `json:"dei"`
 	} `json:"facts"`
 }
 
@@ -40,7 +47,8 @@ type CompanyFactsVal struct {
 
 // XBRLFact is a single extracted SEC EDGAR XBRL data point.
 type XBRLFact struct {
-	Concept      string     // US-GAAP concept name, e.g. "Revenues"
+	Concept      string     // concept name, e.g. "Revenues" or "EntityCommonStockSharesOutstanding"
+	Namespace    string     // XBRL namespace: "us-gaap", "dei", ... (traceability)
 	Unit         string     // e.g. "USD", "shares", "USD/shares"
 	Value        float64    // parsed value (0 when HasValue is false)
 	HasValue     bool       // false when the fact carried no value (null)
@@ -58,6 +66,9 @@ type XBRLFact struct {
 // ParseCompanyFacts decodes a companyfacts JSON payload into flat XBRL facts.
 // Facts with an empty period end are skipped (malformed); facts without a value
 // are kept with HasValue=false so the period structure remains visible.
+//
+// Both the "us-gaap" and "dei" namespaces are parsed (the latter carries
+// EntityCommonStockSharesOutstanding); each fact records its source namespace.
 func ParseCompanyFacts(data []byte) ([]XBRLFact, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
@@ -68,18 +79,28 @@ func ParseCompanyFacts(data []byte) ([]XBRLFact, error) {
 	}
 
 	var facts []XBRLFact
-	for concept, c := range cf.Facts.USGAAP {
+	facts = appendNamespaceFacts(facts, "us-gaap", cf.Facts.USGAAP)
+	facts = appendNamespaceFacts(facts, "dei", cf.Facts.DEI)
+	return facts, nil
+}
+
+// appendNamespaceFacts extracts the flat facts of one XBRL namespace and tags
+// each with its namespace. Namespaces are processed in fixed order so the
+// output is deterministic regardless of JSON map ordering.
+func appendNamespaceFacts(dst []XBRLFact, ns string, concepts map[string]CompanyFactsConcept) []XBRLFact {
+	for concept, c := range concepts {
 		for unit, entries := range c.Units {
 			for _, e := range entries {
 				f, ok := parseValEntry(concept, unit, e)
 				if !ok {
 					continue
 				}
-				facts = append(facts, f)
+				f.Namespace = ns
+				dst = append(dst, f)
 			}
 		}
 	}
-	return facts, nil
+	return dst
 }
 
 func parseValEntry(concept, unit string, e CompanyFactsVal) (XBRLFact, bool) {

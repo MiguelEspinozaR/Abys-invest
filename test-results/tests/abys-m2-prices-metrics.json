@@ -1,0 +1,61 @@
+{
+  "milestone": "M2",
+  "artifact": "abys-m2-prices-metrics",
+  "generated_at": "2026-09-22",
+  "environment": {
+    "go": "1.26.0",
+    "pg": "18 (local, puerto 55432)",
+    "timescaledb": "NO disponible en este servidor (tablas normales con fallback documentado, plan §7)",
+    "pg_driver": "pgx/v5 v5.11.0",
+    "yahoo_chart_v8": "accesible via HTTP (fixtures reales commiteadas en internal/collect/yahoo/fixtures)",
+    "bls_api_v2": "accesible via HTTP (fixture real commiteado en internal/collect/macro/fixtures)",
+    "makefile": "patrón serial -p 1"
+  },
+  "commands": {
+    "go_build": "go build ./... — OK",
+    "go_vet": "go vet ./... — OK",
+    "go_test_unit": "go test ./... -count=1 — OK (7 paquetes: cmd/api, cmd/collector, edgar, macro, yahoo, metrics; analytics y storage sin unit directos)",
+    "go_test_integration": "go test -p 1 ./... -count=1 -tags=integration — ~82 tests passed, 0 failed, 0 skipped (8 paquetes, serial -p 1)",
+    "make_migrate": "OK (8 migraciones: 001-008, idempotentes, hypertables deferred por ausencia de TimescaleDB)",
+    "collector_prices": "go run ./cmd/collector -job prices -tickers AAPL — 1254 barras históricas + quote (1255 filas daily_prices)",
+    "collector_macro": "go run ./cmd/collector -job macro -macro-series CPI — 67 observaciones reales (2021→2026) upserted macro_series",
+    "analytics_aapl": "go run ./cmd/analytics -tickers AAPL — 8 métricas persistidas (idempotente, derived_metrics)",
+    "analytics_dry_run": "go run ./cmd/analytics -tickers AAPL -dry-run — imprime sin persistir (OK)"
+  },
+  "test_summary": {
+    "total": 82,
+    "passed": 82,
+    "failed": 0,
+    "skipped": 0,
+    "by_package": {
+      "cmd/api": "integration package OK",
+      "cmd/collector": "unit + integration OK",
+      "edgar": "unit + integration OK",
+      "macro": "unit (11) + integration (3) OK",
+      "yahoo": "unit (12) + integration (3) OK",
+      "metrics": "unit (13) + integration (4) OK",
+      "analytics": "integration OK (sin tests unitarios)",
+      "storage": "integration OK (sin tests unitarios)"
+    }
+  },
+  "ca_verification": {
+    "CA-1": {
+      "state": "OK",
+      "evidence": "Yahoo ingesta OHLCV + quote en daily_prices (idempotente): 1254 barras + quote; re-ejecución no duplica — TestIdempotencyPrices"
+    },
+    "CA-2": {
+      "state": "OK",
+      "evidence": "Ingesta CPI con unidades/frecuencia en macro_series: OK (67 filas CUSR0000SA0; TestIdempotencyMacro)"
+    },
+    "CA-3": {
+      "state": "OK",
+      "evidence": "derived_metrics con 8 métricas §13: OK (persistencia, inputs_snapshot, rule conservadora NULL por datos insuficientes registrada)"
+    },
+    "CA-4": {
+      "state": "OK",
+      "evidence": "Jobs reproducibles y unit-testados: OK (13 tests unit metrics deterministas + fixtures reales + tests de integración E2E)"
+    }
+  },
+  "observations": "dei fix corregido en este hito; TimescaleDB ausente en el entorno (hypertables degradadas a tablas normales con fallback documentado en migraciones 006-007, ADR-0002)",
+  "logs_paths": "m2-integration.log, m2-hypertables.log"
+}

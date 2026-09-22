@@ -1,0 +1,13 @@
+{
+  "comment": "Cálculo manual (SPEC §13) con input aapl_metrics_input.json: EPS=100e9/15e9; PE=175/EPS; market_cap=175*15e9=2.625e12; P/B=2.625e12/62e9; P/FCF=2.625e12/110e9; PEG=PE/7; ROE=100e9/62e9; D/E=290e9/62e9; FCF Yield=110e9/2.625e12*100",
+  "metrics": {
+    "pe_ratio": 26.25,
+    "eps": 6.666666666666667,
+    "pb_ratio": 42.33870967741935,
+    "pcf_ratio": 23.863636363636363,
+    "peg_ratio": 3.75,
+    "roe": 1.6129032258064517,
+    "de_ratio": 4.67741935483871,
+    "fcf_yield": 4.190476190476191
+  }
+}

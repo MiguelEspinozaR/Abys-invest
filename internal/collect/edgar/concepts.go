@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// CanonicalConcept describes how an XBRL US-GAAP concept maps to the canonical
+// CanonicalConcept describes how an XBRL concept maps to the canonical
 // dictionary (plan §2.3).
 type CanonicalConcept struct {
 	Canonical  string // canonical name stored in fundamentals.concept
@@ -14,7 +14,10 @@ type CanonicalConcept struct {
 	Priority   int    // orden en §2.3: 1 = preferido cuando hay variantes
 }
 
-// conceptMap is the XBRL US-GAAP -> canonical dictionary (plan §2.3).
+// conceptMap is the XBRL concept -> canonical dictionary (plan §2.3).
+// Concepts are keyed by name; the same name is unambiguous across the SEC
+// namespaces used here ("us-gaap" and "dei", e.g.
+// EntityCommonStockSharesOutstanding lives only in "dei").
 // PeriodType "any" accepts both instant and duration facts (frames can vary).
 // Priority refleja el orden en que §2.3 lista las variantes (1 = preferida).
 var conceptMap = map[string]CanonicalConcept{
@@ -66,7 +69,8 @@ func CanonicalConcepts() map[string]CanonicalConcept {
 type CanonicalFact struct {
 	Canonical     string
 	SourceConcept string
-	Priority      int // para desempate determinista entre variantes XBRL
+	Namespace     string // XBRL namespace de origen ("us-gaap", "dei", ...)
+	Priority      int    // para desempate determinista entre variantes XBRL
 	Value         float64
 	HasValue      bool
 	Unit          string
@@ -104,6 +108,7 @@ func MapToCanonical(f XBRLFact) *CanonicalFact {
 	return &CanonicalFact{
 		Canonical:     cc.Canonical,
 		SourceConcept: f.Concept,
+		Namespace:     f.Namespace,
 		Priority:      cc.Priority,
 		Value:         f.Value,
 		HasValue:      f.HasValue,
@@ -185,6 +190,7 @@ func ComputeDerived(facts []CanonicalFact) []CanonicalFact {
 			d := CanonicalFact{
 				Canonical:     canonical,
 				SourceConcept: "derived:" + canonical,
+				Namespace:     src.Namespace,
 				Value:         value,
 				HasValue:      true,
 				Unit:          "USD",

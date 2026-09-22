@@ -1,0 +1,53 @@
+{
+  "milestone": "M2",
+  "artifact": "abys-m2-prices-metrics-security",
+  "generated_at": "2026-09-22T12:00:00-04:00",
+  "scanner": "regex-advisory (gitleaks no disponible en este entorno)",
+  "scope": "cmd/ internal/ (incluye internal/collect/yahoo, internal/collect/macro, internal/metrics, storage/daily_prices/macro_series/derived_metrics), migrations/006-008, Makefile, .envexample. Excluye .ai/ y test-results/",
+  "findings": [],
+  "hard_blocks_detected": 0,
+  "checks": {
+    "aws_access_key": "sin coincidencias",
+    "private_keys": "sin coincidencias",
+    "github_pat": "sin coincidencias",
+    "api_keys_sk": "sin coincidencias",
+    "jwt": "sin coincidencias",
+    "secrets_in_product_go_sql_yaml": "sin coincidencias"
+  },
+  "env_handling": {
+    "DATABASE_URL": "leida solo de entorno en cmd/api y cmd/collector",
+    "SEC_EDGAR_USER_AGENT": "leida solo de entorno en cmd/collector; NewClient exige UA no vacia",
+    "API_PORT": "leida solo de entorno en cmd/api (default 8080)",
+    ".env_gitignored": true,
+    "test-results_gitignored": true
+  },
+  "recommendations": [
+    "Mantener sin credenciales reales en .env.example; usar placeholders o variables de entorno.",
+    "Continuar sin API keys hardcodeadas en adaptadores Yahoo/BLS; asegurar User-Agent correcto.",
+    "Revisar que migraciones 006-008 no inserten datos sensibles en texto plano.",
+    "Auditar logs de collector/analytics para filtrar cualquier fuga de datos sensibles.",
+    "Integrar gitleaks en CI cuando est\u00e9 disponible en el entorno."
+  ],
+  "rescan_fix_c001": {
+    "delta_files": [
+      "internal/collect/edgar/companyfacts.go",
+      "internal/collect/edgar/concepts.go",
+      "internal/collect/edgar/companyfacts_test.go",
+      "internal/collect/edgar/concepts_test.go",
+      "internal/collect/edgar/normalize_integration_test.go",
+      "internal/collect/edgar/testdata/aapl_companyfacts.json"
+    ],
+    "findings": [],
+    "hard_blocks_detected": 0,
+    "summary": "Parser del namespace dei en SEC EDGAR - solo a\u00f1ade decoding JSON adicional. No introduce secretos, rutas de exfiltraci\u00f3n, escritura arbitraria, ni panic/DoS por entradas malformadas. El fixture aapl_companyfacts.json es data p\u00fablica de SEC (sin credenciales). No hay cambios de env, red, SQL o credenciales.",
+    "scanner": "regex-advisory (gitleaks no disponible)",
+    "checks": {
+      "aws_access_key": "sin coincidencias (no applicable)",
+      "private_keys": "sin coincidencias (no applicable)",
+      "github_pat": "sin coincidencias (no applicable)",
+      "api_keys_sk": "sin coincidencias (no applicable)",
+      "jwt": "sin coincidencias (no applicable)",
+      "secrets_in_product_go": "sin coincidencias (no applicable)"
+    }
+  }
+}

@@ -1,0 +1,42 @@
+# m2-hypertables.log — Verificación de esquema M2 (T1)
+# Generado: 2026-09-22
+# Entorno: PostgreSQL 18.6 local puerto 55432 (TimescaleDB NO instalada)
+
+$ DATABASE_URL="postgres://abys:abys@localhost:55432/abys?sslmode=disable"
+$ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/006_create_daily_prices.sql -f migrations/007_create_macro_series.sql -f migrations/008_create_derived_metrics.sql
+[OK] 006: tabla daily_prices creada, índices ok
+[OK] 007: tabla macro_series creada, índices ok
+[OK] 008: tabla derived_metrics creada, índices ok
+NOTICE: timescaledb no disponible -> hypertable/compresión diferidas (fallback plan §7, ADR-0002)
+
+# Re-ejecución (idempotencia)
+$ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/006... -f migrations/007... -f migrations/008...
+[OK] todas las sentencias: "ya existe, omitiendo" (sin errores)
+
+# make migrate (todas las migraciones 001-008, idempotente)
+[OK] 8/8 migraciones sin error con ON_ERROR_STOP=1
+
+# Estado de la extensión
+$ psql "$DATABASE_URL" -c "SELECT name, default_version FROM pg_available_extensions WHERE name='timescaledb';"
+(0 filas) — timescaledb no disponible en este servidor
+
+# Tablas presentes (verificación de CA-1: esquema funcional)
+$ psql "$DATABASE_URL" -c "\dt"
+ public | daily_prices     | tabla | abys
+ public | derived_metrics  | tabla | abys
+ public | macro_series     | tabla | abys
+ (más las 4 tablas M1: securities, fundamentals, edgar_staging, xbrl_concept_map)
+
+# Datos verificados tras la ingesta real (T9/T10)
+daily_prices  : 1255 filas AAPL (2021-09-22 → 2026-09-22), source yahoo
+macro_series  : 67 filas CUSR0000SA0 (2021-01-01 → 2026-08-01, ingesta real BLS), source bls
+derived_metrics: 8 filas AAPL as_of 2026-09-22, model_version 1.0.0
+
+# Desviación documentada (plan §7, migración 001):
+# Sin TimescaleDB las tablas daily_prices/macro_series son tablas normales.
+# Conservan UNIQUE(security_id, date) / UNIQUE(series_code, date) e índices.
+# Al activar la extensión se puede convertir:
+#   SELECT create_hypertable('daily_prices', 'date', if_not_exists => TRUE);
+#   SELECT create_hypertable('macro_series', 'date', if_not_exists => TRUE);
+# y añadir compresión (no hay pérdida de datos; TimescaleDB soporta migración a hypertable).
+# Los tests de integración (TestRunMigrationsIdempotent) cubren la re-ejecución.

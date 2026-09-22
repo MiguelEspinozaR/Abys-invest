@@ -120,3 +120,101 @@ func TestParseCompanyFactsSkipsEmptyPayload(t *testing.T) {
 		t.Fatalf("payload con concept null no debería fallar: %v", err)
 	}
 }
+
+// TestParseCompanyFactsDEI verifica la corrección C001: SEC EDGAR guarda
+// EntityCommonStockSharesOutstanding en el namespace "dei" (no "us-gaap"), por
+// lo que ParseCompanyFacts debe procesar ambos namespaces y etiquetar cada
+// hecho con su namespace de origen.
+func TestParseCompanyFactsDEI(t *testing.T) {
+	facts, err := ParseCompanyFacts(loadAAPLFixture(t))
+	if err != nil {
+		t.Fatalf("ParseCompanyFacts falló con fixture real: %v", err)
+	}
+
+	// Ambos namespaces presentes en el payload y etiquetados.
+	var seenDEI, seenUSGAAP bool
+	for _, f := range facts {
+		switch f.Namespace {
+		case "dei":
+			seenDEI = true
+		case "us-gaap":
+			seenUSGAAP = true
+		default:
+			t.Fatalf("fact %s con namespace inesperado %q", f.Concept, f.Namespace)
+		}
+	}
+	if !seenDEI || !seenUSGAAP {
+		t.Fatalf("se esperaban facts de los namespaces dei y us-gaap (dei=%v us-gaap=%v)", seenDEI, seenUSGAAP)
+	}
+
+	// shares_outstanding = EntityCommonStockSharesOutstanding (dei, 10-K).
+	// Datos reales del payload SEC de AAPL.
+	want := []struct {
+		fy   int
+		end  string
+		val  float64
+		accn string
+	}{
+		{2024, "2024-10-18", 15115823000, "0000320193-24-000123"},
+		{2025, "2025-10-17", 14776353000, "0000320193-25-000079"},
+	}
+	for _, w := range want {
+		var found bool
+		for _, f := range facts {
+			if f.Concept != "EntityCommonStockSharesOutstanding" || f.Namespace != "dei" {
+				continue
+			}
+			if f.FormType != "10-K" || f.FiscalYear == nil || *f.FiscalYear != w.fy {
+				continue
+			}
+			if f.EndDate.Format("2006-01-02") != w.end {
+				continue
+			}
+			found = true
+			if !f.HasValue || f.Value != w.val {
+				t.Fatalf("shares_outstanding FY%d: got %v (has=%v) want %v", w.fy, f.Value, f.HasValue, w.val)
+			}
+			if f.Unit != "shares" {
+				t.Fatalf("shares_outstanding FY%d: unit inesperado %q", w.fy, f.Unit)
+			}
+			if f.Accession != w.accn {
+				t.Fatalf("shares_outstanding FY%d: accn %q want %q", w.fy, f.Accession, w.accn)
+			}
+			if f.StartDate != nil {
+				t.Fatalf("shares_outstanding FY%d: debería ser instant, start=%v", w.fy, f.StartDate)
+			}
+		}
+		if !found {
+			t.Fatalf("no se extrajo EntityCommonStockSharesOutstanding FY%d (dei)", w.fy)
+		}
+	}
+}
+
+// TestParseCompanyFactsOnlyDEI cubre el escenario exacto del bug F001: un
+// payload que SOLO tiene el namespace "dei" debe extraer shares_outstanding.
+func TestParseCompanyFactsOnlyDEI(t *testing.T) {
+	data := []byte(`{
+	  "cik": 320193, "entityName": "APPLE INC",
+	  "facts": {"dei": {
+	    "EntityCommonStockSharesOutstanding": {"label": "Entity Common Stock, Shares Outstanding", "units": {"shares": [
+	      {"end": "2024-10-18", "val": 15115823000, "accn": "0000320193-24-000123",
+	       "fy": 2024, "fp": "FY", "form": "10-K", "filed": "2024-11-01", "frame": "CY2024Q3I"}
+	    ]}}
+	  }}
+	}`)
+
+	facts, err := ParseCompanyFacts(data)
+	if err != nil {
+		t.Fatalf("ParseCompanyFacts falló: %v", err)
+	}
+	if len(facts) != 1 {
+		t.Fatalf("se esperaba 1 hecho (dei), hay %d", len(facts))
+	}
+	f := facts[0]
+	if f.Namespace != "dei" || f.Concept != "EntityCommonStockSharesOutstanding" {
+		t.Fatalf("fact inesperado: namespace=%q concept=%q", f.Namespace, f.Concept)
+	}
+	if !f.HasValue || f.Value != 15115823000 || f.Unit != "shares" {
+		t.Fatalf("shares_outstanding esperado 15115823000 shares, got %v (%v)", f.Value, f.Unit)
+	}
+}

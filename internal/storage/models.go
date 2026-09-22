@@ -60,3 +60,45 @@ type XBRLConceptMap struct {
 	UnitExpected  *string `json:"unit_expected,omitempty" db:"unit_expected"`
 	Notes         *string `json:"notes,omitempty" db:"notes"`
 }
+
+// DailyPrice is one row of daily OHLCV prices (migrations/006, source yahoo).
+type DailyPrice struct {
+	ID            int64     `json:"id" db:"id"`
+	SecurityID    int64     `json:"security_id" db:"security_id"`
+	Date          time.Time `json:"date" db:"date"`
+	Open          *float64  `json:"open,omitempty" db:"open"`
+	High          *float64  `json:"high,omitempty" db:"high"`
+	Low           *float64  `json:"low,omitempty" db:"low"`
+	Close         float64   `json:"close" db:"close"`
+	AdjustedClose float64   `json:"adjusted_close" db:"adjusted_close"`
+	Volume        *int64    `json:"volume,omitempty" db:"volume"`
+	Source        string    `json:"source" db:"source"`
+	CreatedAt     time.Time `json:"created_at" db:"created_at"`
+}
+
+// MacroSeries is one observation of a US macro series (migrations/007).
+type MacroSeries struct {
+	ID         int64     `json:"id" db:"id"`
+	SeriesCode string    `json:"series_code" db:"series_code"`
+	Date       time.Time `json:"date" db:"date"`
+	Value      float64   `json:"value" db:"value"`
+	Unit       string    `json:"unit" db:"unit"`
+	Frequency  string    `json:"frequency" db:"frequency"`
+	Source     string    `json:"source" db:"source"`
+	SourceID   *string   `json:"source_id,omitempty" db:"source_id"`
+	CreatedAt  time.Time `json:"created_at" db:"created_at"`
+}
+
+// DerivedMetric is one materialized metric (migrations/008). inputs_snapshot
+// holds the exact input values used (ADR-0004); value is NULL when inputs
+// were insufficient (never silently zeroed).
+type DerivedMetric struct {
+	ID             int64     `json:"id" db:"id"`
+	SecurityID     int64     `json:"security_id" db:"security_id"`
+	AsOf           time.Time `json:"as_of" db:"as_of"`
+	Metric         string    `json:"metric" db:"metric"`
+	Value          *float64  `json:"value,omitempty" db:"value"`
+	InputsSnapshot []byte    `json:"inputs_snapshot,omitempty" db:"inputs_snapshot"`
+	ModelVersion   string    `json:"model_version" db:"model_version"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+}

@@ -1,22 +1,29 @@
-# Abys-Invest M1 — Makefile (fundación)
-# Los secretos (DATABASE_URL, SEC_EDGAR_USER_AGENT) se leen del entorno,
-# nunca están hardcodeados en el repo.
+# Abys-Invest M1+M2 — Makefile (fundación + precios + métricas)
+# Los secretos (DATABASE_URL, SEC_EDGAR_USER_AGENT, BLS_API_KEY) se leen del
+# entorno, nunca están hardcodeados en el repo.
 
 BIN_DIR        := bin
 API_BIN        := $(BIN_DIR)/api
 COLLECTOR_BIN  := $(BIN_DIR)/collector
+ANALYTICS_BIN  := $(BIN_DIR)/analytics
 
 DATABASE_URL   ?= postgres://abys:abys@localhost:5432/abys?sslmode=disable
 SEC_EDGAR_UA   ?= AbysInvest/1.0 (contact@abys-invest.dev)
 API_PORT       ?= 8080
 
-.PHONY: build test lint vet docker-up docker-down migrate run-api run-collector integration clean
+# Configuración de jobs M2
+TICKERS       ?= AAPL
+MACRO_SERIES  ?= CPI
+G             ?= 7
 
-## build: compila api y collector en bin/
+.PHONY: build test lint vet docker-up docker-down migrate run-api run-collector run-prices run-macro run-analytics integration clean
+
+## build: compila api, collector y analytics en bin/
 build:
 	mkdir -p $(BIN_DIR)
 	go build -o $(API_BIN) ./cmd/api
 	go build -o $(COLLECTOR_BIN) ./cmd/collector
+	go build -o $(ANALYTICS_BIN) ./cmd/analytics
 
 ## test: ejecuta todos los tests (unidad)
 test:
@@ -50,11 +57,25 @@ run-api:
 
 ## run-collector: ejecuta el binario collector (empresas por defecto: AAPL)
 run-collector:
-	DATABASE_URL=$(DATABASE_URL) SEC_EDGAR_USER_AGENT="$(SEC_EDGAR_UA)" go run ./cmd/collector -companies AAPL
+	DATABASE_URL=$(DATABASE_URL) SEC_EDGAR_USER_AGENT="$(SEC_EDGAR_UA)" go run ./cmd/collector -job edgar -companies AAPL
+
+## run-prices: ingesta de precios Yahoo para tickers configurados
+run-prices:
+	DATABASE_URL=$(DATABASE_URL) go run ./cmd/collector -job prices -tickers $(TICKERS)
+
+## run-macro: ingesta de series macro (default: CPI)
+run-macro:
+	DATABASE_URL=$(DATABASE_URL) BLS_API_KEY="$(BLS_API_KEY)" go run ./cmd/collector -job macro -macro-series $(MACRO_SERIES)
+
+## run-analytics: cálculo de métricas derivadas
+run-analytics:
+	DATABASE_URL=$(DATABASE_URL) GROWTH_RATE_DEFAULT=$(G) go run ./cmd/analytics -tickers $(TICKERS)
 
 ## integration: tests de integración end-to-end (requiere BD levantada)
+## Se usan -p 1 (secuencial): los paquetes comparten la misma BD de desarrollo
+## y el suite storage trunca las tablas de datos en cada ejecución.
 integration:
-	go test ./... -count=1 -tags=integration
+	go test -p 1 ./... -count=1 -tags=integration
 
 clean:
 	rm -rf $(BIN_DIR)

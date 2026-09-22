@@ -74,6 +74,30 @@ func TestMapToCanonical(t *testing.T) {
 	}
 }
 
+// TestMapToCanonicalNamespaceTrace verifica (C001) que el namespace XBRL de
+// origen se propaga al hecho canónico, dando trazabilidad a los conceptos dei.
+func TestMapToCanonicalNamespaceTrace(t *testing.T) {
+	sf := fact("EntityCommonStockSharesOutstanding", "shares", "", "2024-09-28", 1, true)
+	sf.Namespace = "dei"
+	got := MapToCanonical(sf)
+	if got == nil {
+		t.Fatal("MapToCanonical devolvió nil para EntityCommonStockSharesOutstanding")
+	}
+	if got.Canonical != "shares_outstanding" {
+		t.Fatalf("canonical inesperado: %q", got.Canonical)
+	}
+	if got.Namespace != "dei" {
+		t.Fatalf("namespace no propagado: got %q want %q", got.Namespace, "dei")
+	}
+
+	// Los conceptos us-gaap conservan su namespace.
+	rf := fact("Revenues", "USD", "2023-10-01", "2024-09-28", 1, true)
+	rf.Namespace = "us-gaap"
+	if got := MapToCanonical(rf); got == nil || got.Namespace != "us-gaap" {
+		t.Fatalf("namespace us-gaap no propagado: %+v", got)
+	}
+}
+
 func TestMapToCanonicalRejects(t *testing.T) {
 	// Concepto sin mapeo.
 	if got := MapToCanonical(fact("WOWUnknown", "USD", "2023-10-01", "2024-09-28", 1, true)); got != nil {

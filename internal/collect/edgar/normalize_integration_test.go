@@ -135,6 +135,25 @@ func TestNormalizeStagingAAPL(t *testing.T) {
 		}
 	}
 
+	// C001: EntityCommonStockSharesOutstanding vive en el namespace "dei".
+	// Tras la normalización debe existir shares_outstanding en fundamentals
+	// con los valores reales de los 10-K del payload (instant, end=10-K date).
+	wantShares := map[int]float64{
+		2024: 15115823000, // 10-K filed 2024-11-01 (end 2024-10-18)
+		2025: 14776353000, // 10-K filed 2025-10-31 (end 2025-10-17)
+	}
+	for fy, wantVal := range wantShares {
+		var shares *float64
+		if err := pool.QueryRow(ctx,
+			`SELECT value FROM fundamentals WHERE security_id=$1 AND concept='shares_outstanding' AND fiscal_year=$2 AND fiscal_period='FY'`,
+			sec.ID, fy).Scan(&shares); err != nil {
+			t.Fatalf("shares_outstanding FY%d debería estar en fundamentals: %v", fy, err)
+		}
+		if shares == nil || *shares != wantVal {
+			t.Fatalf("shares_outstanding FY%d: got %v want %v", fy, *shares, wantVal)
+		}
+	}
+
 	// Los derivados se persisten con trazabilidad (raw_value = fórmula).
 	var rawValue *string
 	if err := pool.QueryRow(ctx,

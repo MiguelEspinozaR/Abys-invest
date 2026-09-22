@@ -1,0 +1,173 @@
+?   	github.com/miky/abys-invest/cmd/analytics	[no test files]
+=== RUN   TestHealthConnectedAfterMigrations
+--- PASS: TestHealthConnectedAfterMigrations (0.03s)
+=== RUN   TestHealthDegradedWithoutDB
+--- PASS: TestHealthDegradedWithoutDB (0.00s)
+=== RUN   TestHealthHandlerNeverPanics
+--- PASS: TestHealthHandlerNeverPanics (0.00s)
+PASS
+ok  	github.com/miky/abys-invest/cmd/api	0.038s
+=== RUN   TestWorkerDoesNotPanicOnProviderError
+--- PASS: TestWorkerDoesNotPanicOnProviderError (0.30s)
+PASS
+ok  	github.com/miky/abys-invest/cmd/collector	0.313s
+=== RUN   TestClientCompanyFactsFallbackAltPath
+--- PASS: TestClientCompanyFactsFallbackAltPath (0.00s)
+=== RUN   TestNewClientRequiresUserAgent
+--- PASS: TestNewClientRequiresUserAgent (0.00s)
+=== RUN   TestClientUserAgentAndPath
+--- PASS: TestClientUserAgentAndPath (0.00s)
+=== RUN   TestClientRetryOn429ThenSuccess
+--- PASS: TestClientRetryOn429ThenSuccess (0.02s)
+=== RUN   TestClientRetryOnServerError
+--- PASS: TestClientRetryOnServerError (0.01s)
+=== RUN   TestClientNoRetryOnClientError
+--- PASS: TestClientNoRetryOnClientError (0.00s)
+=== RUN   TestClientRetriesNetworkErrors
+--- PASS: TestClientRetriesNetworkErrors (0.01s)
+=== RUN   TestClientGetXBRLFiling
+--- PASS: TestClientGetXBRLFiling (0.00s)
+=== RUN   TestRateLimiterEnforcesRate
+--- PASS: TestRateLimiterEnforcesRate (0.40s)
+=== RUN   TestRateLimiterContextCancel
+--- PASS: TestRateLimiterContextCancel (1.02s)
+=== RUN   TestParseCompanyTickers
+--- PASS: TestParseCompanyTickers (0.00s)
+=== RUN   TestParseCompanyTickersInvalid
+--- PASS: TestParseCompanyTickersInvalid (0.00s)
+=== RUN   TestNormalizeCIK
+--- PASS: TestNormalizeCIK (0.00s)
+=== RUN   TestParseCompanyFactsAAPLFixture
+--- PASS: TestParseCompanyFactsAAPLFixture (0.04s)
+=== RUN   TestParseCompanyFactsInvalidJSON
+--- PASS: TestParseCompanyFactsInvalidJSON (0.00s)
+=== RUN   TestParseCompanyFactsEdgeCases
+--- PASS: TestParseCompanyFactsEdgeCases (0.00s)
+=== RUN   TestParseCompanyFactsSkipsEmptyPayload
+--- PASS: TestParseCompanyFactsSkipsEmptyPayload (0.00s)
+=== RUN   TestCanonicalConceptsDictionary
+--- PASS: TestCanonicalConceptsDictionary (0.00s)
+=== RUN   TestMapToCanonical
+--- PASS: TestMapToCanonical (0.00s)
+=== RUN   TestMapToCanonicalRejects
+--- PASS: TestMapToCanonicalRejects (0.00s)
+=== RUN   TestComputeDerived
+--- PASS: TestComputeDerived (0.00s)
+=== RUN   TestComputeDerivedSkipsIncompletePeriods
+--- PASS: TestComputeDerivedSkipsIncompletePeriods (0.00s)
+=== RUN   TestAAPLFixtureEndToEndExtraction
+--- PASS: TestAAPLFixtureEndToEndExtraction (0.04s)
+=== RUN   TestNormalizeStagingAAPL
+--- PASS: TestNormalizeStagingAAPL (0.64s)
+=== RUN   TestNormalizePendingAAPL
+--- PASS: TestNormalizePendingAAPL (0.37s)
+PASS
+ok  	github.com/miky/abys-invest/internal/collect/edgar	2.600s
+=== RUN   TestParseBLSResponse
+--- PASS: TestParseBLSResponse (0.00s)
+=== RUN   TestDatumDateConversion
+--- PASS: TestDatumDateConversion (0.00s)
+=== RUN   TestParseBLSRequestFailed
+--- PASS: TestParseBLSRequestFailed (0.00s)
+=== RUN   TestParseBLSInvalidJSON
+--- PASS: TestParseBLSInvalidJSON (0.00s)
+=== RUN   TestDatumDateEdgeCases
+--- PASS: TestDatumDateEdgeCases (0.00s)
+=== RUN   TestFetchSeries
+--- PASS: TestFetchSeries (1.00s)
+=== RUN   TestResolveSeries
+--- PASS: TestResolveSeries (0.00s)
+=== RUN   TestSupportedSeriesHasCPI
+--- PASS: TestSupportedSeriesHasCPI (0.00s)
+=== RUN   TestClientRequestFailed
+--- PASS: TestClientRequestFailed (1.00s)
+=== RUN   TestClientRetry
+--- PASS: TestClientRetry (3.00s)
+=== RUN   TestValidateYearRange
+--- PASS: TestValidateYearRange (0.00s)
+=== RUN   TestBLSToMacroSeries
+--- PASS: TestBLSToMacroSeries (1.02s)
+=== RUN   TestIdempotencyMacro
+--- PASS: TestIdempotencyMacro (2.03s)
+PASS
+ok  	github.com/miky/abys-invest/internal/collect/macro	8.098s
+=== RUN   TestParseChartResponse
+--- PASS: TestParseChartResponse (0.01s)
+=== RUN   TestParseChartResponseEmptyResult
+--- PASS: TestParseChartResponseEmptyResult (0.00s)
+=== RUN   TestParseChartResponseAPIError
+--- PASS: TestParseChartResponseAPIError (0.00s)
+=== RUN   TestParseChartResponseInvalidJSON
+--- PASS: TestParseChartResponseInvalidJSON (0.00s)
+=== RUN   TestParseChartResponseNoQuote
+--- PASS: TestParseChartResponseNoQuote (0.00s)
+=== RUN   TestGetHistorical
+--- PASS: TestGetHistorical (0.03s)
+=== RUN   TestGetQuote
+--- PASS: TestGetQuote (0.01s)
+=== RUN   TestClientRetry
+--- PASS: TestClientRetry (0.01s)
+=== RUN   TestClientRetryExhausted
+--- PASS: TestClientRetryExhausted (0.01s)
+=== RUN   TestClientNotFoundNoRetry
+--- PASS: TestClientNotFoundNoRetry (0.00s)
+=== RUN   TestClientRateLimit
+--- PASS: TestClientRateLimit (2.40s)
+=== RUN   TestNormalizeTicker
+--- PASS: TestNormalizeTicker (0.00s)
+=== RUN   TestYahooPricesE2E
+--- PASS: TestYahooPricesE2E (0.28s)
+=== RUN   TestIdempotencyPrices
+--- PASS: TestIdempotencyPrices (0.38s)
+PASS
+ok  	github.com/miky/abys-invest/internal/collect/yahoo	3.171s
+=== RUN   TestCalcEPS
+--- PASS: TestCalcEPS (0.00s)
+=== RUN   TestCalcPE
+--- PASS: TestCalcPE (0.00s)
+=== RUN   TestCalcPB
+--- PASS: TestCalcPB (0.00s)
+=== RUN   TestCalcPCF
+--- PASS: TestCalcPCF (0.00s)
+=== RUN   TestCalcPEG
+--- PASS: TestCalcPEG (0.00s)
+=== RUN   TestCalcROE
+--- PASS: TestCalcROE (0.00s)
+=== RUN   TestCalcDE
+--- PASS: TestCalcDE (0.00s)
+=== RUN   TestCalcFCFYield
+--- PASS: TestCalcFCFYield (0.00s)
+=== RUN   TestCalculateMetrics
+--- PASS: TestCalculateMetrics (0.00s)
+=== RUN   TestCalculateMetricsMissingInputs
+--- PASS: TestCalculateMetricsMissingInputs (0.00s)
+=== RUN   TestDeterminism
+--- PASS: TestDeterminism (0.02s)
+=== RUN   TestGrowthRateDefault
+--- PASS: TestGrowthRateDefault (0.00s)
+=== RUN   TestBuildDerivedMetrics
+--- PASS: TestBuildDerivedMetrics (0.00s)
+=== RUN   TestMetricsE2E
+--- PASS: TestMetricsE2E (0.03s)
+=== RUN   TestMetricsDeterminism
+--- PASS: TestMetricsDeterminism (0.01s)
+=== RUN   TestMissingInputs
+--- PASS: TestMissingInputs (0.01s)
+PASS
+ok  	github.com/miky/abys-invest/internal/metrics	0.092s
+=== RUN   TestRunMigrationsIdempotent
+--- PASS: TestRunMigrationsIdempotent (0.03s)
+=== RUN   TestUpsertSecurityIdempotent
+--- PASS: TestUpsertSecurityIdempotent (0.03s)
+=== RUN   TestInsertStagingAndMarkNormalized
+--- PASS: TestInsertStagingAndMarkNormalized (0.02s)
+=== RUN   TestUpsertFundamentalsIdempotentBatch
+--- PASS: TestUpsertFundamentalsIdempotentBatch (0.03s)
+=== RUN   TestUpsertDailyPricesIdempotent
+--- PASS: TestUpsertDailyPricesIdempotent (0.02s)
+=== RUN   TestUpsertMacroSeriesIdempotent
+--- PASS: TestUpsertMacroSeriesIdempotent (0.02s)
+=== RUN   TestUpsertDerivedMetricsIdempotentAndNulls
+--- PASS: TestUpsertDerivedMetricsIdempotentAndNulls (0.02s)
+PASS
+ok  	github.com/miky/abys-invest/internal/storage	0.228s
