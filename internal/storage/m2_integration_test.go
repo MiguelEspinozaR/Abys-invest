@@ -192,3 +192,78 @@ func TestUpsertDerivedMetricsIdempotentAndNulls(t *testing.T) {
 		t.Fatalf("se esperaban 2 métricas latest, hay %d", len(latest))
 	}
 }
+
+func TestGetLatestMetricsScopedToSecurity(t *testing.T) {
+	pool := requirePool(t)
+	requireMigrations(t, pool)
+	truncateDataTables(t, pool)
+	ctx := context.Background()
+
+	secA, err := UpsertSecurity(ctx, pool, &Security{Ticker: "TESTA", CIK: "0000000101", Name: "Test A", Type: "stock", Currency: "USD", Status: "active"})
+	if err != nil {
+		t.Fatalf("UpsertSecurity A: %v", err)
+	}
+	secB, err := UpsertSecurity(ctx, pool, &Security{Ticker: "TESTB", CIK: "0000000102", Name: "Test B", Type: "stock", Currency: "USD", Status: "active"})
+	if err != nil {
+		t.Fatalf("UpsertSecurity B: %v", err)
+	}
+
+	asOf := time.Date(2026, 9, 22, 0, 0, 0, 0, time.UTC)
+	// Métricas diferentes para el mismo as_of
+	metrics := []DerivedMetric{
+		{SecurityID: secA.ID, AsOf: asOf, Metric: "pe_ratio", Value: ptr(10.0), InputsSnapshot: []byte(`{"test":true}`), ModelVersion: "1.0.0"},
+		{SecurityID: secA.ID, AsOf: asOf, Metric: "roe", Value: ptr(0.2), InputsSnapshot: []byte(`{"test":true}`), ModelVersion: "1.0.0"},
+		{SecurityID: secB.ID, AsOf: asOf, Metric: "pe_ratio", Value: ptr(99.0), InputsSnapshot: []byte(`{"test":true}`), ModelVersion: "1.0.0"},
+		{SecurityID: secB.ID, AsOf: asOf, Metric: "roe", Value: ptr(0.9), InputsSnapshot: []byte(`{"test":true}`), ModelVersion: "1.0.0"},
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if err := UpsertDerivedMetrics(ctx, tx, metrics); err != nil {
+		t.Fatalf("UpsertDerivedMetrics: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	aMetrics, err := GetLatestMetrics(ctx, pool, secA.ID)
+	if err != nil {
+		t.Fatalf("GetLatestMetrics A: %v", err)
+	}
+	if len(aMetrics) != 2 {
+		t.Fatalf("se esperaban 2 métricas para A, hay %d", len(aMetrics))
+	}
+	for i := range aMetrics {
+		if aMetrics[i].SecurityID != secA.ID {
+			t.Fatalf("métrica de otro security en A: %d", aMetrics[i].SecurityID)
+		}
+	}
+	if aMetrics[0].Metric != "pe_ratio" || aMetrics[0].Value == nil || *aMetrics[0].Value != 10.0 {
+		t.Fatalf("pe_ratio A incorrecto: %+v", aMetrics[0])
+	}
+	if aMetrics[1].Metric != "roe" || aMetrics[1].Value == nil || *aMetrics[1].Value != 0.2 {
+		t.Fatalf("roe A incorrecto: %+v", aMetrics[1])
+	}
+
+	bMetrics, err := GetLatestMetrics(ctx, pool, secB.ID)
+	if err != nil {
+		t.Fatalf("GetLatestMetrics B: %v", err)
+	}
+	if len(bMetrics) != 2 {
+		t.Fatalf("se esperaban 2 métricas para B, hay %d", len(bMetrics))
+	}
+	for i := range bMetrics {
+		if bMetrics[i].SecurityID != secB.ID {
+			t.Fatalf("métrica de otro security en B: %d", bMetrics[i].SecurityID)
+		}
+	}
+	if bMetrics[0].Metric != "pe_ratio" || bMetrics[0].Value == nil || *bMetrics[0].Value != 99.0 {
+		t.Fatalf("pe_ratio B incorrecto: %+v", bMetrics[0])
+	}
+	if bMetrics[1].Metric != "roe" || bMetrics[1].Value == nil || *bMetrics[1].Value != 0.9 {
+		t.Fatalf("roe B incorrecto: %+v", bMetrics[1])
+	}
+}

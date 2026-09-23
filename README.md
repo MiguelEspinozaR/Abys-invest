@@ -2,7 +2,7 @@
 
 **Value investing analysis engine** — SEC EDGAR fundamentals → score 0-100 with buy/hold/sell signal, Graham/DCF intrinsic value, comparables & SMA backtest.
 
-> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed.** M4 pending.
+> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). M4 pending.
 
 ---
 
@@ -16,7 +16,7 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 |-----------|--------|-------------|
 | M1 — Foundation | ✅ Done | Repo, DB schema + migrations, collector (SEC EDGAR), API health check |
 | M2 — Prices & Metrics | ✅ Done | Yahoo Finance v8 chart adapter, BLS CPI macro, engine de métricas (EPS, P/E, P/B, P/FCF, PEG, ROE, D/E, FCF Yield) |
-| M3 — Valuation & Score | ✅ Done | Graham `(2×g)+8.5` × EPS último FY, DCF simplificado (WACC 10%, 5a, g_term 2.5%), margin of safety, score 0-100 (pesos 35/30/20/15, umbrales ≥70/40-69/<40), comparables sectoriales, backtest SMA 50/200, API REST completa (11 endpoints) |
+| M3 — Valuation & Score | ✅ Done | Graham `(2×g)+8.5` × EPS último FY, DCF simplificado (WACC 10%, 5a, g_term 2.5%), margin of safety, score 0-100 (pesos 35/30/20/15, umbrales ≥70/40-69/<40), comparables sectoriales, backtest SMA 50/200, API REST completa (11 endpoints). Calibración 2026-09-23 con pares sectoriales reales; hotfix M3 (aislamiento security_id + guardado de métricas NULL). |
 | M4 — UI & Alerts | ⏳ Pending | React dashboard, alert engine, systemd deployment |
 
 ---
@@ -108,6 +108,38 @@ Flujo de datos:
 | `Makefile` | — | Build, test, migrate, run targets (precios, macro, analytics, scores, sector, API) |
 
 **Módulos futuros (no implementados):** `web/` (React + Vite dashboard), `cmd/alerts/`, `internal/alerts/` (alertas íntegramente en M4).
+
+### Metodología del score y calibración (2026-09-23)
+
+**1. Naturaleza del modelo**
+
+El score es un modelo de valor (no momentum). La dimensión de valoración es binaria (0 o 100): se calcula el valor intrínseco mediante la fórmula de Graham `(2×g)+8.5` × EPS del último FY y un DCF simplificado (WACC 10%, horizonte 5 años, g_terminal 2.5%), y se compara con el precio de mercado aplicando un margen de seguridad del 30%. Si el upside es ≥ margen, la dimensión valoración vale 100; en caso contrario, 0. Los parámetros por defecto son conservadores por diseño: `g=7` (`GROWTH_RATE_DEFAULT`), WACC=10, g_terminal=2.5. Todos los parámetros son ajustables mediante variables de entorno documentadas en la sección [Configuration](#configuration).
+
+**2. Contraste con analistas (AAPL, Sept 2026)**
+
+A fecha de septiembre de 2026, AAPL cotiza a $339.75. El consenso de analistas (S&P Global Market Intelligence / WSJ, 44 analistas) apunta a un objetivo medio de $322-327 (por debajo del precio actual), con mediana de $335 y rango de $215-250 (low) a $400 (high). Los analistas utilizan EPS forward ~$8.80 y un descuento implícito del ~6-7%. En contraste, el modelo de Abys-Invest usa EPS del último FY (no forward) y parámetros conservadores, lo que genera intrínsecos de $106-246 en todas las permutaciones razonables (g=7-12%, WACC=8.5-10%, g_term=2.5-3%), con un upside de −47% a −64%. El modelo marca "vender" porque el precio está muy por encima del valor intrínseco basado en fundamentales FY; esto refleja la postura conservadora por diseño del modelo, no una opinión de momentum de mercado.
+
+**3. Resultados con pares sectoriales reales (Technology)**
+
+Scores corregidos post-calibración con 10 pares sectoriales reales:
+
+| Ticker | Score | Señal |
+|--------|-------|-------|
+| ADBE | 74 | COMPRAR |
+| INTC | 50 | MANTENER |
+| CRM | 40 | MANTENER |
+| AAPL | 28 | VENDER |
+| ORCL | 28 | VENDER |
+| MSFT | 37 | VENDER |
+| QCOM | 26 | VENDER |
+| AMD | 20 | VENDER (parcial) |
+
+**4. Nota de entrega (hotfix M3, 2026-09-23)**
+
+- **Fix 1 — Aislamiento de métricas por company**: `GetLatestMetrics` incorpora filtro `security_id` en el WHERE clause, evitando fuga de datos entre empresas (cross-company metric leakage).
+- **Fix 2 — Guardado de métricas NULL**: `scoreFundamentals` ahora verifica `ok && v != nil` en 6 métricas (pe_ratio, pb_ratio, fcf_yield, roe, de_ratio, peg_ratio), evitando SIGSEGV/DoS ante métricas NULL y degradando la dimensión a neutral (score 50).
+- **Suite final**: 154/154 tests verdes (15 paquetes, ejecución serial `-p 1`).
+- **Evidencia**: `test-results/tests/abys-m3-hotfix-getlatestmetrics.json` y `test-results/security/abys-m3-hotfix-getlatestmetrics.json`.
 
 ---
 
@@ -318,7 +350,7 @@ make integration   # Integration tests with -tags=integration (serial -p 1)
 make lint          # go vet ./...
 ```
 
-All M1+M2 tests pass: **82/82** (7 paquetes). Evidence in `test-results/tests/abys-m2-prices-metrics.json`.
+Suite M1-M3 (con fixes de aislamiento): **154/154** tests verdes — evidencia en `test-results/tests/abys-m3-hotfix-getlatestmetrics.json` (y `test-results/tests/abys-m2-prices-metrics.json` para M2).
 
 ---
 

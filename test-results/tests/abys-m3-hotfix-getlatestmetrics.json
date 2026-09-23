@@ -1,0 +1,32 @@
+{
+  "milestone": "M3",
+  "artifact": "abys-m3-hotfix-getlatestmetrics",
+  "generated_at": "2026-09-23",
+  "environment": {
+    "go": "1.26.0",
+    "pg": "18 local 55432",
+    "timescaledb": "ausente (fallback)",
+    "router": "net/http stdlib Go 1.22+"
+  },
+  "commands": {
+    "go_test_integration_serial": "go test -p 1 ./... -count=1 -tags=integration -v",
+    "go_test_regression": "go test ./internal/storage -count=1 -tags=integration -run TestGetLatestMetricsScopedToSecurity -v"
+  },
+  "test_summary": {
+    "integration": {
+      "passed": 154,
+      "failed": 0,
+      "skipped": 0,
+      "packages": 15
+    }
+  },
+  "notes": [
+    "TestGetLatestMetricsScopedToSecurity regression test verified (security_id isolation fix in GetLatestMetrics)",
+    "TestScoreFundamentalsNilMetrics passed (nil-guard fix in scoreFundamentals — 6 metrics now check ok && v != nil)",
+    "All 154 integration tests passed across 15 packages with -p 1 serial execution",
+    "No failures or skips observed in test suite run",
+    "Fix 1: GetLatestMetrics now filters security_id in WHERE clause, preventing cross-company metric leakage",
+    "Fix 2: scoreFundamentals now saves ok && v != nil in 6 metrics (pe_ratio, pb_ratio, fcf_yield, roe, de_ratio, peg_ratio), preventing SIGSEGV/DoS from NULL metrics"
+  ],
+  "logs_paths": []
+}

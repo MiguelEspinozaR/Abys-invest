@@ -1,0 +1,51 @@
+{
+  "milestone": "M3",
+  "generate_at": "2026-09-23T01:15:00Z",
+  "scope": [
+    "exposed secrets",
+    "SAST findings",
+    "dependency vulnerabilities",
+    "insecure configuration",
+    "supply-chain issues"
+  ],
+  "findings": [
+    {
+      "fix": "1",
+      "file": "internal/storage/derived_metrics.go",
+      "issue": "GetLatestMetrics adds AND security_id = $1 to WHERE clause",
+      "severity": "medium",
+      "description": "Enforces security isolation between companies by scoping metrics to the provided security_id via parametrized query. Prevents cross-company data leakage.",
+      "evidence": "WHERE as_of = (SELECT max(as_of) FROM derived_metrics WHERE security_id = $1) → AND security_id = $1 AND as_of = (SELECT max(as_of) FROM derived_metrics WHERE security_id = $1)",
+      "recommended_action": "Verify all callers pass the correct securityID; confirm no other query paths bypass this filter."
+    },
+    {
+      "fix": "2",
+      "file": "internal/storage/m2_integration_test.go",
+      "issue": "TestGetLatestMetricsScopedToSecurity regression test",
+      "severity": "info",
+      "description": "Validates that GetLatestMetrics correctly scopes metrics to a single security_id. Confirms the data isolation fix (Fix 1) works as intended with cross-company metric sets.",
+      "evidence": "Test creates securities A and B with separate pe_ratio/roe metrics, calls GetLatestMetrics for each, asserts per-security results.",
+      "recommended_action": "Run as part of CI to prevent regression of data isolation."
+    },
+    {
+      "fix": "3",
+      "file": "internal/score/dimensions.go",
+      "issue": "Nil-pointer dereference guard in scoreFundamentals",
+      "severity": "high",
+      "description": "Six guards in scoreFundamentals changed from '; ok {' to '; ok && v != nil {' to prevent SIGSEGV/DoS when a metric key exists with a nil value (legitimate NULL metrics). Without this fix, a nil pointer dereference panics the scoring function, enabling local DoS.",
+      "evidence": "All 6 ratio guards (pe_ratio, pb_ratio, fcf_yield, roe, de_ratio, peg_ratio) updated identically.",
+      "recommended_action": "Deploy; monitor for any nil-ratio edge cases in production scoring."
+    },
+    {
+      "fix": "4",
+      "file": "internal/score/dimensions_test.go",
+      "issue": "TestScoreFundamentalsNilMetrics unit test",
+      "severity": "info",
+      "description": "Verifies that nil metrics are treated as skip (not dereferenced) and that all-nil inputs produce a neutral score of 50. Confirms the nil-guard fix (Fix 3) behaves correctly.",
+      "evidence": "Two sub-tests: (a) pe_ratio=20.0 with nil fcf_yield/roe/de_ratio → score 75; (b) all six nil → score 50.",
+      "recommended_action": "Run as part of CI; no code changes needed."
+    }
+  ],
+  "hard_blocks": [],
+  "summary": "0 hard blocks. Two security improvements: (1) parametrized query enforces security_id scoping in GetLatestMetrics, preventing cross-company data leakage (medium); (2) nil-pointer guards in scoreFundamentals prevent local SIGSEGV/DoS from NULL metrics (high). No exposed secrets, no secret patterns found in any of the 4 modified files."
+}

@@ -71,27 +71,27 @@ func percentileToBand(value, b1, b2, b3, b4 float64, s100, s75, s50, s25, s10 fl
 func scoreFundamentals(metrics map[string]*float64) float64 {
 	scores := []float64{}
 	// P/E: <15→100, 15-20→75, 20-30→50, 30-40→25, >40→10
-	if v, ok := metrics["pe_ratio"]; ok {
+	if v, ok := metrics["pe_ratio"]; ok && v != nil {
 		scores = append(scores, percentileToBand(*v, 15, 20, 30, 40, 100, 75, 50, 25, 10))
 	}
 	// P/B: <1→100, 1-2→75, 2-5→50, 5-10→25, >10→10
-	if v, ok := metrics["pb_ratio"]; ok {
+	if v, ok := metrics["pb_ratio"]; ok && v != nil {
 		scores = append(scores, percentileToBand(*v, 1, 2, 5, 10, 100, 75, 50, 25, 10))
 	}
 	// FCF Yield (%): >8→100, 5-8→75, 3-5→50, 1-3→25, <1→10
-	if v, ok := metrics["fcf_yield"]; ok {
+	if v, ok := metrics["fcf_yield"]; ok && v != nil {
 		scores = append(scores, percentileToBand(*v, 1, 3, 5, 8, 10, 25, 50, 75, 100))
 	}
 	// ROE (fracción; ×100 → %): >20→100, 15-20→75, 10-15→50, 5-10→25, <5→10
-	if v, ok := metrics["roe"]; ok {
+	if v, ok := metrics["roe"]; ok && v != nil {
 		scores = append(scores, percentileToBand(*v*100, 5, 10, 15, 20, 10, 25, 50, 75, 100))
 	}
 	// D/E: <0.5→100, 0.5-1→75, 1-1.5→50, 1.5-2→25, >2→10
-	if v, ok := metrics["de_ratio"]; ok {
+	if v, ok := metrics["de_ratio"]; ok && v != nil {
 		scores = append(scores, percentileToBand(*v, 0.5, 1, 1.5, 2, 100, 75, 50, 25, 10))
 	}
 	// PEG: <1→100, 1-1.5→75, 1.5-2→50, 2-3→25, >3→10
-	if v, ok := metrics["peg_ratio"]; ok {
+	if v, ok := metrics["peg_ratio"]; ok && v != nil {
 		scores = append(scores, percentileToBand(*v, 1, 1.5, 2, 3, 100, 75, 50, 25, 10))
 	}
 

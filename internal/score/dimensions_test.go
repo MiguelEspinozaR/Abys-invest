@@ -48,6 +48,32 @@ func TestFCFYieldBands(t *testing.T) {
 	}
 }
 
+// TestScoreFundamentalsNilMetrics — los NULL de derived_metrics son valores
+// legítimos (véase TestUpsertDerivedMetricsIdempotentAndNulls): una clave
+// presente con valor nil debe tratarse como métrica ausente (skip), nunca
+// dereferenciarse (fix de nil pointer dereference).
+func TestScoreFundamentalsNilMetrics(t *testing.T) {
+	// Mezcla: pe_ratio no-nil (15-20 → 75); fcf_yield/roe/de_ratio nil → skip.
+	got := scoreFundamentals(map[string]*float64{
+		"pe_ratio":  fp(20.0),
+		"fcf_yield": nil,
+		"roe":       nil,
+		"de_ratio":  nil,
+	})
+	if got != 75 {
+		t.Fatalf("solo pe_ratio=20 usable: esperado 75, got %v", got)
+	}
+
+	// Todas las claves presentes pero todas nil → sin métrica usable → neutral 50.
+	got = scoreFundamentals(map[string]*float64{
+		"pe_ratio": nil, "pb_ratio": nil, "fcf_yield": nil,
+		"roe": nil, "de_ratio": nil, "peg_ratio": nil,
+	})
+	if got != 50 {
+		t.Fatalf("todas las métricas nil: esperado neutral 50, got %v", got)
+	}
+}
+
 func TestJustificationContainsKeyParts(t *testing.T) {
 	input := ScoreInput{
 		Ticker: "AAPL", Price: 230, GrahamIntrinsic: fp(144.45),

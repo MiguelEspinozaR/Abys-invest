@@ -76,7 +76,7 @@ func GetDerivedMetricsBySecurity(ctx context.Context, q DBTX, securityID int64, 
 // security (empty slice when the security has no metrics).
 func GetLatestMetrics(ctx context.Context, q DBTX, securityID int64) ([]DerivedMetric, error) {
 	rows, err := q.Query(ctx, `SELECT `+derivedMetricColumns+` FROM derived_metrics
-		WHERE as_of = (SELECT max(as_of) FROM derived_metrics WHERE security_id = $1)
+		WHERE security_id = $1 AND as_of = (SELECT max(as_of) FROM derived_metrics WHERE security_id = $1)
 		ORDER BY metric ASC`, securityID)
 	if err != nil {
 		return nil, fmt.Errorf("storage: get latest metrics for security %d: %w", securityID, err)
