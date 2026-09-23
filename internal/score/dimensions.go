@@ -8,8 +8,9 @@ import "math"
 //   - linear decay to 0 as price approaches intrinsic
 //   - price >= intrinsic → 0
 //
-// When both Graham and DCF are available the dimension is the weighted
-// average (60% Graham, 40% DCF); with one, that one; with none, 50 (neutral,
+// When both Graham and DCF are available the dimension scores the price
+// against their AVERAGE (decision 2026-09-23: average consensus, previously
+// a 60% Graham / 40% DCF blend); with one, that one; with none, 50 (neutral,
 // sin datos).
 func scoreValuation(price float64, graham, dcf *float64, marginOfSafety float64) float64 {
 	single := func(intrinsic *float64) *float64 {
@@ -35,7 +36,13 @@ func scoreValuation(price float64, graham, dcf *float64, marginOfSafety float64)
 	d := single(dcf)
 	switch {
 	case g != nil && d != nil:
-		return 0.6**g + 0.4**d
+		// Ambos intrínsecos válidos: promediar los VALORES y puntuar el
+		// precio contra ese promedio (decisión 2026-09-23).
+		avg := (*graham + *dcf) / 2
+		if v := single(&avg); v != nil {
+			return *v
+		}
+		return 50
 	case g != nil:
 		return *g
 	case d != nil:

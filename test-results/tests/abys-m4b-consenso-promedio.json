@@ -1,0 +1,90 @@
+{
+  "milestone": "M4b",
+  "artifact": "abys-m4b-consenso-promedio",
+  "generated_at": "2026-09-23T15:25:00Z",
+  "environment": {
+    "go": "1.26.0",
+    "pg": "local 55432 (postgres://abys:***@localhost:55432/abys)",
+    "timescaledb": "ausente (fallback tablas normales)",
+    "router": "net/http stdlib Go 1.22+",
+    "node": "v22.22.1",
+    "npm": "9.2.0",
+    "frontend": "React 18.3.1 + Vite 5.4.21 + Tailwind 3.4.19"
+  },
+  "commands": {
+    "go_test_serial": "PASS (144 top-level + 34 subtests = 178 / 0 fail / 0 skip) -p 1 -count=1 -tags=integration con DATABASE_URL explicito",
+    "build_web": "OK (dist generado, 5.16s)",
+    "smoke_api_18081": "OK (ver e2e_results)",
+    "repoblation": "11 tickers con model_version 1.1.0 (ver scores_tabla)"
+  },
+  "test_summary": {
+    "total_passed": 178,
+    "total_failed": 0,
+    "total_skipped": 0,
+    "top_level_passed": 144,
+    "subtests_passed": 34,
+    "suites_previas": "M3-hotfix 154/0/0; M4 178/0/0 (sin cambio de conteo: M4b solo recalcula formulas, renombra TestValuationAverageBoth)",
+    "tests_clave": {
+      "TestConsensusBoth": "PASS (consensus = (graham+dcf)/2, ModelVersion 1.1.0)",
+      "TestValuationAverageBoth": "PASS (85.71 / 28.57 / 0 / 100 con rangos float)",
+      "TestValuationDimensionPlan": "PASS (precio>=promedio -> 0)",
+      "TestAAPLGoldenscore": "PASS (score 36 = anterior; model_version 1.1.0 recalculado)",
+      "TestGetLatestMetricsScopedToSecurity": "PASS (regresion hotfix)",
+      "TestM3Endpoints": "PASS (12 endpoints)",
+      "TestScoreFundamentalsNilMetrics": "PASS (regresion nil-guard)"
+    }
+  },
+  "ca_verification": {
+    "ca1_consensus_promedio": "PASS — smoke /valuation/AAPL: graham=170.558, dcf=106.093, consensus=138.325 = (170.558+106.093)/2 exacto; model_version 1.1.0",
+    "ca2_score_contra_promedio": "PASS — score=28 vender (valoracion 0: precio 336.34 >= promedio 138.33); model_version 1.1.0 en /score",
+    "ca3_senal_textual_ui": "PASS (estatico): ScoreBadge renderiza SIGNAL_WORDS[tone]; Dashboard mantiene columna Score numerica; build TS OK",
+    "ca4_dashboard_graham_dcf": "PASS (estatico): columnas Graham y DCF del /valuation por fila",
+    "ca5_suite_verde": "PASS — 178/0/0 + build web + smoke API real"
+  },
+  "e2e_results": {
+    "valuation_AAPL": {
+      "price": 336.34,
+      "graham": 170.55798545148454,
+      "dcf": 106.09293067496715,
+      "consensus": 138.32545806322585,
+      "consensus_es_promedio": true,
+      "model_version": "1.1.0"
+    },
+    "score_AAPL": {
+      "score": 28,
+      "signal": "vender",
+      "model_version": "1.1.0",
+      "dimensions": {
+        "valuation": 0,
+        "fundamentals": 27.5,
+        "comparables": 37.5,
+        "trend": 83
+      }
+    }
+  },
+  "scores_tabla": {
+    "ADBE": {"score": 74, "signal": "comprar"},
+    "INTC": {"score": 50, "signal": "mantener"},
+    "CRM": {"score": 40, "signal": "mantener"},
+    "MSFT": {"score": 37, "signal": "vender"},
+    "CSCO": {"score": 34, "signal": "vender"},
+    "NVDA": {"score": 32, "signal": "vender"},
+    "IBM": {"score": 31, "signal": "vender"},
+    "ORCL": {"score": 29, "signal": "vender"},
+    "AAPL": {"score": 28, "signal": "vender"},
+    "QCOM": {"score": 26, "signal": "vender"},
+    "AMD": {"score": 20, "signal": "vender"},
+    "todos_model_version": "1.1.0"
+  },
+  "observations": [
+    "Todos los 11 scores persistidos con model_version 1.1.0 tras repoblacion post-suite",
+    "IBM 37 -> 31: el cambio a promedio (antes: menor + mezcla 60/40 de sub-scores) baja su valoracion (graham y dcf muy separados)",
+    "MSFT 37 y AAPL 28 sin cambio de señal; ADBE sigue comprar 74, INTC/CRM mantener",
+    "El deploy del usuario en /opt/abys-invest/bin/api y el proceso en :8080 pertenecen a su agente externo — NO tocados; smoke propio en :18081 cerrado tras el test",
+    "npm audit dev-only (vite/react-router) sin cambios en M4b; reporte de seguridad M4b: 0 hard blocks"
+  ],
+  "evidence_paths": [
+    "test-results/tests/abys-m4b-consenso-promedio.json (este archivo)",
+    "test-results/security/abys-m4b-consenso-promedio.json (0 hard blocks)"
+  ]
+}

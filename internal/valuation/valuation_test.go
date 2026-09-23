@@ -13,14 +13,13 @@ func TestConsensusBoth(t *testing.T) {
 	if v.Graham == nil || v.DCF == nil || v.Consensus == nil {
 		t.Fatalf("se esperaban ambos valores: %+v", v)
 	}
-	want := *v.Graham // 144.45 < 121.16? no: 121.16 < 144.45 -> consensus = DCF
-	if *v.DCF < *v.Graham {
-		want = *v.DCF
-	}
+	// Graham≈144.45, DCF≈121.16 → consensus = promedio ≈ 132.8 (decisión
+	// 2026-09-23: promedio de ambos, no el menor).
+	want := (*v.Graham + *v.DCF) / 2
 	if *v.Consensus != want {
-		t.Fatalf("consensus debe ser el menor de ambos (%v), got %v", want, *v.Consensus)
+		t.Fatalf("consensus debe ser el promedio de ambos (%v), got %v", want, *v.Consensus)
 	}
-	if v.ModelVersion != "1.0.0" {
+	if v.ModelVersion != "1.1.0" {
 		t.Fatalf("model_version inesperado: %v", v.ModelVersion)
 	}
 }

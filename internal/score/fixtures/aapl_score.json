@@ -21,6 +21,6 @@
   "expect": {
     "score": 36,
     "signal": "vender",
-    "model_version": "1.0.0"
+    "model_version": "1.1.0"
   }
 }

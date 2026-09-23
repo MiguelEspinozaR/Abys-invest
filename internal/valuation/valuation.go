@@ -1,7 +1,7 @@
 package valuation
 
 // ModelVersion identifies the valuation formula revision (persisted as-is).
-const ModelVersion = "1.0.0"
+const ModelVersion = "1.1.0"
 
 // IntrinsicInput is the computational input set of CalcIntrinsicValue.
 // Pointer fields are nil when the underlying datum was missing/not usable.
@@ -29,9 +29,10 @@ type IntrinsicInputs struct {
 }
 
 // IntrinsicValue is the result of CalcIntrinsicValue. Graham/DCF are nil when
-// their inputs were insufficient (conservative); Consensus is the lower of
-// the two when both are available (plan D4: use the most conservative), the
-// single available one, or nil when neither.
+// their inputs were insufficient (conservative); Consensus is the average of
+// the two when both are available (decision 2026-09-23: average consensus,
+// previously the most conservative), the single available one, or nil when
+// neither.
 type IntrinsicValue struct {
 	Graham       *float64        `json:"graham,omitempty"`
 	DCF          *float64        `json:"dcf,omitempty"`
@@ -41,7 +42,7 @@ type IntrinsicValue struct {
 }
 
 // CalcIntrinsicValue computes both Graham and DCF from the inputs and derives
-// the conservative consensus. Deterministic: same input -> same output.
+// the average consensus. Deterministic: same input -> same output.
 func CalcIntrinsicValue(input IntrinsicInput) IntrinsicValue {
 	graham := CalcGrahamIntrinsic(input.GrowthRate, input.EPS)
 	dcf := CalcDCFIntrinsic(input.FreeCashFlow, input.GrowthRate, input.DCFDiscountRate,
@@ -50,11 +51,8 @@ func CalcIntrinsicValue(input IntrinsicInput) IntrinsicValue {
 	var consensus *float64
 	switch {
 	case graham != nil && dcf != nil:
-		if *graham <= *dcf {
-			consensus = graham
-		} else {
-			consensus = dcf
-		}
+		avg := (*graham + *dcf) / 2
+		consensus = &avg
 	case graham != nil:
 		consensus = graham
 	case dcf != nil:

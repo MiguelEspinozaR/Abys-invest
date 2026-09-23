@@ -174,8 +174,7 @@ const renderScore = (data: ScoreResponse) => (
     <div className="flex flex-wrap items-center gap-3">
       <ScoreBadge score={data.score} signal={data.signal} size="lg" />
       <p className="text-sm text-slate-500 dark:text-slate-400">
-        <span className="capitalize">{data.signal}</span> · {fmtNumber(data.score)}/100 ·{' '}
-        {fmtDate(data.as_of)}
+        <span>{fmtNumber(data.score)}/100</span> · {fmtDate(data.as_of)}
       </p>
     </div>
     <p className="mt-3 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
@@ -221,7 +220,7 @@ const renderValuation = (score: FetchState<ScoreResponse>) => (data: ValuationRe
       : []),
     ...(data.value.dcf != null ? [{ label: 'DCF', value: fmtNumber(data.value.dcf) }] : []),
     {
-      label: 'Consenso',
+      label: 'Promedio (Graham/DCF)',
       value: data.value.consensus != null ? fmtNumber(data.value.consensus) : '—',
     },
     { label: 'Upside', value: data.upside_pct != null ? fmtPct(data.upside_pct) : '—' },

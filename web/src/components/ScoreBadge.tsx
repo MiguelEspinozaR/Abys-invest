@@ -21,7 +21,8 @@ const TONES: Record<BadgeTone, string> = {
 };
 
 interface ScoreBadgeProps {
-  /** score 0-100; null/undefined → "s/d" */
+  /** score 0-100; se conserva por compatibilidad (ya no se renderiza: el
+   *  número se muestra en su columna, p. ej. "74/100") */
   score?: number | null;
   /** señal del API (es-ES); ausente/desconocida → gris "s/d" */
   signal?: string | null;
@@ -29,19 +30,20 @@ interface ScoreBadgeProps {
 }
 
 /**
- * Badge de score coloreado por señal: comprar=verde, mantener=ámbar,
- * vender=rojo; señal ausente → gris con "s/d". El score se muestra como
- * entero redondeado (0-100).
+ * Badge de señal coloreado por tone: comprar=verde, mantener=ámbar,
+ * vender=rojo; señal ausente/desconocida → gris con "s/d". Muestra la
+ * PALABRA de la señal (decisión 2026-09-23); el score numérico no se
+ * duplica dentro del badge.
  */
-export default function ScoreBadge({ score, signal, size = 'sm' }: ScoreBadgeProps) {
+export default function ScoreBadge({ signal, size = 'sm' }: ScoreBadgeProps) {
   const tone: BadgeTone = KNOWN_SIGNALS.includes(signal as Signal)
     ? (signal as Signal)
     : 'unknown';
   const dims = size === 'lg' ? 'px-3 py-1 text-base' : 'px-2.5 py-0.5 text-xs';
-  const text = score !== null && score !== undefined ? String(Math.round(score)) : 's/d';
+  const text = tone === 'unknown' ? 's/d' : SIGNAL_WORDS[tone];
   return (
     <span
-      className={`inline-flex items-center rounded-full font-semibold tabular-nums ${TONES[tone]} ${dims}`}
+      className={`inline-flex items-center rounded-full font-semibold ${TONES[tone]} ${dims}`}
       title={tone === 'unknown' ? 'Sin señal' : `Señal: ${SIGNAL_WORDS[tone]}`}
     >
       {text}

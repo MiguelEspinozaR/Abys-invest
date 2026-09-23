@@ -89,7 +89,7 @@ export interface IntrinsicInputs {
 export interface IntrinsicValue {
   graham?: number; // nil si inputs insuficientes (conservador)
   dcf?: number;
-  consensus?: number; // el menor de ambos, o el único disponible
+  consensus?: number; // promedio de Graham y DCF, o el único disponible
   inputs: IntrinsicInputs;
   model_version: string;
 }

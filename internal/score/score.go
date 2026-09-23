@@ -20,7 +20,7 @@ const (
 )
 
 // ModelVersion identifies the score formula revision (persisted in scores).
-const ModelVersion = "1.0.0"
+const ModelVersion = "1.1.0"
 
 // DefaultComparablesMinSecurities is COMPARABLES_MIN_SECURITIES (plan D6).
 const DefaultComparablesMinSecurities = 5

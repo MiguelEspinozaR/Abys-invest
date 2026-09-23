@@ -2,7 +2,7 @@
 
 **Value investing analysis engine** — SEC EDGAR fundamentals → score 0-100 with buy/hold/sell signal, Graham/DCF intrinsic value, comparables & SMA backtest.
 
-> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M5.
+> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M5. **M4b ✔ (consenso promedio + señal textual) completed**.
 
 ---
 
@@ -18,6 +18,7 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 | M2 — Prices & Metrics | ✅ Done | Yahoo Finance v8 chart adapter, BLS CPI macro, engine de métricas (EPS, P/E, P/B, P/FCF, PEG, ROE, D/E, FCF Yield) |
 | M3 — Valuation & Score | ✅ Done | Graham `(2×g)+8.5` × EPS último FY, DCF simplificado (WACC 10%, 5a, g_term 2.5%), margin of safety, score 0-100 (pesos 35/30/20/15, umbrales ≥70/40-69/<40), comparables sectoriales, backtest SMA 50/200, API REST completa (11 endpoints). Calibración 2026-09-23 con pares sectoriales reales; hotfix M3 (aislamiento security_id + guardado de métricas NULL). |
 | M4 — UI & Deploy | ✅ Done | Dashboard React + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback), deploy systemd. Alertas (CA M4-2) diferidas a M5 por decisión usuario 2026-09-23. |
+| M4b — Consenso promedio + señal textual | ✅ Done | Señal en UI como palabra `comprar\|mantener\|vender` (sin duplicar el score); columnas Graham y DCF por ticker; consenso = promedio `(graham+dcf)/2`; `model_version` 1.1.0. Decisión usuario 2026-09-23. |
 
 ---
 
@@ -136,7 +137,17 @@ Scores corregidos post-calibración con 10 pares sectoriales reales:
 | QCOM | 26 | VENDER |
 | AMD | 20 | VENDER (parcial) |
 
-**4. Nota de entrega (hotfix M3, 2026-09-23)**
+**4. Nota de entrega (M4b, 2026-09-23) — consenso promedio + señal textual**
+
+Cambio solicitado por el usuario sobre el dashboard y las páginas individuales de cada ticker:
+
+- **Señal textual en la UI**: el badge de señal muestra la palabra `comprar|mantener|vender` (ya no se repite el número del score dentro del badge; el score numérico se conserva en su columna/p. ej. "74/100").
+- **Valor intrínseco por ambas formas + consenso promedio**: el dashboard y la página de ticker muestran **Graham** y **DCF** por separado; el **consenso** ya no es el menor de ambos (conservador) sino el **promedio** `(graham+dcf)/2` (decisión del usuario 2026-09-23). La dimensión valoración del score puntúa el precio contra ese promedio (antes: mezcla 60/40 de sub-scores).
+- **`model_version` 1.0.0 → 1.1.0** en `internal/valuation` e `internal/score` (refleja el cambio de fórmula; el golden AAPL recalcula 36 → 36 sin cambio de señal en ese caso).
+- **Impacto práctico**: 4 de 11 tickers cambiaron de score por el nuevo promedio (p. ej. IBM 37 → 31); señales: ADBE comprar · INTC/CRM mantener · resto vender.
+- **Suite M4b**: 178/0/0 (igual que M4; mismo conteo, valores recalculados) — evidencia `test-results/tests/abys-m4b-consenso-promedio.json` y `test-results/security/abys-m4b-consenso-promedio.json`.
+
+**5. Nota de entrega (hotfix M3, 2026-09-23)**
 
 - **Fix 1 — Aislamiento de métricas por company**: `GetLatestMetrics` incorpora filtro `security_id` en el WHERE clause, evitando fuga de datos entre empresas (cross-company metric leakage).
 - **Fix 2 — Guardado de métricas NULL**: `scoreFundamentals` ahora verifica `ok && v != nil` en 6 métricas (pe_ratio, pb_ratio, fcf_yield, roe, de_ratio, peg_ratio), evitando SIGSEGV/DoS ante métricas NULL y degradando la dimensión a neutral (score 50).
@@ -317,11 +328,11 @@ curl http://localhost:8080/health
 
 # Valoración
 curl http://localhost:8080/valuation/AAPL
-# {"ticker":"AAPL","price":185.50,"value":{"graham":172.30,"dcf":195.10,"consensus":172.30,"inputs":{...},"model_version":"1.0.0"},"upside_pct":-7.1,...}
+# {"ticker":"AAPL","price":185.50,"value":{"graham":172.30,"dcf":195.10,"consensus":183.70,"inputs":{...},"model_version":"1.1.0"},"upside_pct":-1.0,...}
 
 # Score
 curl http://localhost:8080/score/AAPL
-# {"score":72,"signal":"COMPRAR","justification":"APPLE: score 72/100 — COMPRAR. Valoración: ...","dimensions":[{...}],"model_version":"1.0.0"}
+# {"score":72,"signal":"COMPRAR","justification":"APPLE: score 72/100 — COMPRAR. Valoración: ...","dimensions":[{...}],"model_version":"1.1.0"}
 
 # Comparables
 curl http://localhost:8080/compare/comparables?ticker=AAPL&limit=5
@@ -352,7 +363,7 @@ make integration   # Integration tests with -tags=integration (serial -p 1)
 make lint          # go vet ./...
 ```
 
-Suite M1-M4: **178 pass / 0 fail / 0 skip** (144 top-level + 34 subtests) — evidencia en `test-results/tests/abys-m4-dashboard.json` (y `test-results/tests/abys-m3-hotfix-getlatestmetrics.json` para M3).
+Suite M1-M4b: **178 pass / 0 fail / 0 skip** (144 top-level + 34 subtests) — evidencia en `test-results/tests/abys-m4-dashboard.json` y `test-results/tests/abys-m4b-consenso-promedio.json` (y `test-results/tests/abys-m3-hotfix-getlatestmetrics.json` para M3).
 
 ### 12. Run the dashboard (M4)
 
@@ -506,6 +517,8 @@ Idempotente por `(security_id, as_of, model_version)`. Índices en `(security_id
 - **M2 ✔** — Prices & Metrics: Yahoo v8 chart adapter, BLS CPI macro, engine de métricas §13 (EPS, P/E, P/B, P/FCF, PEG, ROE, D/E, FCF Yield). 82/82 tests.
 - **M3 ✔** — Valuation & Score: Graham `(2×g)+8.5` × EPS, DCF simplificado (WACC 10%, 5a, g_term 2.5%), margin of safety, score 0-100 (pesos 35/30/20/15, umbrales ≥70/40-69/<40), comparables sectoriales, backtest SMA 50/200, API REST completa (11 endpoints), migración 009.
 - **M4 ✔** — UI & Deploy: Dashboard React 18 + TS + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback, `STATIC_DIR`), deploy systemd (`abys-invest-api.service`). Alertas (CA M4-2) diferidas a M5 por decisión usuario 2026-09-23.
+- **M4b ✔** — Consenso promedio y señal textual (2026-09-23): badge de señal muestra la palabra `comprar|mantener|vender`; columnas Graham y DCF en dashboard/ticker; consenso = promedio `(graham+dcf)/2` usado para score y upside; `model_version` 1.1.0. 178/0/0.
+- **M5 🔲** — Alertas: `cmd/alerts/`, `internal/alerts/`, endpoint `/alerts` (prefijo reservado). CA M4-2 diferida por decisión usuario 2026-09-23.
 
 ---
 

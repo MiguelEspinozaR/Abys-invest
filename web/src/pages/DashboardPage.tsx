@@ -126,6 +126,8 @@ export default function DashboardPage() {
                   <th className="px-4 py-3">Ticker</th>
                   <th className="px-4 py-3">Nombre</th>
                   <th className="px-4 py-3 text-right">Precio</th>
+                  <th className="px-4 py-3 text-right">Graham</th>
+                  <th className="px-4 py-3 text-right">DCF</th>
                   <th className="px-4 py-3 text-right">Score</th>
                   <th className="px-4 py-3">Señal</th>
                   <th className="px-4 py-3 text-right">P/E</th>
@@ -151,6 +153,12 @@ export default function DashboardPage() {
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums">
                         {valuation?.price != null ? fmtNumber(valuation.price) : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {valuation?.value?.graham != null ? fmtNumber(valuation.value.graham) : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums">
+                        {valuation?.value?.dcf != null ? fmtNumber(valuation.value.dcf) : '—'}
                       </td>
                       <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
                         {fmtNumber(row.score.score)}

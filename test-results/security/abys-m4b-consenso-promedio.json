@@ -1,0 +1,36 @@
+{
+  "milestone": "M4b",
+  "generate_at": "2026-09-23T14:40:00Z",
+  "scope": [
+    "exposed secrets",
+    "formula/logic change",
+    "insecure configuration",
+    "frontend regression"
+  ],
+  "findings": [
+    {
+      "fix": "consensus-average",
+      "file": "internal/valuation/valuation.go",
+      "issue": "Consensus pasa de mínimo a promedio (graham+dcf)/2",
+      "severity": "info",
+      "description": "Cambio de fórmula autorizado por el usuario (2026-09-23): el consenso visible ya no es el menor conservador sino el promedio. Afecta a /valuation (consensus, upside_pct) y a la dimensión de valoración del score (internal/score/dimensions.go promedia los valores y puntúa contra el promedio). No introduce superficie de ataque: mismos inputs deterministas, sin cambios de red, sin entrada de clientes nueva.",
+      "evidence": "diff de 289 líneas: internal/valuation/valuation.go, internal/score/dimensions.go, tests, frontend (ScoreBadge/Dashboard/TickerDetail/types).",
+      "recommended_action": "Ninguna. Documentar la nueva semántica en README (sección calibración) en el cierre."
+    },
+    {
+      "fix": "frontend-signal-word",
+      "file": "web/src/components/ScoreBadge.tsx",
+      "issue": "El badge de señal muestra la palabra comprar|mantener|vender en vez del número",
+      "severity": "info",
+      "description": "Cambio de presentación solicitado (el número del score ya no se duplica dentro del badge). La interfaz ScoreBadgeProps conserva `score?` por compatibilidad; los llamadores (Dashboard, TickerDetail, histórico) no cambian sus props. Sin impacto de seguridad.",
+      "evidence": "diff ScoreBadge.tsx: text = SIGNAL_WORDS[tone]; tone unknown → 's/d' gris.",
+      "recommended_action": "Ninguna."
+    }
+  ],
+  "tools": {
+    "gitleaks": "tool_missing",
+    "regex_fallback": "advisory — sin matches de patrones de secretos en el diff M4b (289 líneas)."
+  },
+  "hard_blocks": [],
+  "summary": "0 hard blocks. M4b es un cambio de fórmula (consenso promedio, decisión explícita del usuario) y de presentación (señal textual en la UI); no introduce superficie de seguridad nueva: sin secretos, sin cambios de red/configuración, determinismo intacto (mismos inputs → mismos outputs, golden recalculado 36/vender con model_version 1.1.0). Reporte compacto por tratarse de un diff pequeño y acotado a lógica + UI."
+}

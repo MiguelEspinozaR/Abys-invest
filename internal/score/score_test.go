@@ -19,9 +19,10 @@ func aaplMetrics() map[string]*float64 {
 }
 
 // TestValuationDimensionPlan — inputs del plan D5 (test 1): price=230,
-// graham=144, dcf=195, margin=30. La regla D5 (precio ≥ intrínseco → 0)
-// es la del contrato; el "≈35" del enunciado del plan es inconsistente con
-// su propia regla y NO se implementa (desviación documentada en el reporte).
+// graham=144, dcf=195, margin=30. Con la decisión 2026-09-23 el promedio
+// (144+195)/2=169.5; precio 230 ≥ promedio → 0 (misma regla D5; el "≈35"
+// del enunciado del plan es inconsistente con su propia regla y NO se
+// implementa — desviación documentada en el reporte).
 func TestValuationDimensionPlan(t *testing.T) {
 	got := scoreValuation(230, fp(144), fp(195), 30)
 	if got != 0 {
@@ -48,18 +49,26 @@ func TestValuationSingleGraham(t *testing.T) {
 	}
 }
 
-func TestValuationWeightedBoth(t *testing.T) {
-	// g=150 (floor 105), d=200 (floor 140). price=130:
-	// graham: 100×(150−130)/(150−105)=44.44; dcf: 130≤140 → 100.
-	// 0.6×44.44 + 0.4×100 = 66.67.
+func TestValuationAverageBoth(t *testing.T) {
+	// g=150, d=200 → promedio de intrínsecos = 175, floor = 175×0.70 = 122.5
+	// (decisión 2026-09-23: el score puntúa el precio contra el promedio).
+	// price=130: 100×(175−130)/(175−122.5) = 100×45/52.5 = 85.71…
 	got := scoreValuation(130, fp(150), fp(200), 30)
-	if got < 66.66 || got > 66.67 {
-		t.Fatalf("ponderado 60/40 esperado 66.67, got %v", got)
+	if got < 85.70 || got > 85.72 {
+		t.Fatalf("promedio esperado 85.71, got %v", got)
 	}
-	// g flojo (price==intrinsic→0), d f=83.33: 0.6×0 + 0.4×83.33 = 33.33.
-	got = scoreValuation(150, fp(150), fp(200), 30)
-	if got < 33.33 || got > 33.34 {
-		t.Fatalf("ponderado 60/40 esperado 33.33, got %v", got)
+	// price=160: 100×(175−160)/52.5 = 28.57…
+	got = scoreValuation(160, fp(150), fp(200), 30)
+	if got < 28.56 || got > 28.58 {
+		t.Fatalf("decaimiento lineal esperado 28.57, got %v", got)
+	}
+	// price ≥ promedio → 0.
+	if got := scoreValuation(180, fp(150), fp(200), 30); got != 0 {
+		t.Fatalf("precio≥promedio debe dar 0, got %v", got)
+	}
+	// price ≤ floor → 100.
+	if got := scoreValuation(100, fp(150), fp(200), 30); got != 100 {
+		t.Fatalf("precio con margen ≥30%% debe dar 100, got %v", got)
 	}
 }
 
