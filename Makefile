@@ -1,6 +1,7 @@
-# Abys-Invest M1+M2+M3 — Makefile (fundación + precios + métricas + score/API)
-# Los secretos (DATABASE_URL, SEC_EDGAR_USER_AGENT, BLS_API_KEY) se leen del
-# entorno, nunca están hardcodeados en el repo.
+# Abys-Invest M1+M2+M3+M4 — Makefile (fundación + precios + métricas + score/API
+# + dashboard web + deploy systemd). Los secretos (DATABASE_URL,
+# SEC_EDGAR_USER_AGENT, BLS_API_KEY) se leen del entorno, nunca están
+# hardcodeados en el repo.
 
 BIN_DIR        := bin
 API_BIN        := $(BIN_DIR)/api
@@ -19,7 +20,7 @@ MARGIN_SAFETY    ?= 30
 DCF_DISCOUNT     ?= 10
 COMP_MIN_SEC     ?= 5
 
-.PHONY: build test lint vet docker-up docker-down migrate run-api run-collector run-prices run-macro run-sector run-analytics run-scores integration clean
+.PHONY: build build-web build-all deploy-local test lint vet docker-up docker-down migrate run-api run-collector run-prices run-macro run-sector run-analytics run-scores run-all-data integration clean
 
 ## build: compila api, collector y analytics en bin/
 build:
@@ -27,6 +28,19 @@ build:
 	go build -o $(API_BIN) ./cmd/api
 	go build -o $(COLLECTOR_BIN) ./cmd/collector
 	go build -o $(ANALYTICS_BIN) ./cmd/analytics
+
+## build-web: compila el frontend (npm ci con lockfile + vite build) en web/dist
+build-web:
+	cd web && npm ci && npm run build
+
+## build-all: binarios Go (build) + frontend (build-web)
+build-all: build build-web
+
+## deploy-local: build completo + instalación systemd vía deploy/setup.sh
+## (requiere sudo; el script instala y arranca solo si secrets.env tiene la
+## DATABASE_URL real — ver guards en deploy/setup.sh)
+deploy-local: build build-web
+	sudo bash deploy/setup.sh
 
 ## test: ejecuta todos los tests (unidad)
 test:

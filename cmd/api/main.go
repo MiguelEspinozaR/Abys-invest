@@ -1,5 +1,6 @@
 // Command api serves the Abys-Invest HTTP API (M1 health + M3: securities,
-// prices, metrics, valuation, score, comparables y backtest SMA).
+// prices, metrics, valuation, score, comparables y backtest SMA) y los
+// estáticos del frontend (plan M4 D2: /static/*, / y SPA fallback).
 package main
 
 import (
@@ -18,8 +19,9 @@ import (
 )
 
 const (
-	version     = "0.1.0"
-	defaultPort = "8080"
+	version          = "0.1.0"
+	defaultPort      = "8080"
+	defaultStaticDir = "./web/dist"
 )
 
 func main() {
@@ -49,7 +51,20 @@ func main() {
 
 	// El router del paquete api expone todas las rutas M3; /health usa el
 	// mismo HealthHandler que los tests package-main verifican.
-	handler := api.WithMiddleware(api.NewRouter(pool))
+	//
+	// Estáticos del frontend (plan M4 D2): STATIC_DIR default ./web/dist.
+	// Las rutas API se registran primero; el fallback SPA solo actúa para
+	// paths no matcheados (riesgo M4-R2 mitigado). Si el directorio no
+	// existe aún (build del frontend pendiente), RegisterStatic no registra
+	// nada y el router queda solo con las rutas API.
+	staticDir := os.Getenv("STATIC_DIR")
+	if staticDir == "" {
+		staticDir = defaultStaticDir
+	}
+
+	mux := api.NewRouter(pool)
+	api.RegisterStatic(mux, staticDir)
+	handler := api.WithMiddleware(mux)
 
 	srv := &http.Server{
 		Addr:              ":" + port,

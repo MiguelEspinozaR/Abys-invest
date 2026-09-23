@@ -1,0 +1,92 @@
+{
+  "milestone": "M4",
+  "generate_at": "2026-09-23T12:40:00Z",
+  "scope": [
+    "exposed secrets",
+    "dependency vulnerabilities",
+    "insecure configuration",
+    "supply-chain issues",
+    "path traversal",
+    "SPA fallback routing"
+  ],
+  "findings": [
+    {
+      "fix": "static-go-path-traversal",
+      "file": "internal/api/static.go",
+      "issue": "Path traversal defense in static serving (resolveWithin + ServeMux)",
+      "severity": "info",
+      "description": "resolveWithin (L81-89) normaliza el path con path.Clean sobre una ruta absoluta forzada, lo une con filepath.Join y verifica contención con filepath.Rel (rechaza rel == '..' o prefijo '../'). Además, el ServeMux de Go 1.22+ ya responde 301/redirect antes del handler ante segmentos '..', y net/http decodifica %2F antes del router. No se encontró vía de escape de staticDir en ninguno de los vectores: '..%2F..%2Fetc%2Fpasswd', '/static/../../x' ni '/ticker/..%2f..%2f..%2fetc'. El resto del fallback SPA (http.ServeFile tras os.Stat dentro de resolveWithin) hereda esa contención.",
+      "evidence": "path.Clean('/'+TrimPrefix) fuerza ruta absoluta colapsando '..'; filepath.Join(root, filepath.FromSlash(trimmed)); filepath.Rel(root, full) con rechazo de '..' y prefijo '../'.",
+      "recommended_action": "Mantener el patrón si se añaden rutas estáticas nuevas; cubrir /static/ con el mismo verificación si se cambia FileServer."
+    },
+    {
+      "fix": "spa-fallback-api-guard",
+      "file": "internal/api/static.go",
+      "issue": "SPA fallback no intercepta rutas reservadas de la API (riesgo M4-R2)",
+      "severity": "info",
+      "description": "isAPIRoute (L93-97) comprueba el primer segmento contra el conjunto reservado (health, securities, prices, metrics, valuation, score, scores, compare, backtest, alerts). Cualquier path bajo un prefijo API desconocido o malformado (p. ej. /score/UNKNOWN/extra, /securities/) devuelve el envelope JSON 404 (writeError + CodeNotFound) y NUNCA index.html, preservando el contrato de errores de la API.",
+      "evidence": "apiRouteSegments incluye los 10 prefijos actuales + alerts (M5); spaHandler L64-67 cortocircuita el fallback.",
+      "recommended_action": "Al añadir rutas API nuevas, registrar el prefijo en apiRouteSegments."
+    },
+    {
+      "fix": "npm-vite",
+      "file": "web/package-lock.json",
+      "issue": "npm audit: vite <= 6.4.2 (1 alta + 2 moderadas) — solo dev server",
+      "severity": "low",
+      "description": "Instalado vite 5.4.21 (devDependency del toolchain de build; esbuild 0.21.5). Las 3 advisories afectan EXCLUSIVAMENTE al dev server de Vite: server.fs.deny bypass en Windows (GHSA-fx2h-pf6j-xcff, alta, solo Windows), NTLMv2 hash disclosure vía UNC en Windows (GHSA-v6wh-96g9-6wx3, moderada, solo Windows) y path traversal en optimized deps .map (GHSA-4w7w-66w2-5vf9, moderada). El runtime de producción NO usa Vite: el build estático se sirve con http.FileServer de Go. El dev server solo escucha en localhost en desarrollo y no se expone en el deploy. Windows-only no aplica (deploy Linux).",
+      "evidence": "npm audit --json → vulnerabilities {esbuild: moderate, react-router: moderate, react-router-dom: moderate, vite: high}; vite 5.4.21 en package-lock; runtime = Go FileServer sobre web/dist.",
+      "recommended_action": "Aceptado (dev-only, no expuesto); revisar vite ≥ 6.4.3 al actualizar el toolchain de build (M5+)."
+    },
+    {
+      "fix": "npm-esbuild",
+      "file": "web/package-lock.json",
+      "issue": "npm audit: esbuild <= 0.24.2 (1 moderada) — solo dev server",
+      "severity": "low",
+      "description": "esbuild 0.21.5 es build/transpilador del toolchain. La advisory (GHSA-67mh-4wv8-2f99) permite a un sitio web enviar requests al dev server y leer la respuesta (CORS) — solo afecta al dev server de Vite en desarrollo local, nunca al bundle servido en producción. No alcanzable desde el runtime de producción.",
+      "evidence": "esbuild 0.21.5 en package-lock; dev-only.",
+      "recommended_action": "Aceptado (dev-only); subir a esbuild > 0.24.2 en la próxima actualización del toolchain."
+    },
+    {
+      "fix": "npm-react-router",
+      "file": "web/package-lock.json",
+      "issue": "npm audit: react-router < 7.18 (2 moderadas) — no aplican al uso actual",
+      "severity": "low",
+      "description": "react-router-dom 6.30.6 instalado (v6 exigida por el plan; el Contrato de API bloquea la v7 con breaking changes). Advisories: (a) open redirect vía backslash en <Link>/useNavigate (GHSA-wrjc-x8rr-h8h6, CVE-2025-68470) — requiere un <Link to> controlado por atacante; en este frontend todos los links son hardcoded (/ticker/:ticker con tickers conocidos del catálogo, sin contenido de usuario renderizado como destino). (b) Constructor injection vía deserializeErrors() en SSR/hydration (GHSA-337j-9hxr-rhxg) — la app es un SPA puro SIN SSR ni hydration en servidor; no aplicable.",
+      "evidence": "react-router-dom 6.30.6 instalado; app 100% client-side (Vite SPA), sin RenderToString ni hydration.",
+      "recommended_action": "Aceptado (plan bloquea v6; vectores no alcanzables). Registrar upgrade a react-router v7 o v7.18+ como tarea técnica futura (M5+)."
+    },
+    {
+      "fix": "setup-sh-hardening",
+      "file": "deploy/setup.sh",
+      "issue": "Script de deploy seguro e idempotente (guards y rollback)",
+      "severity": "info",
+      "description": "set -euo pipefail; guard EUID root (L46); secrets.env se genera SOLO si no existe con placeholders CAMBIAR_* (jamás sobrescribe, chmod 0600, chown abys:abys); guard de enable: el servicio NO se habilita/arranca hasta que DATABASE_URL no contenga marcadores (CAMBIAR/CHANGEME/REEMPLAZAR/PLACEHOLDER); rollback explícito de bin/api.prev ante fallo de arranque; rutas fuente resueltas vía BASH_SOURCE (independientes del cwd, seguro bajo sudo con HOME/cwd fijados); health check solo si el script arrancó el servicio. No hay secretos reales en el archivo.",
+      "evidence": "L46 root guard; L72-85 placeholder no-sobrescribible; L111-120 secrets_ready; L136-154 rollback.",
+      "recommended_action": "Revisar el script tras cada cambio de unit; mantener el patrón placeholder + guard de enable."
+    },
+    {
+      "fix": "service-unit-hardening",
+      "file": "deploy/abys-invest-api.service",
+      "issue": "Unit systemd con hardening adaptado al despliegue local",
+      "severity": "info",
+      "description": "NoNewPrivileges=true, ProtectSystem=strict, ProtectHome=true, PrivateTmp=true, ReadWritePaths limitado a /opt/abys-invest/data (binario y web de solo lectura), User=abys nologin (grupo system), EnvironmentFile=/etc/abys-invest/secrets.env leído por PID1 antes de bajar privilegios. Coherente con el skill deployment-security para un servicio de un solo usuario en localhost.",
+      "evidence": "Unit L21-34: Type=simple, Restart=on-failure/RestartSec=5, hardening listado.",
+      "recommended_action": "Sin acción requerida ahora; si el servicio se expone a red, añadir CapabilityBoundingSet y PrivateDevices."
+    },
+    {
+      "fix": "snapshot-degradation",
+      "file": "internal/api/score_response.go",
+      "issue": "Recompute de dimensiones con degradación segura ante snapshot inválido",
+      "severity": "info",
+      "description": "dimensionsFromSnapshot devuelve nil ante snapshot vacío o JSON no parseable; json.Unmarshal de bytes arbitrarios no puede panicar, y CalculateScore es función pura determinista. La API nunca falla por un problema de snapshot (el score/signal persistidos se devuelven intactos). No acepta entradas de clientes: los snapshots provienen de la base de datos (persistidos por cmd/analytics).",
+      "evidence": "L34-42: len==0 → nil; Unmarshal err → nil; caso válido → CalculateScore(input).Dimensions.",
+      "recommended_action": "Ninguna."
+    }
+  ],
+  "tools": {
+    "gitleaks": "tool_missing",
+    "regex_fallback": "advisory — sin matches de patrones de secretos en el diff M4 (archivos nuevos + cambiados, excluyendo web/node_modules, web/dist y package-lock.json). El DSN de deploy/setup.sh L78 es un placeholder CAMBIAR_* intencional, no un secreto."
+  },
+  "hard_blocks": [],
+  "summary": "0 hard blocks. El BUILD M4 no introduce vulnerabilidades alcanzables en runtime: los 4 findings de npm audit (vite 1 alta + 2 moderadas, esbuild 1 moderada, react-router 2 moderadas) son exclusivos del toolchain de build/dev — el runtime de producción es un bundle estático servido por Go FileServer, los vectores Windows-only no aplican al deploy Linux, y las advisories de react-router no son alcanzables (sin SSR, links hardcoded). Sin path traversal en static.go (doble capa: filtración ServeMux + contención filepath.Rel), sin fallback SPA sobre rutas API (guard isAPIRoute + prefijo alerts reservado para M5), script de deploy con guard de EUID/placeholders/rollback/enable, unit systemd endurecida y recompute de dimensiones con degradación segura. Secretos: gitleaks no disponible (tool_missing); fallback regex advisory sin hallazgos."
+}

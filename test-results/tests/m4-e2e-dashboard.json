@@ -1,0 +1,135 @@
+{
+  "milestone": "M4",
+  "artifact": "abys-m4-e2e-dashboard",
+  "generated_at": "2026-09-23",
+  "suite": "T6 — build frontend + E2E dashboard (CA M4-1, M4-3, M4-4) + T5 artefactos deploy",
+  "environment": {
+    "go": "1.26.0",
+    "node": "v22.22.1",
+    "npm": "9.2.0",
+    "postgres": "local :55432 (usuario dev 'abys', misma BD poblada de M3; DSN sin secretos reales)",
+    "port_api_smoke": 18081,
+    "puerto_8080": "NO TOCADO — proceso ajeno del usuario (pid 159458) escuchando en :8080",
+    "static_dir": "./web/dist (default de cmd/api/main.go; STATIC_DIR sin override)",
+    "vite_base": "default '/' (assets absolutos /assets/... en dist/index.html)"
+  },
+  "commands": {
+    "make build": {
+      "status": "OK",
+      "outputs": ["bin/api", "bin/collector", "bin/analytics"]
+    },
+    "make build-web": {
+      "status": "OK",
+      "outputs": [
+        "web/dist/index.html (0.40 kB)",
+        "web/dist/assets/index-Do8sZvyI.js (180.01 kB)",
+        "web/dist/assets/index-DxZ6Srzk.css (13.67 kB)"
+      ],
+      "note": "npm ci con lockfile (138 paquetes); build determinista (mismos hashes que el build previo de T1-T3)"
+    },
+    "npm_audit_note": "4 vulnerabilidades en dependencias DEV del build (3 moderate, 1 high) — pendiente revisión Security Scanner; no afecta el bundle servido ni el runtime Go",
+    "go_test_unit": "todos los paquetes OK (cmd/api, internal/api y resto; 0 fallos)",
+    "bash_n_deploy_setup.sh": "OK",
+    "systemd_analyze_verify_deploy_service": "OK salvo aviso esperado 'ExecStart /opt/abys-invest/bin/api not executable' (path deploy-time que crea setup.sh); con ExecStart sustituido por binario real no hay errores de directivas",
+    "make_deploy-local": "NO EJECUTADO a propósito — la instalación real (sudo systemctl / setup.sh) la realiza el Deployer autorizado al cierre del hito"
+  },
+  "api_started": {
+    "command": "DATABASE_URL=<dsn local :55432> API_PORT=18081 ./bin/api &",
+    "pid": 287759,
+    "health": "HTTP 200 {\"database\":\"connected\",\"status\":\"ok\",\"version\":\"0.1.0\"}"
+  },
+  "smoke_static": {
+    "GET /": {
+      "code": 200,
+      "content_type": "text/html; charset=utf-8",
+      "serves": "web/dist/index.html exacto (cmp ok)",
+      "root_div_present": true
+    },
+    "GET /ticker/AAPL (SPA fallback react-router)": {
+      "code": 200,
+      "content_type": "text/html; charset=utf-8",
+      "serves": "index.html (SPA fallback, no interceptado por rutas API)"
+    },
+    "GET /static/assets/index-Do8sZvyI.js": {
+      "code": 200,
+      "content_type": "text/javascript; charset=utf-8",
+      "serves": "bundle JS real"
+    },
+    "GET /assets/index-Do8sZvyI.js (path que el build inyecta en index.html)": {
+      "code": 200,
+      "content_type": "text/javascript; charset=utf-8",
+      "serves": "bundle JS real via resolver del SPA fallback"
+    }
+  },
+  "smoke_data": {
+    "GET /health": {
+      "code": 200,
+      "status": "ok",
+      "database": "connected"
+    },
+    "GET /securities": {
+      "code": 200,
+      "count": 100
+    },
+    "GET /score/AAPL": {
+      "code": 200,
+      "score": 28,
+      "signal": "vender",
+      "dimensions": [
+        "valuation 0 (peso 35%)",
+        "fundamentals 27.5 (peso 30%)",
+        "comparables 37.15 (peso 20%)",
+        "trend 83 (peso 15%)"
+      ],
+      "justification_present": true,
+      "model_version": "1.0.0"
+    },
+    "GET /valuation/AAPL": {
+      "code": 200,
+      "price": 339.75,
+      "graham_usd": 170.56,
+      "dcf_usd": 106.09,
+      "consensus_usd": 106.09,
+      "upside_pct": -68.77
+    },
+    "GET /metrics/AAPL": {
+      "code": 200,
+      "metric_count": 8,
+      "sample": "de_ratio 3.87 (primer elemento)"
+    },
+    "GET /scores?ticker=AAPL": {
+      "code": 200,
+      "rows": 1,
+      "score": 28,
+      "signal": "vender"
+    },
+    "GET /compare/comparables?ticker=AAPL": {
+      "code": 200,
+      "sector": "Technology",
+      "peer_count": 14,
+      "first_peer": "ADBE"
+    },
+    "GET /backtest/sma?tickers=AAPL": {
+      "code": 200,
+      "strategy": "sma",
+      "fast_slow": "50/200",
+      "total_return_pct": 25.36,
+      "final_capital": 12536.05,
+      "trades": 4,
+      "sharpe": 0.62
+    }
+  },
+  "ca_verification": {
+    "m4_1_dashboard_datos_reales": "PASS — API sirve score con dimensiones/signal, valoración, métricas, comparables y backtest reales de la BD poblada (11 tickers), consumidos por el build estático",
+    "m4_3_documentacion_deploy_systemd_artifacts": "ARTIFACTS LISTOS — deploy/abys-invest-api.service + deploy/setup.sh creados y validados (bash -n, systemd-analyze verify); instalación real queda para el Deployer al cierre",
+    "m4_4_pipeline_e2e": "PASS — recolectar(normalizar)→calcular→scoring persistido → consultar API → mostrar: el API Go sirve el build estático (/, /static/*, SPA fallback) con datos reales en :18081"
+  },
+  "observations": [
+    "El puerto 8080 del proyecto del usuario no fue tocado (proceso ajeno pid 159458); los smokes corrieron en API_PORT=18081 y el proceso del API quedó terminado al finalizar.",
+    "Filas fixture de tests M3TST (security_id 10472) y T4BSC (security_id 10475) presentes en scores: NO se borraron (las excluye el frontend). 13 filas en /scores: 11 tickers reales + 2 fixtures.",
+    "El /securities lista 100 tickers (catálogo M2/M3); el detalle /securities/{ticker} enriquece con sector/industry. Los scores reales de la BD corresponden a los 11 tickers con datos completos.",
+    "STATIC_DIR sin override en el unit: el default ./web/dist de cmd/api se resuelve relativo a WorkingDirectory=/opt/abys-invest en deploy (decidido en T5; no hace falta Environment=STATIC_DIR explícito).",
+    "El build de Vite referencia assets absolutos (/assets/...): ambos paths funcionan (GET /static/ con StripPrefix y GET /assets/ via el resolver del SPA fallback).",
+    "make deploy-local no se ejecutó en esta verificación (instalación real reservada al Deployer autorizado)."
+  ]
+}

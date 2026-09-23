@@ -1,0 +1,4 @@
+# Dependencias y build (el package-lock.json SÍ se commitea: npm ci)
+node_modules/
+dist/
+*.local

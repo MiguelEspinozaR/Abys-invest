@@ -127,7 +127,14 @@ func handleScore(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, tic
 		writeError(w, http.StatusInternalServerError, CodeInternal, "error al leer score")
 		return
 	}
-	writeJSON(w, http.StatusOK, score)
+	// M4 (CA M4-1): enriquecer con las dimensiones recomputadas desde el
+	// inputs_snapshot persistido. Campos previos intactos (scoreResponse
+	// embebe storage.Score); las dimensiones son exactas porque el motor es
+	// determinista y el score persistido se generó con ese snapshot.
+	writeJSON(w, http.StatusOK, scoreResponse{
+		Score:      *score,
+		Dimensions: dimensionsFromSnapshot(score.InputsSnapshot),
+	})
 }
 
 // handleListScores: GET /scores?ticker=&from=&to=&limit=
@@ -160,7 +167,18 @@ func handleListScores(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool
 		writeError(w, http.StatusInternalServerError, CodeInternal, "error al listar scores")
 		return
 	}
-	writeJSON(w, http.StatusOK, scores)
+	// M4 (CA M4-1): mismo enriquecimiento que /score/{ticker} — cada ítem
+	// lleva sus dimensiones recomputadas desde su inputs_snapshot (coste
+	// trivial: n filas × recompute puro sobre el histórico de un ticker).
+	// scoreResponse embebe storage.Score → contrato previo intacto.
+	items := make([]scoreResponse, 0, len(scores))
+	for i := range scores {
+		items = append(items, scoreResponse{
+			Score:      scores[i],
+			Dimensions: dimensionsFromSnapshot(scores[i].InputsSnapshot),
+		})
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 // handleValuation: GET /valuation/{ticker}

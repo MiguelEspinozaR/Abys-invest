@@ -2,7 +2,7 @@
 
 **Value investing analysis engine** — SEC EDGAR fundamentals → score 0-100 with buy/hold/sell signal, Graham/DCF intrinsic value, comparables & SMA backtest.
 
-> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). M4 pending.
+> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M5.
 
 ---
 
@@ -17,7 +17,7 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 | M1 — Foundation | ✅ Done | Repo, DB schema + migrations, collector (SEC EDGAR), API health check |
 | M2 — Prices & Metrics | ✅ Done | Yahoo Finance v8 chart adapter, BLS CPI macro, engine de métricas (EPS, P/E, P/B, P/FCF, PEG, ROE, D/E, FCF Yield) |
 | M3 — Valuation & Score | ✅ Done | Graham `(2×g)+8.5` × EPS último FY, DCF simplificado (WACC 10%, 5a, g_term 2.5%), margin of safety, score 0-100 (pesos 35/30/20/15, umbrales ≥70/40-69/<40), comparables sectoriales, backtest SMA 50/200, API REST completa (11 endpoints). Calibración 2026-09-23 con pares sectoriales reales; hotfix M3 (aislamiento security_id + guardado de métricas NULL). |
-| M4 — UI & Alerts | ⏳ Pending | React dashboard, alert engine, systemd deployment |
+| M4 — UI & Deploy | ✅ Done | Dashboard React + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback), deploy systemd. Alertas (CA M4-2) diferidas a M5 por decisión usuario 2026-09-23. |
 
 ---
 
@@ -40,8 +40,7 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 │  └──────────┘                  │  - scores (M3)         │ │      │
 │                                  │  - migrations/         │ │      │
 │  ┌──────────┐                  │  - xbrl_concept_map    │ │      │
-│  │  web/    │  (future React)  │  - hypertables (TSDB)  │ │      │
-│  │  Vite    │                   │                     │ │      │
+│  │  web/    │  (React 18 + Vite + TS + Tailwind)  │  - hypertables (TSDB)  │ │      │
 │  └──────────┘                   └──────────────────────┘ │      │
 │                                                                    │
 │  internal/collect/        # adaptadores por proveedor (ADR-0003)   │
@@ -86,7 +85,7 @@ Flujo de datos:
   daily_prices → yahoo/quoteSummary → sector/industry enrichment
 ```
 
-**Módulos implementados (M1+M2+M3):**
+**Módulos implementados (M1+M2+M3+M4):**
 
 | Módulo | Ruta | Propósito |
 |--------|------|-----------|
@@ -105,9 +104,12 @@ Flujo de datos:
 | `internal/storage` | `internal/storage/` | Capa de persistencia (pgx/v5): queries, pool, modelos, migraciones |
 | `migrations/` | `migrations/*.sql` | 9 migraciones SQL: extensiones, schema, staging, concept map, daily_prices, macro_series, derived_metrics, **scores (009)** |
 | `docker-compose.yml` | — | PostgreSQL 16 + TimescaleDB para desarrollo local |
-| `Makefile` | — | Build, test, migrate, run targets (precios, macro, analytics, scores, sector, API) |
+| `web/` | `web/src/`, `web/dist/` | Dashboard React 18 + TS + Vite + Tailwind + react-router; consumen la API M3; build estático servido por Go FileServer (SPA fallback) |
+| `Makefile` | — | Build, test, migrate, run targets (precios, macro, analytics, scores, sector, API, **build-web**, **build-all**, **deploy-local**) |
 
-**Módulos futuros (no implementados):** `web/` (React + Vite dashboard), `cmd/alerts/`, `internal/alerts/` (alertas íntegramente en M4).
+**Módulos implementados en M4:** `web/` (React 18 + TS + Vite + Tailwind + react-router), `cmd/api` sirve estáticos de `web/dist` (FileServer + SPA fallback).
+
+**Diferido a M5:** `cmd/alerts/`, `internal/alerts/` — CA M4-2 diferida a M5 por decisión del usuario 2026-09-23; el prefijo `alerts` está reservado en `apiRouteSegments` de `internal/api/static.go`.
 
 ### Metodología del score y calibración (2026-09-23)
 
@@ -340,7 +342,7 @@ curl http://localhost:8080/score/UNKNOWN
 
 **Formato de errores:** Todos los endpoints responden con `{"error":{"code":"<code>","message":"<msg>"}}` en caso de error. Códigos: `not_found`, `bad_request`, `validation_error`, `internal_error`, `service_unavailable`, `unsupported`.
 
-> **Nota:** `/alerts` se implementará en **M4**. No existe endpoint de alertas en M3.
+> **Nota:** `/alerts` está reservado en `internal/api/static.go` (`apiRouteSegments`) para **M5**; diferido a M5 por decisión del usuario 2026-09-23 (CA M4-2). No existe endpoint de alertas en M4.
 
 ### 11. Run tests
 
@@ -350,7 +352,52 @@ make integration   # Integration tests with -tags=integration (serial -p 1)
 make lint          # go vet ./...
 ```
 
-Suite M1-M3 (con fixes de aislamiento): **154/154** tests verdes — evidencia en `test-results/tests/abys-m3-hotfix-getlatestmetrics.json` (y `test-results/tests/abys-m2-prices-metrics.json` para M2).
+Suite M1-M4: **178 pass / 0 fail / 0 skip** (144 top-level + 34 subtests) — evidencia en `test-results/tests/abys-m4-dashboard.json` (y `test-results/tests/abys-m3-hotfix-getlatestmetrics.json` para M3).
+
+### 12. Run the dashboard (M4)
+
+**Build del frontend:**
+
+```bash
+make build-web          # npm ci + vite build → web/dist
+```
+
+El dashboard se sirve automáticamente cuando el API Go detecta `web/dist/` (default `STATIC_DIR=./web/dist`). Tras `make build`, arranca el API:
+
+```bash
+make run-api
+# El dashboard está disponible en http://localhost:8080/
+# (mismo origin que la API; el frontend usa fetch nativo a /api)
+```
+
+**Desarrollo con Vite (HMR):**
+
+```bash
+cd web && npm run dev
+# Vite en :5173 con proxy /api → http://localhost:8080
+```
+
+### 13. Deploy systemd (M4)
+
+Requisitos: **root**, `systemd`, y `make build-all` previo.
+
+```bash
+make build-all                          # Go binaries + web/dist
+sudo bash deploy/setup.sh               # instalar + systemd + health check
+```
+
+**Pasos:**
+1. `make build-all` compila `bin/api`, `bin/collector`, `bin/analytics` y `web/dist`.
+2. Editar `/etc/abys-invest/secrets.env` con la `DATABASE_URL` real (el setup.sh genera un placeholder CAMBIAR_* si no existe; **no sobrescribe** si ya hay archivo).
+3. `sudo bash deploy/setup.sh` instala: usuario `abys` (nologin), binario en `/opt/abys-invest/bin/api`, frontend en `/opt/abys-invest/web/dist`, unit en `/etc/systemd/system/abys-invest-api.service`.
+
+**Guardias:**
+- **Placeholder no sobrescribe:** `secrets.env` existente se conserva intacto.
+- **Enable guard:** el servicio NO se habilita/arranca hasta que `DATABASE_URL` no contenga `CAMBIAR`/`CHANGEME`/`PLACEHOLDER`.
+- **Rollback:** `bin/api.prev` se preserva antes de instalar el nuevo binario; ante fallo de arranque, `setup.sh` restaura y reinicia.
+- **Health check:** `curl -sf http://localhost:8080/health` (JSON `.status=ok`) y `curl -sf http://localhost:8080/ | grep -q '<div id="root">'` (SPA cargado).
+
+**Archivos de deploy:** `deploy/abys-invest-api.service` (unit systemd, `Type=simple`, `User=abys`, `EnvironmentFile=/etc/abys-invest/secrets.env`, `Restart=on-failure`, hardening `ProtectSystem=strict`) y `deploy/setup.sh` (script de instalación idempotente, `set -euo pipefail`).
 
 ---
 
@@ -374,6 +421,8 @@ Suite M1-M3 (con fixes de aislamiento): **154/154** tests verdes — evidencia e
 | `DCF_TERMINAL_GROWTH` | No | `2.5` | Tasa de crecimiento terminal para DCF (%) |
 | `COMPARABLES_MIN_SECURITIES` | No | `5` | Mínimo de pares de sector para comparables |
 | `COMPARABLES_HISTORY_YEARS` | No | `5` | Años de histórico para medianas propias en comparables |
+| `STATIC_DIR` | No | `./web/dist` | Directorio de estáticos del frontend (servido por Go FileServer + SPA fallback) |
+| `VITE_API_BASE` | No | `/` | Base URL de la API para el build del frontend (misma-origin en producción) |
 
 > **Security:** Secrets are read exclusively from environment variables. `.env` is gitignored. No credentials are hardcoded in source code.
 
@@ -399,6 +448,9 @@ Suite M1-M3 (con fixes de aislamiento): **154/154** tests verdes — evidencia e
 | `make run-sector` | Enrich sector/industry via Yahoo quoteSummary (`-tickers`) |
 | `make run-scores` | Calculate score 0-100 + valuation (`-tickers`, env vars M3) |
 | `make run-all-data` | Pipeline E2E M3 completo (migrate → edgar → prices → macro → sector → analytics → scores) |
+| `make build-web` | Compile frontend (`cd web && npm ci && npm run build` → `web/dist`) |
+| `make build-all` | Build Go binaries + frontend (`build` + `build-web`) |
+| `make deploy-local` | Build completo + instalación systemd via `deploy/setup.sh` (requiere root) |
 | `make clean` | Remove `bin/` directory |
 
 ---
@@ -453,7 +505,7 @@ Idempotente por `(security_id, as_of, model_version)`. Índices en `(security_id
 - **M1 ✔** — Foundation: DB schema, migrations, SEC EDGAR adapter, collector, API health check. 55/55 tests.
 - **M2 ✔** — Prices & Metrics: Yahoo v8 chart adapter, BLS CPI macro, engine de métricas §13 (EPS, P/E, P/B, P/FCF, PEG, ROE, D/E, FCF Yield). 82/82 tests.
 - **M3 ✔** — Valuation & Score: Graham `(2×g)+8.5` × EPS, DCF simplificado (WACC 10%, 5a, g_term 2.5%), margin of safety, score 0-100 (pesos 35/30/20/15, umbrales ≥70/40-69/<40), comparables sectoriales, backtest SMA 50/200, API REST completa (11 endpoints), migración 009.
-- **M4** — UI & Alerts: React dashboard, alert engine (alertas íntegramente en M4, CA §10.1), systemd deployment.
+- **M4 ✔** — UI & Deploy: Dashboard React 18 + TS + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback, `STATIC_DIR`), deploy systemd (`abys-invest-api.service`). Alertas (CA M4-2) diferidas a M5 por decisión usuario 2026-09-23.
 
 ---
 

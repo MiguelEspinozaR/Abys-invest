@@ -1,0 +1,64 @@
+{
+  "milestone": "M4",
+  "artifact": "abys-m4-dashboard",
+  "generated_at": "2026-09-23T13:05:00Z",
+  "environment": {
+    "go": "1.26.0",
+    "pg": "local 55432 (postgres://abys:***@localhost:55432/abys)",
+    "timescaledb": "ausente (fallback tablas normales)",
+    "router": "net/http stdlib Go 1.22+ (precedencia por especificidad)",
+    "node": "v22.22.1",
+    "npm": "9.2.0",
+    "frontend": "React 18.3.1 + react-router-dom 6.30.6 + Vite 5.4.21 + Tailwind 3.4.19"
+  },
+  "commands": {
+    "go_test_serial": "PASS (144 top-level + 34 subtests = 178 / 0 fail / 0 skip) -p 1 -count=1 -tags=integration con DATABASE_URL explícito",
+    "go_vet_paquete_api": "OK",
+    "build_web": "OK (determinista: mismos hashes en builds repetidos)",
+    "build_go": "OK (bin/api, collector, analytics)",
+    "e2e_smokes_api_18081": "todos 200 (ver test-results/tests/m4-e2e-dashboard.json)",
+    "bash_n_setup": "OK",
+    "systemd_analyze_verify": "OK (aviso esperado: ExecStart no presente en tiempo de build)"
+  },
+  "test_summary": {
+    "total_passed": 178,
+    "total_failed": 0,
+    "total_skipped": 0,
+    "top_level_passed": 144,
+    "subtests_passed": 34,
+    "historial": {
+      "suite_m3_hotfix_anterior": "154 pass / 0 fail / 0 skip",
+      "delta_m4": "+24 aserciones verdes (static_test, static_integration, score_response_test, score_integration)"
+    }
+  },
+  "tests_m4_nuevos": {
+    "TestStaticServing": "PASS (6 subtests: /health intacto, / y /static/* 200, SPA fallback, API malformada -> JSON 404)",
+    "TestStaticDisabled": "PASS (3 subtests: STATIC_DIR inexistente -> API pura, sin fallback)",
+    "TestStaticWithDB": "PASS (3 subtests: /health 200, /score/UNKNOWN -> 404 JSON, SPA index.html con BD real)",
+    "TestDimensionsFromSnapshot": "PASS (4 dimensiones con pesos 35/30/20/15, coherencia 1:1 con motor)",
+    "TestDimensionsFromSnapshotDegrades": "PASS (4 subtests: snapshot vacío/basura -> nil sin fallo)",
+    "TestScoreDimensionsIntegration": "PASS (2 subtests: /score/{ticker} y /scores con dimensions, fixture T4BSC)"
+  },
+  "regresion_confirmada": {
+    "tests_previos_m3_hotfix": "144 top-level verdes (incluye TestGetLatestMetricsScopedToSecurity y TestScoreFundamentalsNilMetrics)",
+    "ausencia_falls": "ningun FAIL; 0 skip (todos los tests de integracion ejecutados con BD real)"
+  },
+  "ca_verification": {
+    "ca_m4_1_dashboard_react": "PASS (dashboard + detalle con dimensiones y score; E2E + unit + integracion)",
+    "ca_m4_2_alertas": "FUERA DE ALCANCE (diferida a M5 por decision de usuario 2026-09-23, plan seccion 0)",
+    "ca_m4_3_estaticos_api": "PASS (FileServer + SPA fallback, isAPIRoute protege 10 prefijos, resolveWithin anti-traversal)",
+    "ca_m4_4_pipeline_e2e_deploy": "PASS (E2E del Builder: build web + smokes API 18081 + verificacion CA; deploy T5 verificado con bash -n y systemd-analyze)"
+  },
+  "observations": [
+    "DATABASE_URL debe pasarse explicitamente para los tests de integracion; sin el, el suite salta (20 SKIP) y NO es un fallo valido",
+    "BD post-suite: vacia de datos de negocio (1 security = fixture de schema); se repoblaran los 11 tickers tras TEST (paso del orquestador)",
+    "npm audit (dev-only): 1 alta vite + 3 moderadas (esbuild, react-router v6) — no alcanzables en runtime servido por Go FileServer; reporte de seguridad M4: 0 hard blocks",
+    "proceso ajeno en :8080 (finanzasMikyGo) ignorado; smokes E2E con API propio en :18081",
+    "gitleaks no disponible en entorno; fallback regex advisory sin hallazgos"
+  ],
+  "evidence_paths": [
+    "test-results/tests/abys-m4-dashboard.json (este archivo)",
+    "test-results/tests/m4-e2e-dashboard.json (smokes E2E del Builder)",
+    "test-results/security/abys-m4-dashboard.json (0 hard blocks)"
+  ]
+}

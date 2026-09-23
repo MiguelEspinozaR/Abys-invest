@@ -1,0 +1,37 @@
+# Abys-Invest — unit systemd del API Go + dashboard estático (plan M4, D4/T5).
+# INSTALLADA por deploy/setup.sh en /etc/systemd/system/abys-invest-api.service
+# (no se usa desde deploy/ directamente).
+#
+# STATIC_DIR: cmd/api/main.go usa por defecto ./web/dist (constante
+# defaultStaticDir). Con WorkingDirectory=/opt/abys-invest el default ya
+# resuelve a /opt/abys-invest/web/dist, exactamente donde setup.sh copia el
+# frontend — por eso NO hace falta Environment=STATIC_DIR explícito (decisión
+# T5: se confía en el default verificado del binario, D3 del plan).
+#
+# Secretos: EnvironmentFile lo lee systemd (PID1) ANTES de bajar privilegios;
+# secrets.env se genera con placeholder (chmod 600, chown abys:abys) y NUNCA
+# se versiona. El guard de setup.sh solo habilita/arranca el servicio cuando
+# DATABASE_URL no es placeholder.
+
+[Unit]
+Description=Abys-Invest API (Go) + dashboard estatico
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=abys
+Group=abys
+WorkingDirectory=/opt/abys-invest
+EnvironmentFile=/etc/abys-invest/secrets.env
+ExecStart=/opt/abys-invest/bin/api
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/abys-invest/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
