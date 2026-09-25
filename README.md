@@ -2,7 +2,7 @@
 
 **Value investing analysis engine** — SEC EDGAR fundamentals → score 0-100 with buy/hold/sell signal, Graham/DCF intrinsic value, comparables & SMA backtest.
 
-> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M5. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**.
+> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M5. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**. **M4d ✔ (Air live-reload dev + deploy opcional) completed**.
 
 ---
 
@@ -459,6 +459,48 @@ sudo bash deploy/setup.sh               # instalar + systemd + health check
 
 **Archivos de deploy:** `deploy/abys-invest-api.service` (unit systemd, `Type=simple`, `User=abys`, `EnvironmentFile=/etc/abys-invest/secrets.env`, `Restart=on-failure`, hardening `ProtectSystem=strict`) y `deploy/setup.sh` (script de instalación idempotente, `set -euo pipefail`).
 
+**Deploy con auto-recompilación (variante Air, opcional):**
+
+- `sudo bash deploy/setup.sh --with-air` además copia `cmd/`, `internal/`, `go.mod`/`go.sum` a `/opt/abys-invest/src`, instala `air` en `/usr/local/bin` (vía `GOBIN`) y habilita la unit ALTERNA `abys-invest-api-air.service` (air recompila y reinicia al detectar cambios en .go).
+- Default sin `--with-air` = modo estático actual (sin cambios; `abys-invest-api.service` con binario `/opt/abys-invest/bin/api`).
+- **Requisitos:** toolchain Go en el servidor; el primer `go build` descarga módulos (egress a `proxy.golang.org`, caché de abys vacía).
+- **Hardening:** la unit air usa `ProtectSystem=full` + `ReadWritePaths` en `src/` y `bin/` (necesario para `go build`), sin write a `data/`.
+- **Reinicio por rebuild:** `send_interrupt=false` → SIGKILL sin drain en cada cambio (aceptable para dev; el unit estático sigue siendo el recomendado para prod sin cambios frecuentes).
+
+---
+
+## Desarrollo con Air (live-reload)
+
+Air permite el auto-reload del servicio API al detectar cambios en archivos `.go` (debounce 500ms, configurado en `.air.toml` raíz). El frontend continúa con su propio HMR de Vite (`cd web && npm run dev`).
+
+### Instalación de la toolchain Air
+
+```bash
+make air-install   # go install github.com/air-verse/air@latest (v1.67.4+)
+```
+
+> Air es una herramienta de desarrollo, **no** una dependencia de runtime. No se agrega a `go.mod`.
+
+### Levantar el API con live-reload
+
+```bash
+export DATABASE_URL="..."   # mismo contrato que make run-api
+export API_PORT=8080
+make dev-api               # air lanza cmd/api con auto-rebuild+restart
+```
+
+- La configuración está en `.air.toml` (raíz del repo): `build.cmd = "go build -o ./tmp/api ./cmd/api"`, `build.delay = "500ms"`, `build.exclude_dir` = `tmp`, `web`, `.git`, `test-results`, `.ai`, `node_modules`; `build.include_ext = ["go", "tpl", "tmpl", "html"]` (excluye JS/TS del frontend).
+- El binario hereda las variables de entorno del shell que lanza `air`.
+- **Jobs one-shot** (`collector`, `analytics`) **NO usan air** — continúan con `make run-collector`, `make run-analytics`, etc.
+
+### Deploy con auto-recompilación (variante Air, opcional)
+
+Ver arriba en la sección §13. Resumen:
+- `sudo bash deploy/setup.sh --with-air` configura el entorno con sources en `/opt/abys-invest/src`, `air` en `/usr/local/bin`, y la unit `abys-invest-api-air.service`.
+- Requiere toolchain Go en el servidor; primer build descarga módulos de `proxy.golang.org`.
+- La unit alternativa usa `EnvironmentFile=/etc/abys-invest/secrets.env`, `API_PORT=8082`, `ProtectSystem=full` + `ReadWritePaths` en `src/` y `bin/`.
+- El modo estático (`abys-invest-api.service`) sigue siendo el recomendado para producción sin cambios frecuentes.
+
 ---
 
 ## Configuration
@@ -512,6 +554,8 @@ sudo bash deploy/setup.sh               # instalar + systemd + health check
 | `make build-all` | Build Go binaries + frontend (`build` + `build-web`) |
 | `make deploy-local` | Build completo + instalación systemd via `deploy/setup.sh` (requiere root) |
 | `make clean` | Remove `bin/` directory |
+| `make air-install` | Instalar la toolchain Air (`go install github.com/air-verse/air@latest`, v1.67.4+) |
+| `make dev-api` | Levantar `cmd/api` con Air (live-reload, auto-rebuild+restart al cambiar .go) |
 
 ---
 
@@ -568,7 +612,8 @@ Idempotente por `(security_id, as_of, model_version)`. Índices en `(security_id
 - **M4 ✔** — UI & Deploy: Dashboard React 18 + TS + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback, `STATIC_DIR`), deploy systemd (`abys-invest-api.service`). Alertas (CA M4-2) diferidas a M5 por decisión usuario 2026-09-23.
 - **M4b ✔** — Consenso promedio y señal textual (2026-09-23): badge de señal muestra la palabra `comprar|mantener|vender`; columnas Graham y DCF en dashboard/ticker; consenso = promedio `(graham+dcf)/2` usado para score y upside; `model_version` 1.1.0. 178/0/0.
 - **M4c ✔** — Refresh de datos + fix mapeo XBRL (2026-09-23): botones `Recalcular métricas` y `Pipeline completo` en dashboard; endpoints `POST /refresh` y `POST /force-refresh` (loopback-only, anti-concurrencia); fix del diccionario XBRL con 6 conceptos GAAP nuevos; DCF operativo para NVDA, QCOM, ADBE, CRM, CSCO, IBM. Suite 195/0/0.
-- **M5 🔲** — Alertas: `cmd/alerts/`, `internal/alerts/`, endpoint `/alerts` (prefijo reservado). CA M4-2 diferida por decisión usuario 2026-09-23.
+- **M4d ✔** — Air live-reload (2026-09-24): `make air-install` + `make dev-api` con auto-rebuild/restart al cambiar .go (`.air.toml` raíz, delay 500ms); frontend Vite HMR aparte; deploy opcional con `--with-air` (unit alterna `abys-invest-api-air.service`, sources en `/opt/abys-invest/src`, air en `/usr/local/bin`). 195/0/0 sin cambios.
+- **M5 🔲** — Alertas: `cmd/alerts/`, `internal/alerts/`, endpoint `/alerts` (prefijo reservado).
 
 ---
 

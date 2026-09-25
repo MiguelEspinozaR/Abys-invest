@@ -1,0 +1,46 @@
+# Abys-Invest — unit systemd ALTERNA con live-reload para el API Go (plan M4d).
+# NO reemplaza a abys-invest-api.service (binario estático, default): es
+# opt-in y se instala como abys-invest-api-air.service vía
+# `deploy/setup.sh --with-air`.
+#
+# Diferencias frente al unit estático:
+#   - Ejecuta Air (live-reload) en vez del binario: recompila cmd/api y reinicia
+#     el API automáticamente al detectar cambios en /opt/abys-invest/src.
+#   - WorkingDirectory=/opt/abys-invest/src (fuentes Go copiadas por setup.sh).
+#     Por eso STATIC_DIR se fija EXPLÍCITAMENTE a /opt/abys-invest/web/dist: el
+#     default ./web/dist resolvería dentro de src/ y el dashboard no se serviría.
+#   - Hardening: ProtectSystem=full + ReadWritePaths (NO strict como la estática)
+#     porque `go build -o /opt/abys-invest/bin/api` necesita escribir en src/
+#     (tmp de air) y en bin/. Se mantienen NoNewPrivileges y PrivateTmp.
+#   - ExecStart usa la ruta de Air instalada por setup.sh --with-air:
+#     /usr/local/bin/air (GOBIN=/usr/local/bin go install ...). El PATH incluye
+#     /usr/bin y /usr/local/bin para que air encuentre la toolchain `go`.
+#
+# Secretos: EnvironmentFile lo lee systemd (PID1) antes de bajar privilegios;
+# secrets.env nunca se versiona y no se hardcodea DATABASE_URL aquí.
+
+[Unit]
+Description=Abys-Invest API (Go) + dashboard estatico [variante Air live-reload]
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=abys
+Group=abys
+WorkingDirectory=/opt/abys-invest/src
+Environment=API_PORT=8082
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+Environment=STATIC_DIR=/opt/abys-invest/web/dist
+EnvironmentFile=/etc/abys-invest/secrets.env
+ExecStart=/usr/local/bin/air -c /opt/abys-invest/.air.prod.toml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/abys-invest/src /opt/abys-invest/bin
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

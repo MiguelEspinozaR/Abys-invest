@@ -20,7 +20,7 @@ MARGIN_SAFETY    ?= 30
 DCF_DISCOUNT     ?= 10
 COMP_MIN_SEC     ?= 5
 
-.PHONY: build build-web build-all deploy-local test lint vet docker-up docker-down migrate run-api run-collector run-prices run-macro run-sector run-analytics run-scores run-all-data integration clean
+.PHONY: build build-web build-all deploy-local test lint vet docker-up docker-down migrate air-install dev-api run-api run-collector run-prices run-macro run-sector run-analytics run-scores run-all-data integration clean
 
 ## build: compila api, collector y analytics en bin/
 build:
@@ -67,6 +67,19 @@ migrate:
 		echo "==> $$f"; \
 		psql "$(DATABASE_URL)" -v ON_ERROR_STOP=1 -q -f "$$f"; \
 	done
+
+## air-install: instala la tool de live-reload Air (go install, no es dependencia de runtime)
+air-install:
+	go install github.com/air-verse/air@latest
+
+## dev-api: levanta el API con live-reload de Air (lee .air.toml de la raíz).
+## Requiere DATABASE_URL y API_PORT EXPORTADOS en el entorno (mismo contrato que
+## run-api). El frontend va aparte con su propio HMR: cd web && npm run dev.
+## AIR resuelve `air` desde PATH y, si no está (p. ej. GOPATH/bin fuera de
+## PATH), cae a $(go env GOPATH)/bin/air instalado por `make air-install`.
+AIR ?= $(shell command -v air 2>/dev/null || echo $$(go env GOPATH)/bin/air)
+dev-api:
+	$(AIR)
 
 ## run-api: ejecuta el binario api con env de entorno
 run-api:

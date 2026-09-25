@@ -4,7 +4,16 @@
 # Instalación idempotente y segura del API Go + dashboard estático bajo systemd
 # (plan M4, D4/T5). Debe ejecutarse como root:
 #
-#     sudo bash deploy/setup.sh
+#     sudo bash deploy/setup.sh              # modo estático (default, M4)
+#     sudo bash deploy/setup.sh --with-air   # variante Air live-reload (M4d)
+#     sudo bash deploy/setup.sh --help       # ayuda
+#
+# Sin `--with-air` el flujo es IDÉNTICO al de M4 (binario estático). Con
+# `--with-air` además: copia las fuentes Go a /opt/abys-invest/src, instala Air
+# en /usr/local/bin/air, copia .air.prod.toml y habilita la unit alterna
+# abys-invest-api-air.service (recompila+reinicia ante cambios). Guardas
+# extra en modo air: aborta si falta la toolchain Go o si secrets.env sigue con
+# DATABASE_URL placeholder.
 #
 # Guardas de seguridad:
 #   - NO sobrescribe secrets.env si ya existe; genera un PLACEHOLDER que el
@@ -21,8 +30,6 @@ set -euo pipefail
 INSTALL_DIR="${INSTALL_DIR:-/opt/abys-invest}"
 SECRETS_DIR="${SECRETS_DIR:-/etc/abys-invest}"
 SECRETS="${SECRETS:-${SECRETS_DIR}/secrets.env}"
-SERVICE="${SERVICE:-abys-invest-api}"
-UNIT_SRC="${UNIT_SRC:-deploy/abys-invest-api.service}"
 
 # Fuentes relativas al script (no al cwd): permiten `sudo bash deploy/setup.sh`
 # desde cualquier directorio y con sudoers que fijen HOME/cwd/rundir.
@@ -35,17 +42,71 @@ INSTALL_USER="${INSTALL_USER:-abys}"
 INSTALL_GROUP="${INSTALL_GROUP:-abys}"
 BIN_DEST="${INSTALL_DIR}/bin/api"
 BIN_PREV="${BIN_DEST}.prev"
-HEALTH_URL="${HEALTH_URL:-http://localhost:8080/health}"
 HEALTH_TIMEOUT_S="${HEALTH_TIMEOUT_S:-10}"
 START_GRACE_S="${START_GRACE_S:-15}"
+
+# Air (modo --with-air): binario que instala setup.sh y que espera la unit air.
+AIR_BIN="${AIR_BIN:-/usr/local/bin/air}"
+AIR_CONFIG_DEST="${AIR_CONFIG_DEST:-${INSTALL_DIR}/.air.prod.toml}"
 
 log() { printf '[setup.sh] %s\n' "$*"; }
 die() { printf '[setup.sh] ERROR: %s\n' "$*" >&2; exit 1; }
 
+usage() {
+    cat <<'EOF'
+Uso: sudo bash deploy/setup.sh [--with-air] [--help]
+
+Instala el API Go + dashboard estático de Abys-Invest como servicio systemd.
+
+Sin argumentos (default — modo estático):
+    instala bin/api (de 'make build'), web/dist y la unit abys-invest-api.service
+    (binario estático; se actualiza con un re-deploy manual).
+
+--with-air (variante Air live-reload, unit ALTERNA):
+    además copia las fuentes Go (cmd/, internal/, go.mod, go.sum) a
+    /opt/abys-invest/src, instala Air (go install ...@latest → /usr/local/bin/air),
+    copia deploy/.air.prod.toml a /opt/abys-invest/.air.prod.toml y habilita la
+    unit abys-invest-api-air.service (air recompila y reinicia el API al
+    detectar cambios). Guardas: aborta si falta la toolchain Go (which go) o si
+    secrets.env sigue con DATABASE_URL placeholder.
+
+--help: muestra esta ayuda.
+
+Secretos: /etc/abys-invest/secrets.env (placeholder al generarse; el servicio
+solo se habilita cuando DATABASE_URL es real).
+EOF
+}
+
+# ── Argumentos ───────────────────────────────────────────────────────────────
+WITH_AIR=0
+for _arg in "$@"; do
+    case "${_arg}" in
+        --with-air) WITH_AIR=1 ;;
+        --help | -h) usage; exit 0 ;;
+        *) die "argumento desconocido: '${_arg}' (usa --help)" ;;
+    esac
+done
+
+# Servicio y unit efectivos según el modo (respetan overrides por entorno).
+if [[ "${WITH_AIR}" == "1" ]]; then
+    : "${SERVICE:=abys-invest-api-air}"
+    : "${UNIT_SRC:=${_REPO_ROOT}/deploy/abys-invest-api-air.service}"
+    : "${AIR_CONFIG_SRC:=${_REPO_ROOT}/deploy/.air.prod.toml}"
+    HEALTH_URL="${HEALTH_URL:-http://localhost:8082/health}"
+else
+    : "${SERVICE:=abys-invest-api}"
+    : "${UNIT_SRC:=${_REPO_ROOT}/deploy/abys-invest-api.service}"
+    HEALTH_URL="${HEALTH_URL:-http://localhost:8080/health}"
+fi
+
 # ── Precondiciones ───────────────────────────────────────────────────────────
 [[ "$(id -u)" -eq 0 ]] || die "ejecutar como root: sudo bash ${0}"
 command -v systemctl >/dev/null 2>&1 || die "systemd/systemctl no disponible"
-[[ -f "${BIN_SOURCE}" ]] || die "binario no encontrado: ${BIN_SOURCE} (ejecuta antes 'make build')"
+# En modo air el artefacto son las fuentes (air compila en el arranque): no se
+# exige bin/api prebuilt. En modo estático sí (lo produce 'make build').
+if [[ "${WITH_AIR}" != "1" && ! -f "${BIN_SOURCE}" ]]; then
+    die "binario no encontrado: ${BIN_SOURCE} (ejecuta antes 'make build')"
+fi
 
 # ── 1. Usuario/grupo de servicio (sin shell) ─────────────────────────────────
 if ! getent group "${INSTALL_GROUP}" >/dev/null; then
@@ -84,13 +145,62 @@ else
     log "secrets.env ya existe; no se sobrescribe: ${SECRETS}"
 fi
 
-# ── 4. Binario con preservación para rollback (bin/api.prev) ─────────────────
-if [[ -f "${BIN_DEST}" ]]; then
-    mv -f "${BIN_DEST}" "${BIN_PREV}"
-    log "binario anterior preservado como ${BIN_PREV} (rollback disponible)"
+# ── 3b. Guardas de --with-air (antes de instalar nada de air) ───────────────
+# secrets_ready se define aquí porque la usan estas guardas y el guard de
+# enable del paso 7 (una sola definición).
+secrets_ready() {
+    [[ -f "${SECRETS}" ]] || return 1
+    local dsn
+    dsn="$(grep -E '^DATABASE_URL=' "${SECRETS}" | tail -n 1 | cut -d= -f2- || true)"
+    [[ -n "${dsn}" ]] || return 1
+    case "${dsn}" in
+        *CAMBIAR* | *CHANGEME* | *REEMPLAZAR* | *PLACEHOLDER*) return 1 ;;
+    esac
+    return 0
+}
+
+if [[ "${WITH_AIR}" == "1" ]]; then
+    command -v go >/dev/null 2>&1 || die "--with-air requiere la toolchain Go en el servidor: no se encontró 'go' en el PATH. Instala Go o despliega sin --with-air (binario estático)."
+    secrets_ready || die "--with-air requiere DATABASE_URL real en ${SECRETS} (placeholder o ausente). Edita ${SECRETS} con la URL real y vuelve a ejecutar."
+    [[ -f "${AIR_CONFIG_SRC}" ]] || die "--with-air: no se encontró ${AIR_CONFIG_SRC} (deploy/.air.prod.toml)"
+    log "guardas --with-air OK (toolchain go + secrets.env real)"
 fi
-install -m 0755 -o "${INSTALL_USER}" -g "${INSTALL_GROUP}" "${BIN_SOURCE}" "${BIN_DEST}"
-log "binario instalado: ${BIN_DEST}"
+
+# ── 4. Binario con preservación para rollback (bin/api.prev) ─────────────────
+# En modo air el binario lo compila air en el arranque: no se instala estático.
+if [[ "${WITH_AIR}" == "1" ]]; then
+    if [[ -f "${BIN_DEST}" ]]; then
+        mv -f "${BIN_DEST}" "${BIN_PREV}"
+        log "binario previo preservado como ${BIN_PREV} (air lo reemplazará en el primer build)"
+    fi
+    log "modo --with-air: binario estático omitido (lo compila air a ${BIN_DEST})"
+else
+    if [[ -f "${BIN_DEST}" ]]; then
+        mv -f "${BIN_DEST}" "${BIN_PREV}"
+        log "binario anterior preservado como ${BIN_PREV} (rollback disponible)"
+    fi
+    install -m 0755 -o "${INSTALL_USER}" -g "${INSTALL_GROUP}" "${BIN_SOURCE}" "${BIN_DEST}"
+    log "binario instalado: ${BIN_DEST}"
+fi
+
+# ── 4b. Modo air: fuentes Go + air + config .air.prod.toml ───────────────────
+if [[ "${WITH_AIR}" == "1" ]]; then
+    # Copia limpia e idempotente de las fuentes que necesita `go build ./cmd/api`.
+    rm -rf "${INSTALL_DIR}/src"
+    install -d -o "${INSTALL_USER}" -g "${INSTALL_GROUP}" "${INSTALL_DIR}/src"
+    cp -a "${_REPO_ROOT}/cmd" "${_REPO_ROOT}/internal" \
+        "${_REPO_ROOT}/go.mod" "${_REPO_ROOT}/go.sum" "${INSTALL_DIR}/src/"
+    chown -R "${INSTALL_USER}:${INSTALL_GROUP}" "${INSTALL_DIR}/src"
+    log "fuentes Go copiadas → ${INSTALL_DIR}/src (cmd/, internal/, go.mod, go.sum)"
+
+    GOBIN="$(dirname "${AIR_BIN}")" go install github.com/air-verse/air@latest
+    [[ -x "${AIR_BIN}" ]] || die "--with-air: air no quedó instalado en ${AIR_BIN} (revisa GOPROXY/GOPATH)"
+    air_version="$("${AIR_BIN}" -v 2>/dev/null | tail -n1 || true)"
+    log "air instalado: ${AIR_BIN} ${air_version}"
+
+    install -m 0644 -o root -g root "${AIR_CONFIG_SRC}" "${AIR_CONFIG_DEST}"
+    log "config air instalada: ${AIR_CONFIG_DEST}"
+fi
 
 # ── 5. Frontend (web/dist) ───────────────────────────────────────────────────
 if [[ -d "${DIST_SOURCE}" ]]; then
@@ -108,17 +218,8 @@ systemctl daemon-reload
 log "unit instalada: /etc/systemd/system/${SERVICE}.service"
 
 # ── 7. Guard de enable: solo si secrets.env tiene DATABASE_URL real ─────────
-secrets_ready() {
-    [[ -f "${SECRETS}" ]] || return 1
-    local dsn
-    dsn="$(grep -E '^DATABASE_URL=' "${SECRETS}" | tail -n 1 | cut -d= -f2- || true)"
-    [[ -n "${dsn}" ]] || return 1
-    case "${dsn}" in
-        *CAMBIAR* | *CHANGEME* | *REEMPLAZAR* | *PLACEHOLDER*) return 1 ;;
-    esac
-    return 0
-}
-
+# (secrets_ready() está definida arriba, en las guardas de --with-air).
+#
 # Espera a que systemd reporte el servicio activo (hasta START_GRACE_S).
 wait_active() {
     local i
@@ -204,4 +305,8 @@ else
     log "health check omitido (el servicio no fue arrancado: secrets.env pendiente de rellenar)"
 fi
 
-log "setup.sh completado. Resumen: binario en ${BIN_DEST}, frontend en ${INSTALL_DIR}/web/dist, unit ${SERVICE}, rollback en ${BIN_PREV}."
+if [[ "${WITH_AIR}" == "1" ]]; then
+    log "setup.sh completado (modo --with-air). Resumen: fuentes en ${INSTALL_DIR}/src, air en ${AIR_BIN}, config en ${AIR_CONFIG_DEST}, unit ${SERVICE}, frontend en ${INSTALL_DIR}/web/dist."
+else
+    log "setup.sh completado. Resumen: binario en ${BIN_DEST}, frontend en ${INSTALL_DIR}/web/dist, unit ${SERVICE}, rollback en ${BIN_PREV}."
+fi

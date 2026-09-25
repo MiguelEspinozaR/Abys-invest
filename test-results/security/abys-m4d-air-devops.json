@@ -1,0 +1,30 @@
+{
+  "scanner": "security-scanning",
+  "date": "2026-09-24T15:31:05Z",
+  "task": "abys-m4d-air-devops",
+  "findings": [
+    {
+      "severity": "info",
+      "file": "Makefile",
+      "line": 73,
+      "finding": "Air tool installed via `go install github.com/air-verse/air@latest` without version pin; latest may break builds or contain unknown changes.",
+      "recommendation": "Pin Air to a specific version in go.mod or use `go install github.com/air-verse/air@v1.26.0` (or latest stable) and add to module verification; or pin via go.mod require."
+    },
+    {
+      "severity": "low",
+      "file": "Makefile",
+      "line": 11,
+      "finding": "Makefile defines `DATABASE_URL ?= postgres://abys:abys@localhost:5432/abys?sslmode=disable` as a default, embedding database credentials directly in the committed Makefile.",
+      "recommendation": "Remove the default value or replace with a placeholder that forces operators to set DATABASE_URL via environment; never commit real credentials."
+    },
+    {
+      "severity": "info",
+      "file": ".gitignore",
+      "line": 16,
+      "finding": "`.gitignore` contains `+/tmp/` which force-adds the tmp directory to version control, potentially overriding intentional gitignore rules and exposing temporary files.",
+      "recommendation": "Replace `+/tmp/` with `/tmp/` (without the `+` prefix) to only gitignore without forcing addition; review if any tmp contents should be tracked."
+    }
+  ],
+  "hard_blocks": 0,
+  "summary": "3 findings: 2 info, 1 low. No block severities. Key observations: air@latest without pin (informational), Makefile default DATABASE_URL with credentials (low), .gitignore +/tmp/ forcing add (informational). Air unit properly uses EnvironmentFile, NoNewPrivileges, PrivateTmp, ProtectSystem=full, ReadWritePaths limited to src/bin (no data). --with-air guard validates go toolchain and DATABASE_URL placeholder."
+}

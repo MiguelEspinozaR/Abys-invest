@@ -1,0 +1,28 @@
+{
+  "suite": {
+    "command": "go test -p 1 -tags=integration -count=1 ./...",
+    "pass": 195,
+    "fail": 0,
+    "skip": 1,
+    "note": "El 1 skip es el t.Skip hardcodeado en refresh_integration_test.go (M4c staged, no tocado). Linea base M4c: 195/0/0."
+  },
+  "date": "2026-09-24T12:05:00Z",
+  "task": "abys-m4d-air-devops",
+  "results": {
+    "go_build": "OK",
+    "go_vet": "OK",
+    "npm_build": { "ok": true, "bundle": "index-DJKkBhKM.js" },
+    "smoke_air": {
+      "health_pre": 200,
+      "rebuild_observed": true,
+      "log_snippet": "internal/api/zz_air_probe_tmp.go has changed -> building... -> running...",
+      "health_post": 200,
+      "health_post_cleanup": 200,
+      "air_stopped": true,
+      "no_residual_probe": true
+    },
+    "setup_help": true,
+    "bash_n_setup": "OK",
+    "air_version": "v1.67.4 (go1.26.0)"
+  }
+}

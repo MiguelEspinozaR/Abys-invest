@@ -1,0 +1,43 @@
+# Abys-Invest — configuración de Air (live-reload) para desarrollo del API (M4d).
+# Uso: exporta DATABASE_URL y API_PORT en el shell y ejecuta `make dev-api`:
+#     export DATABASE_URL=postgres://... && export API_PORT=8080 && make dev-api
+#
+# - El binario hereda el ENTORNO DEL SHELL que lanza air (DATABASE_URL,
+#   API_PORT, SEC_EDGAR_USER_AGENT, ...): mismo contrato que `make run-api`.
+#   Env files NO se cargan (env_files = []): nada de secretos implícitos.
+# - El frontend (web/) NO se observa: tiene su propio HMR con vite (`npm run dev`).
+# - tmp/ aloja el binario intermedio (go build -o ./tmp/api ./cmd/api); air lo
+#   reconstruye en cada arranque, así que nunca queda binario stale en tmp.
+#
+# Notas v1.67.x (go install @latest):
+#   - `build.bin` fue renombrado a `build.entrypoint` (bin funciona pero emite
+#     un deprecation warning en cada arranque → usamos entrypoint).
+#   - `build.delay` es un int en milisegundos (500 = 500ms de debounce).
+#   - `misc.clean_on_start` no existe en esta versión (solo clean_on_exit);
+#     como air recompila siempre al arrancar, tmp queda fresco igualmente.
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/api ./cmd/api"
+  entrypoint = ["./tmp/api"]
+  delay = 500
+  exclude_dir = ["tmp", "web", ".git", "test-results", ".ai", "node_modules", "data"]
+  exclude_regex = ["_test.go"]
+  include_ext = ["go", "tpl", "tmpl", "html"]
+  send_interrupt = false
+  kill_delay = "0s"
+  stop_on_error = false
+  rerun = false
+
+[log]
+  time = false
+  main_only = false
+
+[misc]
+  clean_on_exit = true
+
+[screen]
+  clear_on_rebuild = true
+  keep_scroll = true
