@@ -1,4 +1,4 @@
-package main
+package pipeline
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 
 // CA-6: un error de proveedor (red/HTTP) se propaga como error logueable y el
 // worker no paniquea. Se verifica con un endpoint que devuelve 500.
+// (Movido de cmd/collector/main_test.go junto con la lógica del job edgar.)
 func TestWorkerDoesNotPanicOnProviderError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

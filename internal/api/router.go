@@ -85,5 +85,14 @@ func NewRouter(pool *pgxpool.Pool) *http.ServeMux {
 		handleBacktest(w, r, pool, r.PathValue("strategy"))
 	})
 
+	// Refresh desde el dashboard (plan M4c): recálculo de métricas/scores y
+	// pipeline completo. Loopback-only + anti-concurrencia (ver refresh.go).
+	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
+		handleRefresh(w, r, pool)
+	})
+	mux.HandleFunc("POST /force-refresh", func(w http.ResponseWriter, r *http.Request) {
+		handleForceRefresh(w, r, pool)
+	})
+
 	return mux
 }

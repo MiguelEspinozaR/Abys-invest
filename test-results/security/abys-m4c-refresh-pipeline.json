@@ -1,0 +1,48 @@
+{
+  "task_id": "abys-m4c-refresh-pipeline",
+  "stage": "SCAN",
+  "scanned_at": "2026-09-24T01:15:00Z",
+  "toolchain": {
+    "gitleaks": "tool_missing",
+    "sast_project": "none_configured",
+    "dependency_audit": "npm audit (dev-only)",
+    "regex_fallback": "advisory"
+  },
+  "scan_scope": [
+    "git diff M4c (working tree vs 20af588): 12 files modified, 3 new",
+    "internal/api/refresh.go",
+    "internal/pipeline/*.go"
+  ],
+  "results": [
+    {
+      "severity": "info",
+      "rule": "regex-fallback-password-secret-token",
+      "location": "git diff (working tree)",
+      "finding": "0 matches en diff para password|secret|token|api_key|PRIVATE KEY|AKIA|ghp_|postgres:// con credenciales",
+      "remediation": "ninguna"
+    },
+    {
+      "severity": "info",
+      "rule": "endpoint-loopback-only",
+      "location": "internal/api/refresh.go:guardRefresh",
+      "finding": "POST /refresh y POST /force-refresh rechazan clientes no-loopback con 403 (CodeForbidden); deploy local :8082 es loopback; si el API se expone públicamente el refresh queda deshabilitado",
+      "remediation": "si se expone a internet, confinar en el proxy externo"
+    },
+    {
+      "severity": "info",
+      "rule": "secret-env-not-committed",
+      "location": "working tree",
+      "finding": "DATABASE_URL y SEC_EDGAR_USER_AGENT solo via EnvironmentFile del systemd (deploy) y entorno local; .env y .ai/ fuera de historial",
+      "remediation": "ninguna"
+    },
+    {
+      "severity": "info",
+      "rule": "sec-edgar-user-agent-fallback",
+      "location": "internal/api/refresh.go:refreshUADefault",
+      "finding": "fallback de desarrollo AbysInvest/1.0 (dev) si falta SEC_EDGAR_USER_AGENT; mismo contrato que cmd/collector; en el deploy real el EnvFile lo define",
+      "remediation": "ninguna (igual que pre-existente)"
+    }
+  ],
+  "hard_blocks": 0,
+  "conclusion": "0 hard blocks. Sin secretos nuevos. Los endpoints mutadores de datos están confinados a loopback con anti-concurrencia (409)."
+}

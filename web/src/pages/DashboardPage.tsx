@@ -4,6 +4,7 @@ import { apiErrorMessage, getJSON } from '../api/client';
 import type { ScoresHistoryItem, Security, ValuationResponse } from '../api/types';
 import ScoreBadge from '../components/ScoreBadge';
 import { fmtNumber, fmtPct } from '../lib/format';
+import { postRefresh, type RefreshResult } from '../lib/useFetch';
 
 // /scores (sin filtro) incluye las 2 fixtures de integración (M3TST/T4BSC)
 // presentes en la BD de prueba; se excluyen del catálogo del dashboard.
@@ -23,12 +24,20 @@ interface CatalogRow {
  * (ticker/nombre) por security_id. El enriquecimiento con /valuation/{ticker}
  * (precio, P/E, ROE) es no bloqueante: la fila se muestra con "—" mientras
  * llega o si falla.
+ *
+ * M4c — Refresh desde el dashboard: "Recalcular" ejecuta POST /refresh
+ * (métricas+scores, sin red) y "Pipeline" ejecuta POST /force-refresh
+ * (edgar → prices → sector → metrics → scores, con confirmación previa).
+ * Ambos recargan el catálogo al terminar; la política loopback-only del API
+ * responde 403 desde un cliente remoto (el deploy local :8082 es loopback).
  */
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [rows, setRows] = useState<CatalogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState<'refresh' | 'force' | null>(null);
+  const [refreshStatus, setRefreshStatus] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,6 +86,33 @@ export default function DashboardPage() {
     }
   }, []);
 
+  // M4c: ejecuta un refresh (rápido o pipeline completo) y recarga el catálogo.
+  const runRefresh = useCallback(
+    async (kind: 'refresh' | 'force') => {
+      if (refreshing) return; // ya hay uno en curso (el API también responde 409)
+      if (kind === 'force' && !window.confirm('¿Re-ingestar el pipeline completo? Toma ~1-2 min.')) {
+        return;
+      }
+      setRefreshing(kind);
+      setRefreshStatus(null);
+      setError(null);
+      try {
+        const res: RefreshResult = await postRefresh(kind === 'force' ? '/force-refresh' : '/refresh');
+        const msgs: Record<string, string> = {
+          refresh: `Datos recalculados (${res.tickers} tickers en ${res.duration_ms} ms)`,
+          force: `Pipeline completado (${res.tickers} tickers, ${res.duration_ms} ms)`,
+        };
+        setRefreshStatus({ ok: true, text: msgs[kind] });
+        await load();
+      } catch (err) {
+        setRefreshStatus({ ok: false, text: `Refresh falló: ${apiErrorMessage(err)}` });
+      } finally {
+        setRefreshing(null);
+      }
+    },
+    [load, refreshing],
+  );
+
   useEffect(() => {
     void load();
   }, [load]);
@@ -91,15 +127,45 @@ export default function DashboardPage() {
               Catálogo con score y señal — {rows.length} tickers
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void load()}
-            disabled={loading}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            {loading ? 'Cargando…' : 'Actualizar'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void runRefresh('refresh')}
+              disabled={loading || refreshing !== null}
+              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+            >
+              {refreshing === 'refresh' ? 'Recalculando…' : 'Recalcular métricas'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void runRefresh('force')}
+              disabled={loading || refreshing !== null}
+              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/40"
+            >
+              {refreshing === 'force' ? 'Pipeline en ejecución…' : 'Pipeline completo'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void load()}
+              disabled={loading || refreshing !== null}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              {loading ? 'Cargando…' : 'Actualizar'}
+            </button>
+          </div>
         </header>
+
+        {refreshStatus ? (
+          <div
+            className={`mb-4 rounded-xl border p-4 text-sm ${
+              refreshStatus.ok
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300'
+                : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300'
+            }`}
+          >
+            {refreshStatus.text}
+          </div>
+        ) : null}
 
         {error ? (
           <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">

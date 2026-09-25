@@ -15,16 +15,18 @@ import (
 // o malformada (p. ej. /score/UNKNOWN/extra o /securities/) mantiene el
 // envelope JSON 404 en vez de ser interceptada por el fallback (riesgo M4-R2).
 var apiRouteSegments = map[string]struct{}{
-	"health":     {},
-	"securities": {},
-	"prices":     {},
-	"metrics":    {},
-	"valuation":  {},
-	"score":      {},
-	"scores":     {},
-	"compare":    {},
-	"backtest":   {},
-	"alerts":     {},
+	"health":        {},
+	"securities":    {},
+	"prices":        {},
+	"metrics":       {},
+	"valuation":     {},
+	"score":         {},
+	"scores":        {},
+	"compare":       {},
+	"backtest":      {},
+	"alerts":        {},
+	"refresh":       {},
+	"force-refresh": {},
 }
 
 // RegisterStatic monta el serving de estáticos del frontend (plan M4, D2)

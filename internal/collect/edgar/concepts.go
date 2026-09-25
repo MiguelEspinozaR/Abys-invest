@@ -38,17 +38,23 @@ var conceptMap = map[string]CanonicalConcept{
 	"Liabilities":                            {Canonical: "total_liabilities", Unit: "USD", PeriodType: "instant", Priority: 1},
 	"LongTermDebt":                           {Canonical: "long_term_debt", Unit: "USD", PeriodType: "instant", Priority: 1},
 	"LongTermDebtAndCapitalLeaseObligations": {Canonical: "long_term_debt", Unit: "USD", PeriodType: "instant", Priority: 2},
+	"LongTermNotesAndLoans":                  {Canonical: "long_term_debt", Unit: "USD", PeriodType: "instant", Priority: 2},
 	"ShortTermBorrowings":                    {Canonical: "short_term_debt", Unit: "USD", PeriodType: "instant", Priority: 1},
 	"ShortTermDebt":                          {Canonical: "short_term_debt", Unit: "USD", PeriodType: "instant", Priority: 2},
 	"CommercialPaper":                        {Canonical: "short_term_debt", Unit: "USD", PeriodType: "instant", Priority: 3},
+	"DebtCurrent":                            {Canonical: "short_term_debt", Unit: "USD", PeriodType: "instant", Priority: 4},
+	"LongTermDebtCurrent":                    {Canonical: "short_term_debt", Unit: "USD", PeriodType: "instant", Priority: 5},
 	"StockholdersEquity":                     {Canonical: "shareholders_equity", Unit: "USD", PeriodType: "instant", Priority: 1},
 	"CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents": {Canonical: "cash_and_equivalents", Unit: "USD", PeriodType: "instant", Priority: 1},
-	"AssetsCurrent":      {Canonical: "current_assets", Unit: "USD", PeriodType: "instant", Priority: 1},
-	"LiabilitiesCurrent": {Canonical: "current_liabilities", Unit: "USD", PeriodType: "instant", Priority: 1},
+	"CashAndCashEquivalentsAtCarryingValue":                         {Canonical: "cash_and_equivalents", Unit: "USD", PeriodType: "instant", Priority: 2},
+	"AssetsCurrent":                                                 {Canonical: "current_assets", Unit: "USD", PeriodType: "instant", Priority: 1},
+	"LiabilitiesCurrent":                                            {Canonical: "current_liabilities", Unit: "USD", PeriodType: "instant", Priority: 1},
 
 	// duration — cash flow
 	"NetCashProvidedByUsedInOperatingActivities": {Canonical: "operating_cash_flow", Unit: "USD", PeriodType: "duration", Priority: 1},
 	"PaymentsToAcquirePropertyPlantAndEquipment": {Canonical: "capex", Unit: "USD", PeriodType: "duration", Priority: 1},
+	"PaymentsToAcquireProductiveAssets":          {Canonical: "capex", Unit: "USD", PeriodType: "duration", Priority: 2},
+	"PaymentsToAcquireOtherProductiveAssets":     {Canonical: "capex", Unit: "USD", PeriodType: "duration", Priority: 3},
 
 	// instant — capital structure / per-share
 	"EntityCommonStockSharesOutstanding": {Canonical: "shares_outstanding", Unit: "shares", PeriodType: "instant", Priority: 1},

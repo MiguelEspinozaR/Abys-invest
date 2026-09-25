@@ -65,3 +65,19 @@ export async function getJSON<T>(path: string): Promise<T> {
   }
   return (await res.json()) as T;
 }
+
+/**
+ * POST tipado con el mismo contrato de errores que getJSON. Usado por los
+ * endpoints mutadores del dashboard (refresh / force-refresh, plan M4c).
+ * `path` ya incluye cualquier prefijo de `API_BASE`.
+ */
+export async function postJSON<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) {
+    throw await parseError(res);
+  }
+  return (await res.json()) as T;
+}

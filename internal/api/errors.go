@@ -15,6 +15,8 @@ const (
 	CodeValidation  = "validation_error"
 	CodeRateLimited = "rate_limited"
 	CodeUnsupported = "unsupported"
+	CodeForbidden   = "forbidden"
+	CodeConflict    = "conflict"
 )
 
 // errorBody is the HTTP error envelope mandated by the plan: the Jsend-like

@@ -74,6 +74,254 @@ func TestMapToCanonical(t *testing.T) {
 	}
 }
 
+// TestM4cConceptVariants cubre el fix del diccionario (plan M4c, B1): las
+// variantes XBRL modernas deben mapear al canónico con su prioridad y periodo.
+//
+//	PaymentsToAcquireProductiveAssets       -> capex (P2, duration)
+//	PaymentsToAcquireOtherProductiveAssets  -> capex (P3, duration)
+//	DebtCurrent                             -> short_term_debt (P4, instant)
+//	LongTermDebtCurrent                     -> short_term_debt (P5, instant)
+func TestM4cConceptVariants(t *testing.T) {
+	cases := []struct {
+		name     string
+		concept  string
+		period   string // "duration" | "instant"
+		want     string
+		wantPri  int
+		wantUnit string
+	}{
+		{"productive assets", "PaymentsToAcquireProductiveAssets", "duration", "capex", 2, "USD"},
+		{"other productive assets", "PaymentsToAcquireOtherProductiveAssets", "duration", "capex", 3, "USD"},
+		{"debt current", "DebtCurrent", "instant", "short_term_debt", 4, "USD"},
+		{"long-term debt current", "LongTermDebtCurrent", "instant", "short_term_debt", 5, "USD"},
+	}
+	for _, tc := range cases {
+		var f XBRLFact
+		if tc.period == "duration" {
+			f = fact(tc.concept, tc.wantUnit, "2023-10-01", "2024-09-28", 1, true)
+		} else {
+			f = fact(tc.concept, tc.wantUnit, "", "2024-09-28", 1, true)
+		}
+		got := MapToCanonical(f)
+		if got == nil {
+			t.Fatalf("%s: MapToCanonical devolvió nil", tc.name)
+		}
+		if got.Canonical != tc.want || got.Priority != tc.wantPri || got.PeriodType != tc.period || got.Unit != tc.wantUnit {
+			t.Fatalf("%s: got canonical=%q priority=%d period=%q unit=%q; want %s/%d/%s/%s",
+				tc.name, got.Canonical, got.Priority, got.PeriodType, got.Unit,
+				tc.want, tc.wantPri, tc.period, tc.wantUnit)
+		}
+	}
+
+	// Rechazo de periodo: las variantes instant no aceptan duration y viceversa.
+	if got := MapToCanonical(fact("DebtCurrent", "USD", "2023-10-01", "2024-09-28", 1, true)); got != nil {
+		t.Fatalf("DebtCurrent (instant) reportado con start debería ser nil, got %+v", got)
+	}
+	if got := MapToCanonical(fact("PaymentsToAcquireProductiveAssets", "USD", "", "2024-09-28", 1, true)); got != nil {
+		t.Fatalf("PaymentsToAcquireProductiveAssets (duration) reportado como instant debería ser nil, got %+v", got)
+	}
+}
+
+// TestM4cNewerFactBetweenVariants verifica que newerFact desempata por
+// prioridad del diccionario entre variantes del mismo periodo (M4c B1):
+// menor prioridad numérica = preferida.
+func TestM4cNewerFactBetweenVariants(t *testing.T) {
+	mk := func(concept string, start string) *CanonicalFact {
+		return MapToCanonical(fact(concept, "USD", start, "2024-09-28", 1, true))
+	}
+
+	// capex: PP&E (P1) gana a ProductiveAssets (P2), que gana a Other (P3).
+	ppe := mk("PaymentsToAcquirePropertyPlantAndEquipment", "2023-10-01")
+	prod := mk("PaymentsToAcquireProductiveAssets", "2023-10-01")
+	other := mk("PaymentsToAcquireOtherProductiveAssets", "2023-10-01")
+	if newerFact(prod, ppe) {
+		t.Fatal("PP&E (P1) debe ganar a ProductiveAssets (P2)")
+	}
+	if newerFact(other, prod) {
+		t.Fatal("ProductiveAssets (P2) debe ganar a OtherProductiveAssets (P3)")
+	}
+
+	// short_term_debt: ShortTermBorrowings (P1) gana a DebtCurrent (P4), que
+	// gana a LongTermDebtCurrent (P5) como fallback.
+	stb := mk("ShortTermBorrowings", "")
+	dc := mk("DebtCurrent", "")
+	ltdc := mk("LongTermDebtCurrent", "")
+	if newerFact(dc, stb) {
+		t.Fatal("ShortTermBorrowings (P1) debe ganar a DebtCurrent (P4)")
+	}
+	if newerFact(ltdc, dc) {
+		t.Fatal("DebtCurrent (P4) debe ganar a LongTermDebtCurrent (P5)")
+	}
+}
+
+// TestM4cDedupeShortTermDebtVariants verifica el comportamiento end-to-end en
+// dedupeCanonical: cuando un issuer solo reporta DebtCurrent + un instant de
+// otro concepto dentro del mismo periodo, el canónico short_term_debt del
+// periodo conserva la variante de mayor prioridad disponible (P4 > P5) y el
+// derivado total_debt/net_debt se computa con ese valor.
+func TestM4cDedupeShortTermDebtVariants(t *testing.T) {
+	end := time.Date(2024, 9, 28, 0, 0, 0, 0, time.UTC)
+	fy := 2024
+	base := func(canonical, concept string, val float64) CanonicalFact {
+		cf := MapToCanonical(fact(concept, "USD", "", "2024-09-28", val, true))
+		cf.EndDate = end
+		cf.FiscalYear = &fy
+		cf.FiscalPeriod = "FY"
+		cf.Canonical = canonical
+		return *cf
+	}
+
+	in := []CanonicalFact{
+		base("long_term_debt", "LongTermDebt", 90),
+		base("short_term_debt", "DebtCurrent", 10),
+		base("short_term_debt", "LongTermDebtCurrent", 7),
+		base("cash_and_equivalents", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents", 25),
+	}
+	ded := dedupeCanonical(in)
+	var st *CanonicalFact
+	for i := range ded {
+		if ded[i].Canonical == "short_term_debt" {
+			st = &ded[i]
+		}
+	}
+	if st == nil {
+		t.Fatal("sin short_term_debt tras dedupe")
+	}
+	if st.SourceConcept != "DebtCurrent" {
+		t.Fatalf("DebtCurrent (P4) debe prevalecer sobre LongTermDebtCurrent (P5), got %s", st.SourceConcept)
+	}
+	if st.Value != 10 {
+		t.Fatalf("valor esperado 10 (DebtCurrent), got %v", st.Value)
+	}
+
+	derived := ComputeDerived(ded)
+	var totalDebt, netDebt *CanonicalFact
+	for i := range derived {
+		switch derived[i].Canonical {
+		case "total_debt":
+			totalDebt = &derived[i]
+		case "net_debt":
+			netDebt = &derived[i]
+		}
+	}
+	if totalDebt == nil || totalDebt.Value != 100 {
+		t.Fatalf("total_debt esperado 100 (90+10), got %+v", totalDebt)
+	}
+	if netDebt == nil || netDebt.Value != 75 {
+		t.Fatalf("net_debt esperado 75 (100-25), got %+v", netDebt)
+	}
+}
+
+// TestM4cFixOrclConceptVariants cubre la extensión del fix M4c (hallazgo del
+// orquestador sobre ORCL): ORCL reporta dos conceptos GAAP modernos que no
+// estaban en conceptMap y dejaban net_debt en None.
+//
+//	CashAndCashEquivalentsAtCarryingValue -> cash_and_equivalents (P2, instant)
+//	LongTermNotesAndLoans                 -> long_term_debt (P2, instant)
+func TestM4cFixOrclConceptVariants(t *testing.T) {
+	cases := []struct {
+		name     string
+		concept  string
+		want     string
+		wantPri  int
+		wantUnit string
+	}{
+		{"cash and equivalents carrying", "CashAndCashEquivalentsAtCarryingValue", "cash_and_equivalents", 2, "USD"},
+		{"long-term notes and loans", "LongTermNotesAndLoans", "long_term_debt", 2, "USD"},
+	}
+	for _, tc := range cases {
+		got := MapToCanonical(fact(tc.concept, tc.wantUnit, "", "2024-09-28", 1, true))
+		if got == nil {
+			t.Fatalf("%s: MapToCanonical devolvió nil", tc.name)
+		}
+		if got.Canonical != tc.want || got.Priority != tc.wantPri || got.PeriodType != "instant" || got.Unit != tc.wantUnit {
+			t.Fatalf("%s: got canonical=%q priority=%d period=%q unit=%q; want %s/%d/instant/%s",
+				tc.name, got.Canonical, got.Priority, got.PeriodType, got.Unit,
+				tc.want, tc.wantPri, tc.wantUnit)
+		}
+	}
+
+	// Rechazo de periodo: ambas son instant y no aceptan duration.
+	if got := MapToCanonical(fact("CashAndCashEquivalentsAtCarryingValue", "USD", "2023-10-01", "2024-09-28", 1, true)); got != nil {
+		t.Fatalf("CashAndCashEquivalentsAtCarryingValue (instant) con start debería ser nil, got %+v", got)
+	}
+	if got := MapToCanonical(fact("LongTermNotesAndLoans", "USD", "2023-10-01", "2024-09-28", 1, true)); got != nil {
+		t.Fatalf("LongTermNotesAndLoans (instant) con start debería ser nil, got %+v", got)
+	}
+}
+
+// TestM4cFixOrclPriorityAndDedupe verifica que las variantes P2 de ORCL no
+// alteran el canonical P1 existente: para el mismo periodo, newerFact prefiere
+// el tag clásico (P1) sobre el moderno (P2) por prioridad, y dedupeCanonical
+// conserva la variante P1 como fuente del canónico (AAPL/MSFT/etc. intactos).
+func TestM4cFixOrclPriorityAndDedupe(t *testing.T) {
+	mk := func(concept string) *CanonicalFact {
+		return MapToCanonical(fact(concept, "USD", "", "2024-09-28", 1, true))
+	}
+
+	// cash_and_equivalents: el tag clásico (P1) gana al moderno (P2).
+	legacy := mk("CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents")
+	modernCash := mk("CashAndCashEquivalentsAtCarryingValue")
+	if newerFact(modernCash, legacy) {
+		t.Fatal("CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents (P1) debe ganar a CashAndCashEquivalentsAtCarryingValue (P2)")
+	}
+
+	// long_term_debt: LongTermDebt (P1) gana a LongTermNotesAndLoans (P2).
+	ltd := mk("LongTermDebt")
+	notes := mk("LongTermNotesAndLoans")
+	if newerFact(notes, ltd) {
+		t.Fatal("LongTermDebt (P1) debe ganar a LongTermNotesAndLoans (P2)")
+	}
+
+	// dedupe end-to-end: con ambos tags en el mismo periodo el canónico
+	// conserva la fuente P1 y net_debt se computa con esos valores.
+	end := time.Date(2024, 9, 28, 0, 0, 0, 0, time.UTC)
+	fy := 2024
+	base := func(canonical, concept string, val float64) CanonicalFact {
+		cf := MapToCanonical(fact(concept, "USD", "", "2024-09-28", val, true))
+		cf.EndDate = end
+		cf.FiscalYear = &fy
+		cf.FiscalPeriod = "FY"
+		cf.Canonical = canonical
+		return *cf
+	}
+	in := []CanonicalFact{
+		base("long_term_debt", "LongTermNotesAndLoans", 122),
+		base("long_term_debt", "LongTermDebt", 90),
+		base("short_term_debt", "ShortTermBorrowings", 10),
+		base("cash_and_equivalents", "CashAndCashEquivalentsAtCarryingValue", 31),
+		base("cash_and_equivalents", "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents", 25),
+	}
+	ded := dedupeCanonical(in)
+	byCanon := map[string]CanonicalFact{}
+	for _, f := range ded {
+		byCanon[f.Canonical] = f
+	}
+	if got := byCanon["long_term_debt"]; got.SourceConcept != "LongTermDebt" || got.Value != 90 {
+		t.Fatalf("long_term_debt tras dedupe debe venir de LongTermDebt (P1) con 90, got %+v", got)
+	}
+	if got := byCanon["cash_and_equivalents"]; got.SourceConcept != "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents" || got.Value != 25 {
+		t.Fatalf("cash_and_equivalents tras dedupe debe venir del tag P1 con 25, got %+v", got)
+	}
+
+	// net_debt se computa con los valores P1 del dedupe: (90+10)-25 = 75.
+	derived := ComputeDerived(ded)
+	for _, d := range derived {
+		if d.Canonical == "net_debt" && d.Value != 75 {
+			t.Fatalf("net_debt esperado 75 con los valores P1, got %v", d.Value)
+		}
+	}
+	var netDebt *CanonicalFact
+	for i := range derived {
+		if derived[i].Canonical == "net_debt" {
+			netDebt = &derived[i]
+		}
+	}
+	if netDebt == nil {
+		t.Fatal("sin net_debt tras ComputeDerived")
+	}
+}
+
 // TestMapToCanonicalNamespaceTrace verifica (C001) que el namespace XBRL de
 // origen se propaga al hecho canónico, dando trazabilidad a los conceptos dei.
 func TestMapToCanonicalNamespaceTrace(t *testing.T) {

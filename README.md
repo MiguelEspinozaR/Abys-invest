@@ -2,7 +2,7 @@
 
 **Value investing analysis engine** — SEC EDGAR fundamentals → score 0-100 with buy/hold/sell signal, Graham/DCF intrinsic value, comparables & SMA backtest.
 
-> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M5. **M4b ✔ (consenso promedio + señal textual) completed**.
+> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M5. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**.
 
 ---
 
@@ -19,6 +19,7 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 | M3 — Valuation & Score | ✅ Done | Graham `(2×g)+8.5` × EPS último FY, DCF simplificado (WACC 10%, 5a, g_term 2.5%), margin of safety, score 0-100 (pesos 35/30/20/15, umbrales ≥70/40-69/<40), comparables sectoriales, backtest SMA 50/200, API REST completa (11 endpoints). Calibración 2026-09-23 con pares sectoriales reales; hotfix M3 (aislamiento security_id + guardado de métricas NULL). |
 | M4 — UI & Deploy | ✅ Done | Dashboard React + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback), deploy systemd. Alertas (CA M4-2) diferidas a M5 por decisión usuario 2026-09-23. |
 | M4b — Consenso promedio + señal textual | ✅ Done | Señal en UI como palabra `comprar\|mantener\|vender` (sin duplicar el score); columnas Graham y DCF por ticker; consenso = promedio `(graham+dcf)/2`; `model_version` 1.1.0. Decisión usuario 2026-09-23. |
+| M4c — Refresh de datos + fix mapeo XBRL | ✅ Done | Botones "Recalcular métricas" (`POST /refresh`) y "Pipeline completo" (`POST /force-refresh`) en el dashboard; fix del diccionario XBRL con 6 variantes GAAP nuevas; DCF operativo para NVDA (65.72), QCOM (188.9), ADBE (394.3), CRM (245.5), CSCO (46.9), IBM (162.2). Suite 195/0/0. |
 
 ---
 
@@ -34,14 +35,21 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 │  │  /health  │    │  (edgar,   │  │  (pgx/v5, SQL)     │ │      │
 │  └──────────┘    │  prices,   │  │  - securities        │ │      │
 │                   │  macro)    │  │  - fundamentals      │ │      │
-│  ┌──────────┐    └──────────┘  │  - edgar_staging     │ │      │
-│  │  cmd/    │                  │  - daily_prices        │ │      │
-│  │  analytics│  (M2+M3)         │  - macro_series        │ │      │
-│  │  jobs    │                  │  - derived_metrics     │ │      │
-│  └──────────┘                  │  - scores (M3)         │ │      │
+│  ┌──────────┐    └──────────┘  │  internal/pipeline   │ │      │
+│  │  cmd/    │                  │  (jobs: edgar,       │ │      │
+│  │  analytics│  (M2+M3)         │  prices, sector,     │ │      │
+│  │  jobs    │                  │  metrics, scores)    │ │      │
+│  └──────────┘                  │  internal/storage  │ │      │
+│                                  │  - securities        │ │      │
+│  ┌──────────┐                  │  - fundamentals      │ │      │
+│  │  web/    │  (React 18 + Vite + TS + Tailwind)  │  - edgar_staging     │ │      │
+│  └──────────┘                  │  - daily_prices        │ │      │
+│                                  │  - macro_series        │ │      │
+│                                  │  - derived_metrics     │ │      │
+│                                  │  - scores (M3)         │ │      │
 │                                  │  - migrations/         │ │      │
-│  ┌──────────┐                  │  - xbrl_concept_map    │ │      │
-│  │  web/    │  (React 18 + Vite + TS + Tailwind)  │  - hypertables (TSDB)  │ │      │
+│                                  │  - xbrl_concept_map    │ │      │
+│                                  │  - hypertables (TSDB)  │ │      │
 │  └──────────┘                   └──────────────────────┘ │      │
 │                                                                    │
 │  internal/collect/        # adaptadores por proveedor (ADR-0003)   │
@@ -70,12 +78,13 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 │    loader.go              # Parámetros val/score desde env         │
 │    errors.go              # JSON error envelope {error:{code,msg}} │
 │    middleware.go          # Logging, panic recovery, /health        │
-│  cmd/analytics/           # Binario: métricas + job scores          │
-│  cmd/collector/           # Binario: ingesta + job sector           │
+│  cmd/analytics/           # CLI wrapper (jobs)                      │
+│  cmd/collector/           # CLI wrapper (ingesta)                   │
+│  internal/pipeline/       # Jobs de pipeline                       │
 └─────────────────────────────────────────────────────────────────┘
 
 Flujo de datos:
-  SEC EDGAR → edgar/adapter → edgar_staging → fundamentals → analytics
+  SEC EDGAR → edgar/adapter → edgar_staging → fundamentals → pipeline (jobs) → analytics
   Yahoo v8  → yahoo/adapter → daily_prices (hypertable si TSDB)
   BLS CPI   → macro/adapter → macro_series  (hypertable si TSDB)
   daily_prices + fundamentals → metrics/engine → derived_metrics
@@ -91,8 +100,9 @@ Flujo de datos:
 | Módulo | Ruta | Propósito |
 |--------|------|-----------|
 | `cmd/api` | `cmd/api/main.go` | Servidor HTTP con 11 endpoints REST + `GET /health` (DB status) |
-| `cmd/collector` | `cmd/collector/main.go` | Worker de ingesta: SEC EDGAR, Yahoo prices, BLS macro, **sector/industry enrichment** (`-job edgar|prices|macro|sector|all`) |
-| `cmd/analytics` | `cmd/analytics/main.go` | Binario: cálculo batch de métricas derivadas (`-tickers`, `-g`, `-dry-run`) y **job scores** (`-job scores`) |
+| `cmd/collector` | `cmd/collector/main.go` | CLI wrapper: worker de ingesta (SEC EDGAR, Yahoo prices, BLS macro, **sector/industry enrichment**) (`-job edgar|prices|macro|sector|all`) |
+| `cmd/analytics` | `cmd/analytics/main.go` | CLI wrapper: cálculo batch de métricas derivadas (`-tickers`, `-g`, `-dry-run`) y **job scores** (`-job scores`) |
+| `internal/pipeline` | `internal/pipeline/` | Jobs de pipeline: edgar, prices, sector, metrics, scores (wrappers CLI sobre `cmd/collector`/`cmd/analytics`); contratos de invocación intactos |
 | `internal/collect/edgar` | `internal/collect/edgar/` | Cliente SEC EDGAR, parser XBRL companyfacts, mapeo canónico |
 | `internal/collect/yahoo` | `internal/collect/yahoo/` | Adaptador Yahoo Finance v8 chart + **quoteSummary** (sector/industry) |
 | `internal/collect/macro` | `internal/collect/macro/` | Adaptador BLS Public API v2 (serie CPI-U CUSR0000SA0) |
@@ -147,7 +157,33 @@ Cambio solicitado por el usuario sobre el dashboard y las páginas individuales 
 - **Impacto práctico**: 4 de 11 tickers cambiaron de score por el nuevo promedio (p. ej. IBM 37 → 31); señales: ADBE comprar · INTC/CRM mantener · resto vender.
 - **Suite M4b**: 178/0/0 (igual que M4; mismo conteo, valores recalculados) — evidencia `test-results/tests/abys-m4b-consenso-promedio.json` y `test-results/security/abys-m4b-consenso-promedio.json`.
 
-**5. Nota de entrega (hotfix M3, 2026-09-23)**
+**5. Nota de entrega (M4c, 2026-09-23) — refresh de datos desde el dashboard + fix mapeo XBRL**
+
+**Fix del diccionario XBRL** (`internal/collect/edgar/concepts.go`): el mapeo solo cubría `PaymentsToAcquirePropertyPlantAndEquipment` (capex) y `ShortTermBorrowings`/`ShortTermDebt`/`CommercialPaper` (short_term_debt). NVDA/QCOM reportan `PaymentsToAcquireProductiveAssets` (QCOM además `PaymentsToAcquireOtherProductiveAssets`); ADBE/CRM/ORCL/QCOM reportan `DebtCurrent` (CRM `LongTermDebtCurrent`); ORCL reporta cash como `CashAndCashEquivalentsAtCarryingValue` y deuda LP como `LongTermNotesAndLoans`. Sin esos mapeos, FCF derivado o NetDebt quedaban nil → DCF desaparecía.
+
+| Concepto XBRL | Campo canonical | Tickers afectados |
+|----------------|-----------------|-------------------|
+| `PaymentsToAcquireProductiveAssets` | capex | NVDA, QCOM |
+| `PaymentsToAcquireOtherProductiveAssets` | capex | QCOM |
+| `DebtCurrent` | short_term_debt | ADBE, CRM, ORCL, QCOM |
+| `LongTermDebtCurrent` | short_term_debt | CRM |
+| `CashAndCashEquivalentsAtCarryingValue` | cash | ORCL |
+| `LongTermNotesAndLoans` | long_term_debt | ORCL |
+
+**Impacto en DCF**: NVDA dcf 0.61→65.72; QCOM, ADBE, CRM, CSCO, IBM ya tienen DCF (188.9, 394.3, 245.5, 46.9, 162.2). ORCL/INTC siguen con DCF nulo LEGÍTIMO (FCF FY2026 negativo real del SEC).
+
+**Endpoints de refresh** (nuevos, `internal/api`):
+- `POST /refresh` — recalcula `derived_metrics` + `scores` de las securities activas con precio actual, sin red (~0.26s). Respuesta: `{"ok":true,"tickers":N,"duration_ms":D}`.
+- `POST /force-refresh` — pipeline completo: edgar con re-ingesta fresca → prices → sector → metrics → scores (~59s para 11 tickers). Respuesta: `{"ok":true,"tickers":N,"duration_ms":D,"steps":[...]}`.
+- Ambos son **loopback-only** (403 desde no-loopback) con **anti-concurrencia** (409 si ya corre uno).
+
+**Dashboard**: 2 botones nuevos — "Recalcular métricas" (llama `POST /refresh`) y "Pipeline completo" (llama `POST /force-refresh`).
+
+**Scores**: sin cambios de señal (`model_version` 1.1.0; AAPL 28 vender, ADBE 74 comprar, INTC 50 mantener, CRM 40 mantener, resto vender).
+
+**Suite**: 195/0/0 (178 baseline M4b + 17 nuevos). Build web determinista.
+
+**6. Nota de entrega (hotfix M3, 2026-09-23)**
 
 - **Fix 1 — Aislamiento de métricas por company**: `GetLatestMetrics` incorpora filtro `security_id` en el WHERE clause, evitando fuga de datos entre empresas (cross-company metric leakage).
 - **Fix 2 — Guardado de métricas NULL**: `scoreFundamentals` ahora verifica `ok && v != nil` en 6 métricas (pe_ratio, pb_ratio, fcf_yield, roe, de_ratio, peg_ratio), evitando SIGSEGV/DoS ante métricas NULL y degradando la dimensión a neutral (score 50).
@@ -162,7 +198,7 @@ Cambio solicitado por el usuario sobre el dashboard y las páginas individuales 
 - **PostgreSQL 16+** (vía `docker-compose` o instancia local/remota en puerto 55432)
 - **TimescaleDB** (opcional — las migraciones 006-007 crean tablas normales con fallback si la extensión no está cargada)
 - **Docker** (opcional — usado por `make docker-up` para DB local)
-- `SEC_EDGAR_USER_AGENT` — requerido por SEC EDGAR fair-access policy
+- `SEC_EDGAR_USER_AGENT` — requerido por SEC EDGAR fair-access policy; necesario en el entorno del servicio para `force-refresh` (M4c)
 - `DATABASE_URL` — PostgreSQL connection string
 - `BLS_API_KEY` — opcional; BLS permite 25 queries/día sin key (suficiente para CPI batch)
 - `GROWTH_RATE_DEFAULT` — tasa `g` por defecto para PEG, Graham y DCF (default: `7`)
@@ -320,6 +356,17 @@ curl http://localhost:8080/health
 | GET | `/compare/history?ticker=&years=` | Histórico de precios del ticker |
 | GET | `/backtest/sma?tickers=&fast=&slow=&initial_capital=` | Backtest SMA 50/200 |
 
+**Endpoints de refresh (M4c):**
+
+| Method | Endpoint | Description | Loopback |
+|--------|----------|-------------|----------|
+| POST | `/refresh` | Recalcula `derived_metrics` + `scores` de securities activas con precio actual (~0.26s) | Solo loopback (403 otherwise) |
+| POST | `/force-refresh` | Pipeline completo: edgar → prices → sector → metrics → scores (~59s para 11 tickers) | Solo loopback (403 otherwise) |
+
+Ambos endpoints son **mutadores protegidos**: solo aceptan conexiones loopback (403 desde otros orígenes) y devuelven 409 si ya hay un refresh en ejecución (anti-concurrencia). Respuesta: `{"ok":true,"tickers":N,"duration_ms":D}` (`+steps` en force-refresh).
+
+Requiere `SEC_EDGAR_USER_AGENT` definido en el entorno del servicio para `force-refresh` (fallback de dev si falta).
+
 **Ejemplos curl:**
 
 ```bash
@@ -363,7 +410,7 @@ make integration   # Integration tests with -tags=integration (serial -p 1)
 make lint          # go vet ./...
 ```
 
-Suite M1-M4b: **178 pass / 0 fail / 0 skip** (144 top-level + 34 subtests) — evidencia en `test-results/tests/abys-m4-dashboard.json` y `test-results/tests/abys-m4b-consenso-promedio.json` (y `test-results/tests/abys-m3-hotfix-getlatestmetrics.json` para M3).
+Suite M1-M4c: **195 pass / 0 fail / 0 skip** (144 top-level + 34 subtests + 17 nuevos) — evidencia en `test-results/tests/abys-m4-dashboard.json` y `test-results/tests/abys-m4b-consenso-promedio.json` (y `test-results/tests/abys-m4c-refresh-pipeline.json` para M4c).
 
 ### 12. Run the dashboard (M4)
 
@@ -407,6 +454,8 @@ sudo bash deploy/setup.sh               # instalar + systemd + health check
 - **Enable guard:** el servicio NO se habilita/arranca hasta que `DATABASE_URL` no contenga `CAMBIAR`/`CHANGEME`/`PLACEHOLDER`.
 - **Rollback:** `bin/api.prev` se preserva antes de instalar el nuevo binario; ante fallo de arranque, `setup.sh` restaura y reinicia.
 - **Health check:** `curl -sf http://localhost:8080/health` (JSON `.status=ok`) y `curl -sf http://localhost:8080/ | grep -q '<div id="root">'` (SPA cargado).
+
+**Endpoints de refresh (M4c):** `POST /refresh` y `POST /force-refresh` son mutadores protegidos (solo loopback, anti-concurrencia). El servicio debe tener `SEC_EDGAR_USER_AGENT` definido en `/etc/abys-invest/secrets.env` para que `force-refresh` funcione (fallback de dev si falta).
 
 **Archivos de deploy:** `deploy/abys-invest-api.service` (unit systemd, `Type=simple`, `User=abys`, `EnvironmentFile=/etc/abys-invest/secrets.env`, `Restart=on-failure`, hardening `ProtectSystem=strict`) y `deploy/setup.sh` (script de instalación idempotente, `set -euo pipefail`).
 
@@ -518,6 +567,7 @@ Idempotente por `(security_id, as_of, model_version)`. Índices en `(security_id
 - **M3 ✔** — Valuation & Score: Graham `(2×g)+8.5` × EPS, DCF simplificado (WACC 10%, 5a, g_term 2.5%), margin of safety, score 0-100 (pesos 35/30/20/15, umbrales ≥70/40-69/<40), comparables sectoriales, backtest SMA 50/200, API REST completa (11 endpoints), migración 009.
 - **M4 ✔** — UI & Deploy: Dashboard React 18 + TS + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback, `STATIC_DIR`), deploy systemd (`abys-invest-api.service`). Alertas (CA M4-2) diferidas a M5 por decisión usuario 2026-09-23.
 - **M4b ✔** — Consenso promedio y señal textual (2026-09-23): badge de señal muestra la palabra `comprar|mantener|vender`; columnas Graham y DCF en dashboard/ticker; consenso = promedio `(graham+dcf)/2` usado para score y upside; `model_version` 1.1.0. 178/0/0.
+- **M4c ✔** — Refresh de datos + fix mapeo XBRL (2026-09-23): botones `Recalcular métricas` y `Pipeline completo` en dashboard; endpoints `POST /refresh` y `POST /force-refresh` (loopback-only, anti-concurrencia); fix del diccionario XBRL con 6 conceptos GAAP nuevos; DCF operativo para NVDA, QCOM, ADBE, CRM, CSCO, IBM. Suite 195/0/0.
 - **M5 🔲** — Alertas: `cmd/alerts/`, `internal/alerts/`, endpoint `/alerts` (prefijo reservado). CA M4-2 diferida por decisión usuario 2026-09-23.
 
 ---

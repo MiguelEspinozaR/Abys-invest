@@ -67,6 +67,19 @@ func GetUnprocessedStaging(ctx context.Context, q DBTX, limit int) ([]EdgarStagi
 	return out, nil
 }
 
+// DeleteStagingByCIK removes the pending companyfacts staging rows of a CIK so
+// a later insert re-ingests the payload from scratch (re-ingesta fresca usada
+// por el pipeline Force Refresh). Returns the number of rows deleted.
+func DeleteStagingByCIK(ctx context.Context, q DBTX, cik string) (int64, error) {
+	tag, err := q.Exec(ctx, `
+DELETE FROM edgar_staging
+WHERE cik = $1 AND payload_type = 'company_facts'`, cik)
+	if err != nil {
+		return 0, fmt.Errorf("storage: delete staging %s: %w", cik, err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // MarkStagingNormalized flags a staging row as processed.
 func MarkStagingNormalized(ctx context.Context, q DBTX, id int64) error {
 	tag, err := q.Exec(ctx, `UPDATE edgar_staging SET normalized = true WHERE id = $1`, id)

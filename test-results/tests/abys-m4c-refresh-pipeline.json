@@ -1,0 +1,42 @@
+{
+  "task_id": "abys-m4c-refresh-pipeline",
+  "stage": "TEST",
+  "tested_at": "2026-09-24T01:12:00Z",
+  "command": "DATABASE_URL=... go test -p 1 -tags=integration -count=1 ./... && cd web && npm run build",
+  "suite": {
+    "pass": 195,
+    "fail": 0,
+    "skip": 0,
+    "note": "178 baseline M4b + 17 nuevos: conceptMap (M4c variants: ProductiveAssets/OtherProductiveAssets/DebtCurrent/LongTermDebtCurrent + fix ORCL CashAndCashEquivalentsAtCarryingValue/LongTermNotesAndLoans), dedupe newerFact P1>P2, pipeline unit + integration (RefreshMetricsAndScores persiste/idempotencia/dry-run), api refresh integration (loopback 200, remote 403, 405)"
+  },
+  "integration": {
+    "pipeline": "ok (0.673s)",
+    "api": "ok (0.258s)",
+    "db": "localhost:55432/abys (shared)"
+  },
+  "web_build": {
+    "command": "cd web && npm run build",
+    "result": "OK in 5.15s",
+    "dist_hash_stable": true,
+    "note": "index-DJKkBhKM.js idéntico a M4b: build determinista"
+  },
+  "e2e_smoke": {
+    "api": "http://127.0.0.1:18081 (shared DB)",
+    "force_refresh": {"duration_ms": 59449, "ok": true, "steps": {"edgar": 11, "prices": 11, "sector": 11, "metrics": 11, "scores": 11}, "tickers": 11},
+    "refresh_quick": {"duration_ms": 264, "ok": true, "tickers": 11},
+    "dcf_after_fix": {
+      "NVDA": {"dcf": 65.72, "fcf": 96676000000, "net_debt": -1138000000},
+      "QCOM": {"dcf": 188.92, "fcf": 12820000000, "net_debt": 9291000000},
+      "ADBE": {"dcf": 394.28, "fcf": 9852000000, "net_debt": 779000000},
+      "CRM": {"dcf": 245.53, "fcf": 14402000000, "net_debt": 11112000000},
+      "CSCO": {"dcf": 46.91, "fcf": 12767000000, "net_debt": 25806000000},
+      "IBM": {"dcf": 162.20, "fcf": 12102000000, "net_debt": 47620000000},
+      "ORCL": {"dcf": null, "fcf": -23686000000, "net_debt": 98252000000, "note": "FCF negativo FY2026 (capex real 55.7B) -> DCF nulo legitimo; antes net_debt era None"},
+      "INTC": {"dcf": null, "fcf": -4949000000, "net_debt": 31873000000, "note": "FCF negativo legitimo"}
+    },
+    "scores_stable": {
+      "note": "11 tickers model_version 1.1.0, señal sin cambios vs M4b: ADBE 74 comprar, INTC 50 mantener, CRM 40 mantener, resto vender (AAPL 28, AMD 20, CSCO 34, IBM 31, MSFT 37, NVDA 32, ORCL 29, QCOM 26)"
+    }
+  },
+  "conclusion": "195/0/0 PASS, build web OK, e2e refresh (rápido y completo) 200 desde loopback, DCF corregidos para NVDA/QCOM/ADBE/CRM/CSCO/IBM, ORCL/INTC DCF nulos legítimos por FCF negativo, scores estables 1.1.0."
+}
