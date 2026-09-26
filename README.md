@@ -2,7 +2,7 @@
 
 **Value investing analysis engine** — SEC EDGAR fundamentals → score 0-100 with buy/hold/sell signal, Graham/DCF intrinsic value, comparables & SMA backtest.
 
-> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M5. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**. **M4d ✔ (Air live-reload dev + deploy opcional) completed**.
+> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M6. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**. **M4d ✔ (Air live-reload dev + deploy opcional) completed**. **M5 ✔ (buscador + watchlist) completed.**
 
 ---
 
@@ -17,7 +17,8 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 | M1 — Foundation | ✅ Done | Repo, DB schema + migrations, collector (SEC EDGAR), API health check |
 | M2 — Prices & Metrics | ✅ Done | Yahoo Finance v8 chart adapter, BLS CPI macro, engine de métricas (EPS, P/E, P/B, P/FCF, PEG, ROE, D/E, FCF Yield) |
 | M3 — Valuation & Score | ✅ Done | Graham `(2×g)+8.5` × EPS último FY, DCF simplificado (WACC 10%, 5a, g_term 2.5%), margin of safety, score 0-100 (pesos 35/30/20/15, umbrales ≥70/40-69/<40), comparables sectoriales, backtest SMA 50/200, API REST completa (11 endpoints). Calibración 2026-09-23 con pares sectoriales reales; hotfix M3 (aislamiento security_id + guardado de métricas NULL). |
-| M4 — UI & Deploy | ✅ Done | Dashboard React + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback), deploy systemd. Alertas (CA M4-2) diferidas a M5 por decisión usuario 2026-09-23. |
+| M4 — UI & Deploy | ✅ Done | Dashboard React + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback), deploy systemd. Alertas (CA M4-2) diferidas a M6 por decisión usuario 2026-09-23. |
+| M5 — Buscador + Watchlist | ✅ Done | `GET /securities/search?q=&limit=`, `GET /watchlist` (content negotiation: text/html→SPA, application/json→JSON, `Vary: Accept`), `PUT/DELETE /watchlist/{ticker}` (loopback-only, 403 fuera de localhost, idempotentes, 404 ticker no catalogado); página `/watchlist` con buscador (debounce 300ms, min 2 chars). Watchlist permite delistados. Suite 248/0/1. |
 | M4b — Consenso promedio + señal textual | ✅ Done | Señal en UI como palabra `comprar\|mantener\|vender` (sin duplicar el score); columnas Graham y DCF por ticker; consenso = promedio `(graham+dcf)/2`; `model_version` 1.1.0. Decisión usuario 2026-09-23. |
 | M4c — Refresh de datos + fix mapeo XBRL | ✅ Done | Botones "Recalcular métricas" (`POST /refresh`) y "Pipeline completo" (`POST /force-refresh`) en el dashboard; fix del diccionario XBRL con 6 variantes GAAP nuevas; DCF operativo para NVDA (65.72), QCOM (188.9), ADBE (394.3), CRM (245.5), CSCO (46.9), IBM (162.2). Suite 195/0/0. |
 
@@ -120,7 +121,7 @@ Flujo de datos:
 
 **Módulos implementados en M4:** `web/` (React 18 + TS + Vite + Tailwind + react-router), `cmd/api` sirve estáticos de `web/dist` (FileServer + SPA fallback).
 
-**Diferido a M5:** `cmd/alerts/`, `internal/alerts/` — CA M4-2 diferida a M5 por decisión del usuario 2026-09-23; el prefijo `alerts` está reservado en `apiRouteSegments` de `internal/api/static.go`.
+**Diferido a M6:** `cmd/alerts/`, `internal/alerts/` — CA M4-2 diferida a M6 por decisión del usuario 2026-09-23; el prefijo `alerts` está reservado en `apiRouteSegments` de `internal/api/static.go`.
 
 ### Metodología del score y calibración (2026-09-23)
 
@@ -189,6 +190,17 @@ Cambio solicitado por el usuario sobre el dashboard y las páginas individuales 
 - **Fix 2 — Guardado de métricas NULL**: `scoreFundamentals` ahora verifica `ok && v != nil` en 6 métricas (pe_ratio, pb_ratio, fcf_yield, roe, de_ratio, peg_ratio), evitando SIGSEGV/DoS ante métricas NULL y degradando la dimensión a neutral (score 50).
 - **Suite final**: 154/154 tests verdes (15 paquetes, ejecución serial `-p 1`).
 - **Evidencia**: `test-results/tests/abys-m3-hotfix-getlatestmetrics.json` y `test-results/security/abys-m3-hotfix-getlatestmetrics.json`.
+
+**7. Nota de entrega (M5, 2026-09-25) — buscador + watchlist**
+
+M5 implementa el buscador de securities y la watchlist de usuario:
+
+- **Endpoints nuevos**: `GET /securities/search?q=&limit=` (busca por prefijo de ticker o ILIKE en nombre, ranking exacto→prefijo→nombre), `GET /watchlist` (lista con detalle; **negociación de contenido**: `Accept: text/html` → SPA del dashboard, `application/json` → JSON con `Vary: Accept`), `PUT /watchlist/{ticker}` (añade, idempotente 200 `{"ok":true}`, 404 si ticker no catalogado), `DELETE /watchlist/{ticker}` (elimina, idempotente, 404/403 iguales).
+- **Loopback-only**: `PUT`/`DELETE /watchlist/{ticker}` solo aceptan conexiones localhost (403 fuera), como `/refresh`.
+- **Delistados permitidos**: la watchlist puede contener securities deslistadas (no se filtran por estatus).
+- **Contrato**: `WatchlistItem.id` = `securities.id` (mismo id que `/securities/search`).
+- **Suite**: 248/0/1. Build web OK (`npm run build`, hash `index-PmMvGtRy.js`).
+- **Mantenimiento**: la suite de integración (`make integration`, `-tags=integration`) ejecuta `TRUNCATE` sobre `securities` y `watchlist` en la BD compartida → tras correrla, re-poblar con `make run-all-data` (o force-refresh desde el dashboard). Mientras tanto, `GET /securities/search` y `GET /watchlist` devuelven `[]`.
 
 ---
 
@@ -367,6 +379,17 @@ Ambos endpoints son **mutadores protegidos**: solo aceptan conexiones loopback (
 
 Requiere `SEC_EDGAR_USER_AGENT` definido en el entorno del servicio para `force-refresh` (fallback de dev si falta).
 
+**Endpoints de M5 (búsqueda y watchlist):**
+
+| Method | Endpoint | Description | Loopback |
+|--------|----------|-------------|----------|
+| GET | `/securities/search?q=<2+ chars>&limit=<1-50, default 10>` | Busca en catálogo completo por prefijo de ticker o nombre (ILIKE); ranking exacto→prefijo→nombre; array de securities | No |
+| GET | `/watchlist` | Lista con detalle de la watchlist; **content negotiation**: `text/html` → `index.html` del SPA; `application/json` → JSON; lleva `Vary: Accept` | No |
+| PUT | `/watchlist/{ticker}` | Añade ticker a la watchlist; idempotente (200 `{"ok":true}`); 404 si el ticker no está catalogado | Solo localhost (403 fuera) |
+| DELETE | `/watchlist/{ticker}` | Elimina ticker de la watchlist; idempotente; 404/403 iguales | Solo localhost (403 fuera) |
+
+**Página `/watchlist`**: buscador con debounce de 300ms (mínimo 2 caracteres), resultados clicables que navegan al ticker seleccionado; botón para añadir el security a la watchlist; lista de la watchlist con entrada por entrada con botón de eliminar. Los datos se persisten en PostgreSQL.
+
 **Ejemplos curl:**
 
 ```bash
@@ -400,7 +423,7 @@ curl http://localhost:8080/score/UNKNOWN
 
 **Formato de errores:** Todos los endpoints responden con `{"error":{"code":"<code>","message":"<msg>"}}` en caso de error. Códigos: `not_found`, `bad_request`, `validation_error`, `internal_error`, `service_unavailable`, `unsupported`.
 
-> **Nota:** `/alerts` está reservado en `internal/api/static.go` (`apiRouteSegments`) para **M5**; diferido a M5 por decisión del usuario 2026-09-23 (CA M4-2). No existe endpoint de alertas en M4.
+> **Nota:** `/alerts` está reservado en `internal/api/static.go` (`apiRouteSegments`) para **M6**; diferido a M6 por decisión del usuario 2026-09-23 (CA M4-2). No existe endpoint de alertas en M4.
 
 ### 11. Run tests
 
@@ -410,7 +433,7 @@ make integration   # Integration tests with -tags=integration (serial -p 1)
 make lint          # go vet ./...
 ```
 
-Suite M1-M4c: **195 pass / 0 fail / 0 skip** (144 top-level + 34 subtests + 17 nuevos) — evidencia en `test-results/tests/abys-m4-dashboard.json` y `test-results/tests/abys-m4b-consenso-promedio.json` (y `test-results/tests/abys-m4c-refresh-pipeline.json` para M4c).
+Suite M1-M5: **248 pass / 0 fail / 0 skip** (195 baseline M1-M4c + 53 nuevos de M5) — evidencia en `test-results/tests/abys-m4-dashboard.json` y `test-results/tests/abys-m4b-consenso-promedio.json` (y `test-results/tests/abys-m4c-refresh-pipeline.json` para M4c).
 
 ### 12. Run the dashboard (M4)
 
@@ -609,11 +632,12 @@ Idempotente por `(security_id, as_of, model_version)`. Índices en `(security_id
 - **M1 ✔** — Foundation: DB schema, migrations, SEC EDGAR adapter, collector, API health check. 55/55 tests.
 - **M2 ✔** — Prices & Metrics: Yahoo v8 chart adapter, BLS CPI macro, engine de métricas §13 (EPS, P/E, P/B, P/FCF, PEG, ROE, D/E, FCF Yield). 82/82 tests.
 - **M3 ✔** — Valuation & Score: Graham `(2×g)+8.5` × EPS, DCF simplificado (WACC 10%, 5a, g_term 2.5%), margin of safety, score 0-100 (pesos 35/30/20/15, umbrales ≥70/40-69/<40), comparables sectoriales, backtest SMA 50/200, API REST completa (11 endpoints), migración 009.
-- **M4 ✔** — UI & Deploy: Dashboard React 18 + TS + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback, `STATIC_DIR`), deploy systemd (`abys-invest-api.service`). Alertas (CA M4-2) diferidas a M5 por decisión usuario 2026-09-23.
+- **M4 ✔** — UI & Deploy: Dashboard React 18 + TS + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback, `STATIC_DIR`), deploy systemd (`abys-invest-api.service`). Alertas (CA M4-2) diferidas a M6 por decisión usuario 2026-09-23.
 - **M4b ✔** — Consenso promedio y señal textual (2026-09-23): badge de señal muestra la palabra `comprar|mantener|vender`; columnas Graham y DCF en dashboard/ticker; consenso = promedio `(graham+dcf)/2` usado para score y upside; `model_version` 1.1.0. 178/0/0.
 - **M4c ✔** — Refresh de datos + fix mapeo XBRL (2026-09-23): botones `Recalcular métricas` y `Pipeline completo` en dashboard; endpoints `POST /refresh` y `POST /force-refresh` (loopback-only, anti-concurrencia); fix del diccionario XBRL con 6 conceptos GAAP nuevos; DCF operativo para NVDA, QCOM, ADBE, CRM, CSCO, IBM. Suite 195/0/0.
 - **M4d ✔** — Air live-reload (2026-09-24): `make air-install` + `make dev-api` con auto-rebuild/restart al cambiar .go (`.air.toml` raíz, delay 500ms); frontend Vite HMR aparte; deploy opcional con `--with-air` (unit alterna `abys-invest-api-air.service`, sources en `/opt/abys-invest/src`, air en `/usr/local/bin`). 195/0/0 sin cambios.
-- **M5 🔲** — Alertas: `cmd/alerts/`, `internal/alerts/`, endpoint `/alerts` (prefijo reservado).
+- **M5 ✔** — Buscador + Watchlist (2026-09-25): `GET /securities/search?q=<2+ chars>&limit=<1-50>` (ranking exacto→prefijo→nombre), `GET /watchlist` (content negotiation: text/html→SPA, application/json→JSON con `Vary: Accept`), `PUT/DELETE /watchlist/{ticker}` (loopback-only, 403 fuera de localhost, idempotentes, 404 si ticker no catalogado); página `/watchlist` con buscador debounce 300ms (min 2 chars), resultados clicables + añadir, lista con eliminar. Permite guardar delistados. Suite 248/0/1.
+- **M6 🔲** — Alertas: `cmd/alerts/`, `internal/alerts/`, endpoint `/alerts` (prefijo reservado). Diferido a M6 por decisión del usuario (SPEC §7).
 
 ---
 

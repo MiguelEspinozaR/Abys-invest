@@ -1,0 +1,166 @@
+{
+  "task": "abys-m5-search-watchlist",
+  "stage": "TEST",
+  "date": "2026-09-26T01:04:02Z",
+  "suite": {
+    "command": "set -a; . /tmp/opencode/abys-secrets.env; set +a; go test -p 1 -tags=integration -count=1 ./...",
+    "pass": 239,
+    "fail": 0,
+    "skip": 1,
+    "exit_code": 0,
+    "counting_method": "conteo de lineas '--- PASS/FAIL/SKIP' a cualquier indentacion (incluye subtests) del log con -v: 239/0/1. A nivel de test raiz: 166/0/1. Coincide con el 239 reportado por el Builder M5.",
+    "note": "El 1 SKIP es el t.Skip hardcodeado preexistente de M4c en internal/api/refresh_integration_test.go:159 (TestForceRefreshLoopbackSkips, 'requiere acceso a SEC/EDGAR + Yahoo desde el entorno de test'). No es un archivo de M5. Baseline M4c/M4d: 195/0/0 -> delta M5 = +44 tests, todos PASS.",
+    "packages_ok": 14,
+    "packages_fail": 0
+  },
+  "results": {
+    "go_build": "OK (go build ./..., exit 0)",
+    "go_vet": "OK (go vet ./..., exit 0)",
+    "go_vet_integration": "OK (go vet -tags=integration ./..., exit 0)",
+    "npm_build": {
+      "ok": true,
+      "command": "cd web && npm run build (tsc && vite build)",
+      "hash": "index-PmMvGtRy.js",
+      "css": "index-Bdr2r4C-.css",
+      "js_size": "188.92 kB (gzip 59.63 kB)",
+      "result": "OK in 5.63s",
+      "hash_matches_expected": true
+    },
+    "smoke_api": {
+      "base_url": "http://127.0.0.1:18086 (raiz, sin prefijo; ver notes[0])",
+      "static_dir": "web/dist",
+      "search_ok": {
+        "pass": true,
+        "request": "GET /securities/search?q=aa (Accept: application/json)",
+        "status": 200,
+        "body": "[{\"id\":2,\"ticker\":\"AAPL\",\"cik\":\"0000320193\",\"name\":\"Apple Inc.\",...}]",
+        "assertion": "array JSON con AAPL presente"
+      },
+      "search_400": {
+        "pass": true,
+        "request": "GET /securities/search?q=a (Accept: application/json)",
+        "status": 400,
+        "body": "{\"error\":{\"code\":\"validation_error\",\"message\":\"'q' debe tener al menos 2 caracteres\"}}",
+        "extra": "GET /securities/search (sin q) -> 400 validation_error \"'q' es requerido (minimo 2 caracteres)\""
+      },
+      "watchlist_put": {
+        "pass": true,
+        "request": "PUT /watchlist/AAPL",
+        "status": 200,
+        "body": "{\"ok\":true}",
+        "idempotent": "segundo PUT identico -> 200 {\"ok\":true} (ON CONFLICT DO NOTHING)"
+      },
+      "watchlist_get": {
+        "pass": true,
+        "request": "GET /watchlist (Accept: application/json)",
+        "status": 200,
+        "body": "[{\"id\":3,\"ticker\":\"AAPL\",\"name\":\"Apple Inc.\",\"exchange\":\"NASDAQ\",\"sector\":\"Technology\",\"industry\":\"Consumer Electronics\",\"created_at\":\"...\"}]",
+        "assertion": "contiene AAPL; lista vacia inicial devuelve [] (nunca null)"
+      },
+      "watchlist_delete": {
+        "pass": true,
+        "request": "DELETE /watchlist/AAPL",
+        "status": 200,
+        "body": "{\"ok\":true}",
+        "idempotent": "segundo DELETE identico -> 200 {\"ok\":true} (no-op)",
+        "final_state": "GET /watchlist -> []"
+      },
+      "watchlist_404": {
+        "pass": true,
+        "request": "PUT /watchlist/NOPEZZZ",
+        "status": 404,
+        "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"security \\\"NOPEZZZ\\\" no encontrada\"}}",
+        "extra": "DELETE /watchlist/NOPEZZZ -> 404 not_found (misma semantica)"
+      },
+      "negotiation_html": {
+        "pass": true,
+        "accept_text_html": "200, Content-Type: text/html; charset=utf-8, body = index.html del SPA (<div id=\"root\"> + /assets/index-PmMvGtRy.js)",
+        "accept_application_json": "200, body = array JSON de la watchlist",
+        "api_prefix_protection": "GET /watchlist/extra (Accept: text/html) -> 404 {\"error\":{\"code\":\"not_found\",\"message\":\"ruta no encontrada: /watchlist/extra\"}} (nunca index.html)"
+      },
+      "api_stopped": true,
+      "ports_released": "18086 libre al finalizar"
+    },
+    "smoke_web": {
+      "pass": true,
+      "server": "vite dev 5.4.21 en 127.0.0.1:5181 (VITE_PROXY_TARGET=http://127.0.0.1:18086)",
+      "watchlist_route": "GET /watchlist -> 200, Content-Type: text/html (shell del SPA con react-refresh)",
+      "api_proxy_watchlist": "GET /api/watchlist -> 200, [] (JSON via proxy con rewrite del prefijo /api)",
+      "api_proxy_search": "GET /api/securities/search?q=aa -> 200, array con AAPL",
+      "api_proxy_crud": "PUT /api/watchlist/AAPL -> 200 {\"ok\":true}; GET contiene AAPL; DELETE -> 200 {\"ok\":true}; GET final -> []",
+      "vite_stopped": true,
+      "ports_released": "5181 libre al finalizar"
+    },
+    "persistence": {
+      "table_exists": true,
+      "table": "public.watchlist",
+      "migration": "010_create_watchlist.sql ya aplicada (verificada en la BD compartida 55432)",
+      "columns": "id bigint PK, security_id bigint NOT NULL, created_at timestamptz NOT NULL DEFAULT now()",
+      "indexes": "watchlist_pkey (PK btree id), uq_watchlist_security (UNIQUE btree security_id), idx_watchlist_created (btree created_at)",
+      "constraints": {
+        "fk": "watchlist_security_id_fkey FOREIGN KEY (security_id) REFERENCES securities(id) ON DELETE CASCADE",
+        "unique": "uq_watchlist_security UNIQUE (security_id)",
+        "not_null": ["watchlist_id_not_null", "watchlist_security_id_not_null", "watchlist_created_at_not_null"]
+      },
+      "fk_enforcement_verified": {
+        "rejects_orphan": "INSERT watchlist(security_id=999999) -> ERROR violacion de watchlist_security_id_fkey (transaccion rollback)",
+        "cascade_on_delete": "INSERT fila de MSFT -> count=1; DELETE securities MSFT -> count=0 (ON DELETE CASCADE efectivo)",
+        "method": "ambas pruebas dentro de BEGIN/ROLLBACK => cero residuo en la BD compartida"
+      },
+      "count_before": 0,
+      "count_after": 0,
+      "count_scope": "watchlist: 0 antes / 0 despues del smoke. securities: 0 antes (la suite trunca) / 0 despues de retirar el seed. BD restaurada al estado exacto previo al smoke.",
+      "integration_suite_truncates": true
+    },
+    "coverage": {
+      "command": "go test -p 1 -tags=integration -count=1 -coverprofile ... ./internal/api/... ./internal/storage/...",
+      "packages": {
+        "internal/api": "66.8%",
+        "internal/storage": "53.2%",
+        "cmd/api": "2.9%"
+      },
+      "m5_functions": {
+        "api/handleSearchSecurities": "91.3%",
+        "api/handleListWatchlist": "71.4%",
+        "api/handleAddWatchlist": "69.2%",
+        "api/handleRemoveWatchlist": "69.2%",
+        "api/serveSPAIndexNegotiated": "100.0%",
+        "api/wantsHTML": "100.0%",
+        "storage/SearchSecurities": "76.5%",
+        "storage/AddToWatchlist": "100.0%",
+        "storage/RemoveFromWatchlist": "75.0%",
+        "storage/ListWatchlist": "76.9%"
+      },
+      "note": "Solo se reportan cifras; el umbral de cobertura es una decision de .ai/policies/project-policy.md y el Tester no inventa ninguno. Las ramas no cubiertas en los handlers/watchlist son las de pool nil (503) y los errores 500 internos, que requieren inyeccion de fallos para ejercitarse."
+    },
+    "secrets_hygiene": {
+      "database_url_printed": false,
+      "log_filter_check": "grep sobre el log completo de la suite buscando 'postgres(ql)://', 'DATABASE_URL=', 'password=', 'abys:abys@' -> 0 coincidencias",
+      "secret_values_in_evidence": false
+    },
+    "git_untouched": {
+      "no_mutations": true,
+      "head": "f8d7525 feat(m4d): air live-reload for dev + deploy auto-recompilation variant",
+      "staging_area": "vacio",
+      "working_tree": "identico al working tree M5 del Builder (11 modificados + 6 sin seguimiento de M5); unico untracked ajeno a M5: test-results/security/abys-m5-search-watchlist.json (Security Scanner, no del Tester)",
+      "no_commits": true,
+      "no_tags": true,
+      "no_push": true
+    },
+    "no_deploy": {
+      "opt_abys_invest_untouched": true,
+      "detail": "No se ejecuto deploy/setup.sh ni se toco /opt/abys-invest. La instancia preexistente (air prod, PID 676712) siguio corriendo durante y despues del smoke; solo se uso un puerto efimero propio (18086) y un build propio en /tmp/opencode/m5-test-api."
+    }
+  },
+  "notes": [
+    "0) DESVIACION DEL BRIEF (importante para REVIEW): las URLs de smoke del brief usaban el prefijo '/api/v1', pero el API de este proyecto se monta en la RAIZ (router.go registra 'GET /securities/search', 'GET /watchlist', etc.; el cliente web usa API_BASE='' en prod y '/api' solo en dev via proxy de Vite). Con '/api/v1/...' el fallback SPA responde 200 index.html en vez de la API. Todos los checks se repitieron y PASARON contra las rutas reales en raiz.",
+    "0b) Observacion (fuera del alcance de M5, preexistente de M4 D2): el fallback SPA devuelve 200 text/html para cualquier primer segmento desconocido, incluido '/api'. Un path de API mal escrito devuelve por tanto HTML 200 en vez del envelope JSON 404. No lo introduce M5 (apiRouteSegments no incluye 'api' desde M4) y no se cambio aqui, pero conviene anadirlo al backlog tecnico.",
+    "1) La suite de storage hace TRUNCATE ... RESTART IDENTITY CASCADE sobre securities, por lo que la BD compartida queda con el catalogo vacio al terminar (preexistente, afecta a todos los milestones). Para poder ejercitar busqueda y watchlist por API se sembraron 3 securities minimos (AAPL/MSFT/GOOGL con CIK reales) y se retiraron al final: la BD quedo en watchlist=0 y securities=0, exactamente el estado previo.",
+    "2) CA-M5-4 se verifico sin ensuciar la BD: la tabla y sus constraints se confirmaron por pg_catalog/information_schema, y lafk se ejercito con INSERT/DELETE dentro de transacciones con ROLLBACK (rechaza security_id huerfano y cascada real al borrar el security), dejando cero residuo.",
+    "3) Cobertura reportada sin umbral: la politica de umbrales vive en .ai/policies/project-policy.md (no revisada aqui; el Tester no fija ni valida ninguno).",
+    "4) Verificacion independiente: los conteos de la suite se obtuvieron ejecutando la suite aqui (no se tomo como cierto el dato del Builder) y coinciden: 239 PASS / 0 FAIL / 1 SKIP. Los 44 tests M5 nuevos (search ranking, watchlist storage, endpoints, negociacion de contenido) aparecen todos en PASS en el log -v.",
+    "5) Coherente con el reporte del Security Scanner (test-results/security/abys-m5-search-watchlist.json): los mismos controles que encontro ese agente (constraints FK/UNIQUE, negociacion, parameterized queries) quedaron confirmados de forma independiente aqui por ejecucion real."
+  ],
+  "verdict": "PASS",
+  "conclusion": "239 PASS / 0 FAIL / 1 SKIP (skip preexistente de M4c). go build, go vet y go vet -tags=integration OK. npm run build OK con bundle index-PmMvGtRy.js (hash esperado). Persistencia CA-M5-4 OK: tabla watchlist existente con PK, UNIQUE(security_id) y FK ON DELETE CASCADE a securities(id), fk ejercitada y verificada, BD restaurada a watchlist=0/securities=0. Smoke API completo OK (search 200 con AAPL, q<2 chars 400, PUT/DELETE idempotentes, GET con detalle, 404 para ticker inexistente, negociacion text/html -> index.html y /watchlist/extra -> 404 JSON). Smoke web OK via proxy de Vite. Sin commits, sin tags, sin push y sin despliegue en /opt/abys-invest."
+}

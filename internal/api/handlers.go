@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -13,9 +14,28 @@ import (
 	"github.com/miky/abys-invest/internal/storage"
 )
 
+// Search contract (plan M5 B4): 'q' de 2+ caracteres, limit por defecto 10 con
+// tope de 50 (el servidor recorta, no rechaza, para no romper clientes que
+// piden más).
+const (
+	searchMinQueryLen  = 2
+	searchDefaultLimit = 10
+	searchMaxLimit     = 50
+)
+
 // isNotFound maps the "no row" sentinel of the storage layer to the JSON
 // 404 envelope (403 y 404 = ticker inexistente o sin datos).
 func isNotFound(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
+
+// requireDB writes the 503 envelope when the API runs without a pool
+// (arranque degradado) and reports whether the handler may continue.
+func requireDB(w http.ResponseWriter, pool *pgxpool.Pool) bool {
+	if pool == nil {
+		writeError(w, http.StatusServiceUnavailable, CodeUnavailable, "base de datos no disponible")
+		return false
+	}
+	return true
+}
 
 // handleListSecurities: GET /securities?limit=&offset=
 func handleListSecurities(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) {
@@ -35,6 +55,137 @@ func handleListSecurities(w http.ResponseWriter, r *http.Request, pool *pgxpool.
 		return
 	}
 	writeJSON(w, http.StatusOK, secs)
+}
+
+// handleSearchSecurities: GET /securities/search?q=&limit= → array de
+// securities del catálogo completo, rankeado (ticker exacto → prefijo de
+// ticker → nombre) por storage.SearchSecurities. Contrato SPEC §11bis CA-M5-1:
+// 'q' requerido con 2+ caracteres (evita el ruido de 1 letra sobre ~10k
+// securities); limit por defecto 10 y tope de 50.
+func handleSearchSecurities(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) {
+	if !requireDB(w, pool) {
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		writeError(w, http.StatusBadRequest, CodeValidation, "'q' es requerido (mínimo %d caracteres)", searchMinQueryLen)
+		return
+	}
+	if len([]rune(q)) < searchMinQueryLen {
+		writeError(w, http.StatusBadRequest, CodeValidation, "'q' debe tener al menos %d caracteres", searchMinQueryLen)
+		return
+	}
+	limit, err := parseIntQuery(r.URL.Query().Get("limit"), searchDefaultLimit)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, CodeValidation, "%v", err)
+		return
+	}
+	if limit < 1 {
+		writeError(w, http.StatusBadRequest, CodeValidation, "'limit' debe ser >= 1")
+		return
+	}
+	if limit > searchMaxLimit {
+		limit = searchMaxLimit
+	}
+	secs, err := storage.SearchSecurities(r.Context(), pool, q, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, CodeInternal, "error al buscar securities")
+		return
+	}
+	writeJSON(w, http.StatusOK, secs)
+}
+
+// handleListWatchlist: GET /watchlist → lista persistida con el detalle del
+// catálogo, en orden de adición (storage.ListWatchlist).
+//
+// Es la mitad JSON de la ruta dual /watchlist (navegador → shell del SPA vía
+// negociación en router.go, cliente de la API → lista aquí). Vary: Accept se
+// declara en las dos variantes para que las cachés no confundan el index.html
+// con el array JSON. La lectura no está restringida a loopback: es read-only.
+func handleListWatchlist(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) {
+	if !requireDB(w, pool) {
+		return
+	}
+	items, err := storage.ListWatchlist(r.Context(), pool)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, CodeInternal, "error al listar la watchlist")
+		return
+	}
+	w.Header().Set("Vary", "Accept")
+	writeJSON(w, http.StatusOK, items)
+}
+
+// guardWatchlistMutation aplica a los mutadores de la watchlist la misma política
+// que el refresh (plan M4c, ver guardRefresh en refresh.go): un mutador escribe
+// en la BD, así que solo se acepta desde clientes loopback (403
+// CodeForbidden, mismo envelope y misma constante que /refresh y
+// /force-refresh) mientras el API haga bind 0.0.0.0. El orden es el de
+// guardRefresh: primero la disponibilidad del pool (503) y después la política
+// de red (403). Si un proxy redirige, debe reescribir RemoteAddr para conservar
+// la política.
+//
+// El router normaliza el ticker antes de llegar aquí, así que un ticker
+// malformado es 400 con independencia del origen: no consulta el catálogo ni
+// muta nada, no filtra información del catálogo y el 404 de "security no
+// encontrada" sí queda detrás de esta guardia.
+func guardWatchlistMutation(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) bool {
+	if !requireDB(w, pool) {
+		return false
+	}
+	if !isLoopbackClient(r.RemoteAddr) {
+		writeError(w, http.StatusForbidden, CodeForbidden, "la watchlist solo se puede modificar desde localhost")
+		return false
+	}
+	return true
+}
+
+// handleAddWatchlist: PUT /watchlist/{ticker} — añade el valor a la watchlist
+// (idempotente). Solo loopback (guardWatchlistMutation). 400 si el ticker no es
+// normalizable, 404 si no existe en el catálogo, 200 {"ok":true} en éxito. El
+// ticker llega ya normalizado por el router (misma convención que el resto de
+// endpoints con {ticker}).
+func handleAddWatchlist(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, ticker string) {
+	if !guardWatchlistMutation(w, r, pool) {
+		return
+	}
+	sec, err := storage.GetSecurityByTicker(r.Context(), pool, ticker)
+	if err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, CodeNotFound, "security %q no encontrada", ticker)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, CodeInternal, "error al obtener security")
+		return
+	}
+	if err := storage.AddToWatchlist(r.Context(), pool, sec.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, CodeInternal, "error al añadir a la watchlist")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// handleRemoveWatchlist: DELETE /watchlist/{ticker} — elimina el valor de la
+// watchlist (idempotente: si no estaba, también 200). Solo loopback
+// (guardWatchlistMutation). 404 si el ticker no existe en el catálogo (misma
+// semántica que el PUT).
+func handleRemoveWatchlist(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, ticker string) {
+	if !guardWatchlistMutation(w, r, pool) {
+		return
+	}
+	sec, err := storage.GetSecurityByTicker(r.Context(), pool, ticker)
+	if err != nil {
+		if isNotFound(err) {
+			writeError(w, http.StatusNotFound, CodeNotFound, "security %q no encontrada", ticker)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, CodeInternal, "error al obtener security")
+		return
+	}
+	if err := storage.RemoveFromWatchlist(r.Context(), pool, sec.ID); err != nil {
+		writeError(w, http.StatusInternalServerError, CodeInternal, "error al eliminar de la watchlist")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // handleGetSecurity: GET /securities/{ticker}

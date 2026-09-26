@@ -1,0 +1,86 @@
+{
+  "scanner": "opencode/nemotron-3.5-lightning-free Security Scanner",
+  "date": "2026-09-25T00:00:00Z",
+  "task": "abys-m5-search-watchlist",
+  "files": [
+    "migrations/010_create_watchlist.sql",
+    "internal/storage/watchlist.go",
+    "internal/storage/securities_test.go",
+    "internal/storage/watchlist_test.go",
+    "internal/api/m5_integration_test.go",
+    "web/src/pages/WatchlistPage.tsx",
+    "internal/api/handlers.go",
+    "internal/api/router.go",
+    "internal/api/static.go",
+    "internal/storage/models.go",
+    "internal/storage/securities.go",
+    "web/src/App.tsx",
+    "web/src/api/client.ts",
+    "web/src/api/types.ts",
+    "web/src/pages/DashboardPage.tsx",
+    "cmd/api/main.go"
+  ],
+  "findings": [
+    {
+      "severity": "none",
+      "file": "internal/storage/securities.go",
+      "finding": "SearchSecurities uses parameterized queries ($1..$5) with no string concatenation of user input. The LIKE patterns use escaped patterns via escapeLike() paired with ESCAPE E'\\' in SQL.",
+      "recommendation": "No action needed - SQL injection risk is mitigated."
+    },
+    {
+      "severity": "none",
+      "file": "internal/storage/securities.go",
+      "finding": "escapeLike() properly escapes \\, %, _ characters using strings.NewReplacer so they are matched literally in ILIKE.",
+      "recommendation": "No action needed - LIKE escaping is correct."
+    },
+    {
+      "severity": "none",
+      "file": "internal/api/router.go",
+      "finding": "ORDER BY CASE in SearchSecurities uses fixed columns (ticker) and parameterized likes ($3, $4 from upper(pattern)), no user-controlled text in ORDER BY clause.",
+      "recommendation": "No action needed - ranking injection risk is mitigated."
+    },
+    {
+      "severity": "none",
+      "file": "migrations/010_create_watchlist.sql",
+      "finding": "Watchlist table has FK ON DELETE CASCADE to securities(id) and UNIQUE(security_id) constraint. No user_id column (single-user design per SPEC §2.3).",
+      "recommendation": "No action needed - FK constraints are properly defined."
+    },
+    {
+      "severity": "none",
+      "file": "internal/api/static.go",
+      "finding": "serveSPAIndexNegotiated correctly negotiates content: serves index.html only when Accept contains text/html AND static build exists. If STATIC_DIR missing → falls back to JSON. apiRouteSegments map includes 'watchlist' to protect /watchlist/extra paths from SPA fallback (returns 404 JSON, never index.html).",
+      "recommendation": "No action needed - content negotiation and path protection are correct."
+    },
+    {
+      "severity": "none",
+      "file": "internal/api/handlers.go",
+      "finding": "PUT /watchlist/{ticker} (handleAddWatchlist) and DELETE /watchlist/{ticker} (handleRemoveWatchlist) validate ticker via normalizeTicker, look up security by ticker, return 404 if not found in catalog. Idempotent: add uses ON CONFLICT DO NOTHING, remove is no-op if not present. No auth (single-user design per SPEC §2.3).",
+      "recommendation": "No action needed - mutator endpoints are correctly implemented per SPEC design."
+    },
+    {
+      "severity": "none",
+      "file": "web/src/api/client.ts",
+      "finding": "putJSON/deleteJSON send Accept: application/json header, so they always receive JSON responses (not HTML negotiation). Loopback consideration: these mutate only the local user's watchlist (not DB pipelines like /refresh), so loopback-only restriction is not required for this single-user app."
+    },
+    {
+      "severity": "none",
+      "file": "internal/storage/watchlist.go",
+      "finding": "ListWatchlist uses plain JOIN with securities and parameterized ORDER BY created_at, id - no user input in query construction."
+    },
+    {
+      "severity": "none",
+      "file": "migrations/010_create_watchlist.sql",
+      "finding": "IF NOT EXISTS guard makes CREATE TABLE idempotent. ON CONFLICT DO NOTHING on UNIQUE constraint makes watchlist operations idempotent."
+    }
+  ],
+  "hard_blocks": [],
+  "summary": {
+    "sql_injection_liking_escaping": "PASS - escapeLike() correctly escapes % _ \\ wildcards; all queries use parameterized placeholders ($1..$5); no string concatenation of user input into SQL.",
+    "ranking_injection": "PASS - ORDER BY CASE uses fixed columns and parameterized likes; no user-controlled text in ordering clause.",
+    "fk_constraints_watchlist": "PASS - FK ON DELETE CASCADE to securities(id), UNIQUE(security_id) constraint. Single-user design (no user_id) per SPEC §2.3.",
+    "content_negotiation": "PASS - serveSPAIndexNegotiated serves index.html only when Accept: text/html AND build exists; /watchlist/extra gives 404 JSON (apiRouteSegments protection). No path traversal - resolveWithin confines files to staticDir.",
+    "mutator_endpoints": "PASS - PUT/DELETE /watchlist/{ticker} validate ticker, return 404 if security missing, idempotent per SPEC. Single-user design, no auth required per SPEC §2.3.",
+    "secrets_scan": "PASS - No new secrets found in source code. DATABASE_URL present only in .env which is gitignored.",
+    "dependencies": "PASS - Only stdlib + pgx v5.11.0; no new dependencies added for M5."
+  }
+}

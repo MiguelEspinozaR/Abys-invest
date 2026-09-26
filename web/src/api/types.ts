@@ -43,6 +43,41 @@ export interface Security {
 /** GET /securities/{ticker} — mismo shape que Security (storage.Security). */
 export type SecurityDetail = Security;
 
+/**
+ * GET /securities/search?q=&limit= → array de Security del catálogo completo,
+ * rankeado (ticker exacto → prefijo de ticker → coincidencia de nombre).
+ */
+export type SearchResults = Security[];
+
+/**
+ * GET /watchlist → fila de la watchlist con el detalle del catálogo
+ * (storage.WatchlistItem). Hay exactamente una fila de watchlist por security
+ * (UNIQUE security_id).
+ *
+ * `id` es el `securities.id` del valor en el catálogo (NO el id de la fila de
+ * watchlist): es el mismo id que devuelve GET /securities/search para ese
+ * ticker, y es estable si se borra y se vuelve a añadir el valor.
+ * `created_at` es el orden de adición que muestra la lista (sí viene de la fila
+ * de watchlist).
+ */
+export interface WatchlistItem {
+  id: number;
+  ticker: string;
+  name: string;
+  exchange?: string;
+  sector?: string;
+  industry?: string;
+  created_at: string;
+}
+
+/** GET /watchlist → lista en orden de adición. */
+export type WatchlistResponse = WatchlistItem[];
+
+/** PUT/DELETE /watchlist/{ticker} → {"ok":true} (idempotentes). */
+export interface WatchlistAck {
+  ok: boolean;
+}
+
 /** Una barra diaria OHLCV (storage.DailyPrice) — GET /prices/{ticker}. */
 export interface PricePoint {
   id: number;

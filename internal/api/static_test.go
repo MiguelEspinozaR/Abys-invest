@@ -20,18 +20,29 @@ const (
 )
 
 // newStaticHandler reproduce la construcción del router en cmd/api/main.go:
-// rutas API primero (NewRouter), estáticos después (RegisterStatic) y el
-// middleware por encima. pool puede ser nil (API degradada, sin BD).
+// rutas API primero (NewRouter, con el directorio de estáticos para la
+// negociación de contenido de /watchlist), estáticos después (RegisterStatic)
+// y el middleware por encima. pool puede ser nil (API degradada, sin BD).
 func newStaticHandler(pool *pgxpool.Pool, staticDir string) http.Handler {
-	mux := api.NewRouter(pool)
+	mux := api.NewRouter(pool, api.WithStaticDir(staticDir))
 	api.RegisterStatic(mux, staticDir)
 	return api.WithMiddleware(mux)
 }
 
 func staticGet(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
 	t.Helper()
+	return staticGetAccept(t, h, path, "")
+}
+
+// staticGetAccept permite fijar el header Accept (negociación de contenido de
+// /watchlist, plan M5 §B4). accept vacío = petición sin header.
+func staticGetAccept(t *testing.T, h http.Handler, path, accept string) *httptest.ResponseRecorder {
+	t.Helper()
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
 	h.ServeHTTP(rec, req)
 	return rec
 }
@@ -137,6 +148,37 @@ func TestStaticServing(t *testing.T) {
 			}
 		}
 	})
+
+	// M5 (plan §B4, negociación de contenido): /watchlist es a la vez
+	// endpoint JSON y página del SPA. Aquí se comprueba solo la rama del SPA
+	// (no necesita BD: el shell se sirve antes de tocar el pool); el array
+	// JSON con BD real lo cubre m5_integration_test.go.
+	t.Run("watchlist-acepta-html-sirve-spa", func(t *testing.T) {
+		rec := staticGetAccept(t, h, "/watchlist", "text/html,application/xhtml+xml")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /watchlist con Accept: text/html esperado 200, got %d (%q)", rec.Code, rec.Body.String())
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+			t.Fatalf("Content-Type esperado text/html, got %q", ct)
+		}
+		if rec.Body.String() != fakeIndex {
+			t.Fatalf("GET /watchlist con Accept: text/html debe servir index.html, got %q", rec.Body.String())
+		}
+	})
+
+	t.Run("watchlist-sin-html-devuelve-json", func(t *testing.T) {
+		// Sin Accept y con */* (default de curl) la respuesta es la de la
+		// API; con pool nil eso es el envelope 503, nunca el shell del SPA.
+		for _, accept := range []string{"", "*/*", "application/json"} {
+			rec := staticGetAccept(t, h, "/watchlist", accept)
+			if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+				t.Fatalf("Accept %q: /watchlist debe responder JSON de la API (ct=%q body=%q)", accept, ct, rec.Body.String())
+			}
+			if rec.Body.String() == fakeIndex {
+				t.Fatalf("Accept %q: /watchlist no debe servir index.html", accept)
+			}
+		}
+	})
 }
 
 // TestStaticDisabled: sin directorio estático (STATIC_DIR inexistente), no se
@@ -165,6 +207,18 @@ func TestStaticDisabled(t *testing.T) {
 		rec := staticGet(t, h, "/health")
 		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
 			t.Fatalf("/health debe seguir siendo JSON de la API, got ct=%q body=%q", ct, rec.Body.String())
+		}
+	})
+
+	t.Run("watchlist-json-sin-build-del-frontend", func(t *testing.T) {
+		// Sin index.html no hay SPA que negociar: la negociación cae al JSON
+		// de la API (con pool nil, 503) en vez de servir un 404 del FileServer.
+		rec := staticGetAccept(t, h, "/watchlist", "text/html")
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+			t.Fatalf("sin dist, /watchlist debe responder JSON, got ct=%q body=%q", ct, rec.Body.String())
+		}
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("sin dist y sin BD se espera 503, got %d (%q)", rec.Code, rec.Body.String())
 		}
 	})
 }

@@ -103,6 +103,25 @@ type DerivedMetric struct {
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 }
 
+// WatchlistItem is one row of the personal watchlist (migrations/010) joined
+// with the catalog detail the UI needs. There is exactly one row per security
+// (uq_watchlist_security).
+//
+// ID is the securities.id of the security in the catalog (NOT the watchlist
+// row PK w.id): it is the same id that GET /securities/search returns for that
+// ticker and the one scores.security_id uses, and it stays stable across a
+// delete + re-add of the same security. CreatedAt is the addition order shown in
+// the list (it does come from the watchlist row).
+type WatchlistItem struct {
+	ID        int64     `json:"id" db:"id"`
+	Ticker    string    `json:"ticker" db:"ticker"`
+	Name      string    `json:"name" db:"name"`
+	Exchange  *string   `json:"exchange,omitempty" db:"exchange"`
+	Sector    *string   `json:"sector,omitempty" db:"sector"`
+	Industry  *string   `json:"industry,omitempty" db:"industry"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
+
 // Score is one persisted score row (migrations/009). It holds the score 0-100,
 // the Spanish signal (comprar/mantener/vender), the template-generated
 // justification and the JSONB snapshot of the exact inputs used (ADR-0004).

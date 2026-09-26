@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { apiErrorMessage, getJSON } from '../api/client';
 import type { ScoresHistoryItem, Security, ValuationResponse } from '../api/types';
 import ScoreBadge from '../components/ScoreBadge';
@@ -128,6 +128,12 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              to="/watchlist"
+              className="rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+            >
+              Watchlist
+            </Link>
             <button
               type="button"
               onClick={() => void runRefresh('refresh')}

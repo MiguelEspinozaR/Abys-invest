@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -73,6 +74,62 @@ func ListSecurities(ctx context.Context, q DBTX, limit, offset int) ([]Security,
 		return nil, fmt.Errorf("storage: list securities rows: %w", err)
 	}
 	return out, nil
+}
+
+// SearchSecurities searches the whole catalog (plan M5) by ticker (prefix,
+// case-insensitive) or name (substring, ILIKE) and returns at most limit
+// results ranked by: exact ticker match (0), ticker prefix (1), name match (2),
+// with ticker ASC as stable tie-break inside each rank. query is the
+// already-trimmed user term; wildcard characters in it are escaped so they are
+// matched literally.
+//
+// NOTE (perf): the name match is a substring ILIKE, which cannot use a btree
+// index; the catalog is ~10k rows so a seq scan is fine. A pg_trgm GIN index
+// would be the scaling path and needs an extension + migration (out of scope).
+func SearchSecurities(ctx context.Context, q DBTX, query string, limit int) ([]Security, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	pattern := escapeLike(query)
+	// upper lleva el término a mayúsculas: el ranking compara contra tickers
+	// del catálogo (siempre en mayúsculas) con = y LIKE, que son case
+	// sensitive; el WHERE usa ILIKE con el término tal cual.
+	upper := strings.ToUpper(pattern)
+	rows, err := q.Query(ctx, `
+SELECT `+securityColumns+`
+FROM securities
+WHERE ticker ILIKE $1 ESCAPE E'\\' OR name ILIKE $2 ESCAPE E'\\'
+ORDER BY CASE
+             WHEN ticker = $3 THEN 0
+             WHEN ticker LIKE $4 THEN 1
+             ELSE 2
+         END,
+         ticker ASC
+LIMIT $5`,
+		pattern+"%", "%"+pattern+"%", upper, upper+"%", limit)
+	if err != nil {
+		return nil, fmt.Errorf("storage: search securities: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]Security, 0, limit)
+	for rows.Next() {
+		var s Security
+		if err := scanSecurity(rows, &s); err != nil {
+			return nil, fmt.Errorf("storage: search securities scan: %w", err)
+		}
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("storage: search securities rows: %w", err)
+	}
+	return out, nil
+}
+
+// escapeLike neutralizes the ILIKE/LIKE wildcards of user input so `%` and `_`
+// are searched literally (paired with ESCAPE '\' in the query).
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
 // UpdateSecuritySector sets sector/industry for a ticker, overwriting any

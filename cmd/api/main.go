@@ -57,12 +57,16 @@ func main() {
 	// paths no matcheados (riesgo M4-R2 mitigado). Si el directorio no
 	// existe aún (build del frontend pendiente), RegisterStatic no registra
 	// nada y el router queda solo con las rutas API.
+	//
+	// WithStaticDir da al router el mismo directorio para la negociación de
+	// contenido de GET /watchlist (plan M5 §B4: el navegador con
+	// Accept: text/html recibe index.html, el cliente JSON la lista).
 	staticDir := os.Getenv("STATIC_DIR")
 	if staticDir == "" {
 		staticDir = defaultStaticDir
 	}
 
-	mux := api.NewRouter(pool)
+	mux := api.NewRouter(pool, api.WithStaticDir(staticDir))
 	api.RegisterStatic(mux, staticDir)
 	handler := api.WithMiddleware(mux)
 

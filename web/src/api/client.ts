@@ -79,5 +79,51 @@ export async function postJSON<T>(path: string): Promise<T> {
   if (!res.ok) {
     throw await parseError(res);
   }
-  return (await res.json()) as T;
+  return decode<T>(res);
+}
+
+/**
+ * PUT tipado (plan M5: alta idempotente en la watchlist). Mismo contrato de
+ * errores que getJSON/postJSON. Sin cuerpo: los endpoints de watchlist no lo
+ * necesitan.
+ */
+export async function putJSON<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) {
+    throw await parseError(res);
+  }
+  return decode<T>(res);
+}
+
+/**
+ * DELETE tipado (plan M5: baja idempotente de la watchlist). Mismo contrato de
+ * errores que getJSON/postJSON.
+ */
+export async function deleteJSON<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) {
+    throw await parseError(res);
+  }
+  return decode<T>(res);
+}
+
+/**
+ * Decodifica un 2xx con cuerpo JSON. Tolera 204/vacío devolviendo undefined
+ * (por si un mutador se sirve sin contenido) en lugar de romper el parseo.
+ */
+async function decode<T>(res: Response): Promise<T> {
+  if (res.status === 204 || res.headers.get('Content-Length') === '0') {
+    return undefined as T;
+  }
+  const text = await res.text();
+  if (text === '') {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 }
