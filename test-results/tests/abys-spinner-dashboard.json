@@ -1,0 +1,29 @@
+{
+  "task_id": "abys-spinner-dashboard",
+  "milestone": "fix-ux-dashboard-spinner",
+  "state": "COMMITTED",
+  "date": "2026-09-27",
+  "change": "Spinner (rueda girando) en los 2 botones de actualizar del dashboard (Recalcular metricas, Pipeline completo). Solo web/src.",
+  "files": [
+    "web/src/components/Spinner.tsx (nuevo, SVG/div con animate-spin, aria-hidden, hereda currentColor)",
+    "web/src/pages/DashboardPage.tsx (+23/-2: <Spinner className=\"mr-2\" /> dentro de ambos botones cuando su accion corre)"
+  ],
+  "behavior": {
+    "recalcular_metricas": "POST /refresh sincrono: spinner visible desde el click hasta el finally de runRefresh (setRefreshing(null) tras await load()+watchlist.reload())",
+    "pipeline_completo": "POST /force-refresh 202 + polling /pipeline/status (1.5s): spinner visible hasta que pollPipelineUntilDone retorna con status done/idle/error",
+    "disabled": "ambos botones mantienen disabled mientras corre (logica preexistente intacta)",
+    "no_cambiado": "lógica de negocio, polling, contrato API, otros botones (watchlist/header)"
+  },
+  "verification": {
+    "command": "cd web && npm run build",
+    "result": "OK (tsc estricto + vite), sin errores, 44 modulos, ~5.9s",
+    "bundle_js": "index-CpVb9p5y.js (194.00 kB / gzip 60.78 kB)",
+    "bundle_css": "index-BgxVxfcj.css (17.75 kB / gzip 3.95 kB; keyframes spin generados por animate-spin de Tailwind 3.4.17)",
+    "tests_frontend": "no existen tests jest/vitest en el proyecto; el build tsc estricto es la verificacion",
+    "suite_go": "no afectada (cambio solo en web/src)"
+  },
+  "notes": [
+    "Tema anterior sin usar: animate-spin viene del tema por defecto de Tailwind (tailwind.config.js con theme.extend vacio); index.css solo tiene los 3 @tailwind.",
+    "web/dist esta gitignored: los artefactos del bundle no se versionan."
+  ]
+}

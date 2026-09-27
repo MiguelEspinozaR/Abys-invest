@@ -10,6 +10,7 @@ import type {
   WatchlistResponse,
 } from '../api/types';
 import ScoreBadge from '../components/ScoreBadge';
+import Spinner from '../components/Spinner';
 import { fmtNumber, fmtPct } from '../lib/format';
 import {
   isTickerInPipeline,
@@ -52,6 +53,12 @@ interface CatalogRow {
  * GET /watchlist (que ya trae el último score: sin N+1). La política
  * loopback-only del API responde 403 desde un cliente remoto (el deploy local
  * :8082 es loopback).
+ *
+ * UX: los dos botones de refresh ("Recalcular métricas" y "Pipeline completo")
+ * añaden la rueda `Spinner` mientras su acción está en curso, junto al texto de
+ * estado. No cambia la lógica: aparece con `refreshing` y desaparece cuando
+ * `runRefresh` termina (resolución de /refresh o fin del polling de
+ * /pipeline/status, que ya lo hacía en el `finally`).
  */
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -193,7 +200,14 @@ export default function DashboardPage() {
               disabled={loading || refreshing !== null}
               className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
             >
-              {refreshing === 'refresh' ? 'Recalculando…' : 'Recalcular métricas'}
+              {refreshing === 'refresh' ? (
+                <>
+                  <Spinner className="mr-2" />
+                  Recalculando…
+                </>
+              ) : (
+                'Recalcular métricas'
+              )}
             </button>
             <button
               type="button"
@@ -201,7 +215,14 @@ export default function DashboardPage() {
               disabled={loading || refreshing !== null}
               className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/40"
             >
-              {refreshing === 'force' ? 'Pipeline en ejecución…' : 'Pipeline completo'}
+              {refreshing === 'force' ? (
+                <>
+                  <Spinner className="mr-2" />
+                  Pipeline en ejecución…
+                </>
+              ) : (
+                'Pipeline completo'
+              )}
             </button>
             <button
               type="button"
