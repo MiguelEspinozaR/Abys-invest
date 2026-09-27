@@ -2,7 +2,7 @@
 
 **Value investing analysis engine** — SEC EDGAR fundamentals → score 0-100 with buy/hold/sell signal, Graham/DCF intrinsic value, comparables & SMA backtest.
 
-> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M6. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**. **M4d ✔ (Air live-reload dev + deploy opcional) completed**. **M5 ✔ (buscador + watchlist) completed.**
+> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M6. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**. **M4d ✔ (Air live-reload dev + deploy opcional) completed**. **M5 ✔ (buscador + watchlist) completed.** **M5.1 ✔ (watchlist integración: pipeline asíncrono, GET /pipeline/status, ingesta automática en 2º plano, Mi watchlist en dashboard) completed.**
 
 ---
 
@@ -19,6 +19,7 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 | M3 — Valuation & Score | ✅ Done | Graham `(2×g)+8.5` × EPS último FY, DCF simplificado (WACC 10%, 5a, g_term 2.5%), margin of safety, score 0-100 (pesos 35/30/20/15, umbrales ≥70/40-69/<40), comparables sectoriales, backtest SMA 50/200, API REST completa (11 endpoints). Calibración 2026-09-23 con pares sectoriales reales; hotfix M3 (aislamiento security_id + guardado de métricas NULL). |
 | M4 — UI & Deploy | ✅ Done | Dashboard React + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback), deploy systemd. Alertas (CA M4-2) diferidas a M6 por decisión usuario 2026-09-23. |
 | M5 — Buscador + Watchlist | ✅ Done | `GET /securities/search?q=&limit=`, `GET /watchlist` (content negotiation: text/html→SPA, application/json→JSON, `Vary: Accept`), `PUT/DELETE /watchlist/{ticker}` (loopback-only, 403 fuera de localhost, idempotentes, 404 ticker no catalogado); página `/watchlist` con buscador (debounce 300ms, min 2 chars). Watchlist permite delistados. Suite 248/0/1. |
+| M5.1 — Watchlist integración | ✅ Done | `POST /force-refresh` ahora **asíncrono** (202 Accepted + estado inicial; job en 2º plano con `context.Background()` + timeout 30 min, NO el contexto del HTTP request); nuevo `GET /pipeline/status` (8 claves: `status` idle\|running\|done\|error, `kind` watchlist\|force, `tickers`, `steps` {edgar,prices,sector,metrics,scores}, `started_at`, `finished_at`, `error`, `pending`); `PUT /watchlist/{ticker}` dispara ingesta en 2º plano (prices→sector→metrics→scores, SIN EDGAR), cola FIFO con dedup por ticker si hay job corriendo; `GET /watchlist` ampliado con `score` (number\|null) y `signal` (string\|null) del último score por LEFT JOIN LATERAL; dashboard con sección "Mi watchlist" (tarjetas ticker/nombre/score/signal, enlace /ticker/{ticker}, "procesando…" mientras job corre). El SPA hace polling de `GET /pipeline/status` (intervalo 1.5s). Navegar/recargar YA NO aborta el pipeline (era el bug "failed to fetch"). Suite 269/0/1; bundle `index-BDERmpRv.js`. |
 | M4b — Consenso promedio + señal textual | ✅ Done | Señal en UI como palabra `comprar\|mantener\|vender` (sin duplicar el score); columnas Graham y DCF por ticker; consenso = promedio `(graham+dcf)/2`; `model_version` 1.1.0. Decisión usuario 2026-09-23. |
 | M4c — Refresh de datos + fix mapeo XBRL | ✅ Done | Botones "Recalcular métricas" (`POST /refresh`) y "Pipeline completo" (`POST /force-refresh`) en el dashboard; fix del diccionario XBRL con 6 variantes GAAP nuevas; DCF operativo para NVDA (65.72), QCOM (188.9), ADBE (394.3), CRM (245.5), CSCO (46.9), IBM (162.2). Suite 195/0/0. |
 
@@ -200,7 +201,21 @@ M5 implementa el buscador de securities y la watchlist de usuario:
 - **Delistados permitidos**: la watchlist puede contener securities deslistadas (no se filtran por estatus).
 - **Contrato**: `WatchlistItem.id` = `securities.id` (mismo id que `/securities/search`).
 - **Suite**: 248/0/1. Build web OK (`npm run build`, hash `index-PmMvGtRy.js`).
-- **Mantenimiento**: la suite de integración (`make integration`, `-tags=integration`) ejecuta `TRUNCATE` sobre `securities` y `watchlist` en la BD compartida → tras correrla, re-poblar con `make run-all-data` (o force-refresh desde el dashboard). Mientras tanto, `GET /securities/search` y `GET /watchlist` devuelven `[]`.
+- **Mantenimiento**: la suite de integración (`make integration`, `-tags=integration`) se ejecuta contra **`abys_test`** (`TEST_DATABASE_URL` con sufijo `_test`, validado por el guard `EnsureTestDatabase` en el Makefile → aborta si apunta a la BD de producción). Los tests **no truncan la BD de despliegue** (securities/watchlist del usuario quedan intactos). El `storage` de la suite trunca tablas solo dentro de `abys_test` entre ejecuciones.
+
+**8. Nota de entrega (M5.1, 2026-09-26) — watchlist integración**
+
+M5.1 completa la experiencia de watchlist con integración asíncrona y dashboard mejorado:
+
+- **`POST /force-refresh` ahora es asíncrono**: responde **202 Accepted** con el estado inicial del job; el pipeline corre en 2º plano usando `context.Background()` con timeout hardcoded de **30 minutos** (NO el contexto del request HTTP, que ya no bloquea). El SPA hace polling de `GET /pipeline/status` cada 1.5 s. Navegar o recargar la página YA NO aborta el pipeline — se corrige el bug "failed to fetch" que ocurría al abandonar la petición síncrona.
+- **`GET /pipeline/status`** (nuevo): devuelve el estado del job en curso (o el último terminal). 8 claves JSON: `status` (`idle`|`running`|`done`|`error`), `kind` (`watchlist`|`force`), `tickers`, `steps` (`{edgar, prices, sector, metrics, scores}`), `started_at`, `finished_at`, `error`, `pending` (cola FIFO). JSON puro — **no es ruta del SPA**; con `Accept: text/html` responde JSON igualmente (sin servir `index.html`). Siempre 200 (incluso en `idle`). Consultable sin restricción (igual que `/watchlist`).
+- **`PUT /watchlist/{ticker}`** ahora dispara la ingesta del ticker en 2º plano (prices → sector → metrics → scores, **SIN EDGAR**) justo después del alta; responde `200 {"ok":true}` al instante. Si hay un job corriendo, el ticker entra en **cola FIFO** con dedup por ticker (no se duplica). Loopback-only (403 fuera) e idempotente (sin cambios → 200).
+- **`GET /watchlist` ampliado**: cada item incluye `score` (number|null) y `signal` (string|null) del último score si existe, mediante `LEFT JOIN LATERAL`. Mantiene `id=securities.id`, `created_at`, negociación de contenido (`text/html` → `index.html`) y `Vary: Accept`.
+- **Dashboard — sección "Mi watchlist"**: tarjetas con ticker/nombre/score/signal, enlace a `/ticker/{ticker}`, CTA a `/watchlist` cuando está vacía, y texto "procesando…" mientras el job corre. El botón "Pipeline completo" ya no espera en bloque: dispara 202, hace polling, y recarga la vista al terminar. "Recalcular métricas" (`POST /refresh`) sigue síncrono.
+- **WatchlistPage**: al añadir un valor muestra indicador de procesado con polling; la lista muestra chips de score/signal por ticker.
+- **Mutadores protegidos**: `POST /force-refresh`, `PUT`/`DELETE /watchlist/*` siguen loopback-only; `GET /watchlist` y `GET /pipeline/status` abiertos. Pool nil → 503.
+- **Suite**: **269/0/1** (248 baseline M5 + 21 nuevos). Build web determinista, bundle `index-BDERmpRv.js`.
+- **Infra (mismos commits M5.1, F4 del reviewer)**: `make integration` / guard `EnsureTestDatabase` ahora corren contra **`abys_test`** (`TEST_DATABASE_URL`, sufijo `_test`) — los tests **ya NO truncan la BD de despliegue**. Puerto por defecto de BD en `.env.example`/Makefile/deploy/setup.sh: **55432** (reportar deuda en `docker-compose.yml` que sigue en 5432).
 
 ---
 
@@ -368,27 +383,37 @@ curl http://localhost:8080/health
 | GET | `/compare/history?ticker=&years=` | Histórico de precios del ticker |
 | GET | `/backtest/sma?tickers=&fast=&slow=&initial_capital=` | Backtest SMA 50/200 |
 
-**Endpoints de refresh (M4c):**
+**Endpoints de refresh (M4c + M5.1 — asíncrono):**
 
 | Method | Endpoint | Description | Loopback |
 |--------|----------|-------------|----------|
-| POST | `/refresh` | Recalcula `derived_metrics` + `scores` de securities activas con precio actual (~0.26s) | Solo loopback (403 otherwise) |
-| POST | `/force-refresh` | Pipeline completo: edgar → prices → sector → metrics → scores (~59s para 11 tickers) | Solo loopback (403 otherwise) |
+| POST | `/refresh` | Recalcula `derived_metrics` + `scores` de securities activas con precio actual (~0.26s). **Sigue síncrono.** | Solo loopback (403 otherwise) |
+| POST | `/force-refresh` | Pipeline completo: edgar → prices → sector → metrics → scores. **Ahora asíncrono**: responde **202 Accepted** con estado inicial; el job corre en 2º plano (`context.Background()` + timeout 30 min, NO el contexto del HTTP request). El estado se consulta con `GET /pipeline/status`. | Solo loopback (403 otherwise) |
+| GET | `/pipeline/status` | Estado del job de pipeline en curso (o último terminal). 8 claves JSON: `status` (idle\|running\|done\|error), `kind` (watchlist\|force), `tickers`, `steps` {edgar, prices, sector, metrics, scores}, `started_at`, `finished_at`, `error`, `pending` (cola FIFO). JSON puro — no es ruta del SPA (`Accept: text/html` → JSON igual). Siempre 200. Consultable sin restricción. | No (abierto) |
 
-Ambos endpoints son **mutadores protegidos**: solo aceptan conexiones loopback (403 desde otros orígenes) y devuelven 409 si ya hay un refresh en ejecución (anti-concurrencia). Respuesta: `{"ok":true,"tickers":N,"duration_ms":D}` (`+steps` en force-refresh).
+`POST /force-refresh` y `PUT /watchlist/*` son **mutadores protegidos**: loopback-only (403 fuera) y anti-concurrencia (409 si ya hay un refresh). Con `POST /force-refresh` el anti-concurrencia encola el ticker si el job ya corre (FIFO, dedup). El SPA hace polling de `GET /pipeline/status` cada 1.5 s; navegar/recargar YA NO aborta el pipeline (era el bug "failed to fetch").
 
 Requiere `SEC_EDGAR_USER_AGENT` definido en el entorno del servicio para `force-refresh` (fallback de dev si falta).
 
-**Endpoints de M5 (búsqueda y watchlist):**
+**Endpoints de M5/M5.1 (búsqueda, watchlist y pipeline):**
 
 | Method | Endpoint | Description | Loopback |
 |--------|----------|-------------|----------|
 | GET | `/securities/search?q=<2+ chars>&limit=<1-50, default 10>` | Busca en catálogo completo por prefijo de ticker o nombre (ILIKE); ranking exacto→prefijo→nombre; array de securities | No |
-| GET | `/watchlist` | Lista con detalle de la watchlist; **content negotiation**: `text/html` → `index.html` del SPA; `application/json` → JSON; lleva `Vary: Accept` | No |
-| PUT | `/watchlist/{ticker}` | Añade ticker a la watchlist; idempotente (200 `{"ok":true}`); 404 si el ticker no está catalogado | Solo localhost (403 fuera) |
+| GET | `/watchlist` | Lista con detalle de la watchlist; cada item incluye `score` (number\|null) y `signal` (string\|null) del último score (LEFT JOIN LATERAL); **content negotiation**: `text/html` → `index.html` del SPA; `application/json` → JSON; lleva `Vary: Accept` | No |
+| PUT | `/watchlist/{ticker}` | Añade ticker a la watchlist; responde `200 {"ok":true}` al instante y dispara la ingesta en 2º plano (prices→sector→metrics→scores, SIN EDGAR). Si hay un job corriendo, el ticker entra en **cola FIFO** con dedup por ticker. Idempotente; 404 si el ticker no está catalogado | Solo localhost (403 fuera) |
 | DELETE | `/watchlist/{ticker}` | Elimina ticker de la watchlist; idempotente; 404/403 iguales | Solo localhost (403 fuera) |
 
-**Página `/watchlist`**: buscador con debounce de 300ms (mínimo 2 caracteres), resultados clicables que navegan al ticker seleccionado; botón para añadir el security a la watchlist; lista de la watchlist con entrada por entrada con botón de eliminar. Los datos se persisten en PostgreSQL.
+**Pipeline en segundo plano (M5.1):**
+
+- `POST /force-refresh` ya no bloquea: responde 202 Accepted y el pipeline corre en 2º plano.
+- El job usa `context.Background()` (no el del request HTTP) con **timeout hardcoded de 30 minutos**. Si expira, el estado pasa a `error`.
+- El estado del job vive **en memoria**: un reinicio del servicio pierde el job en curso y `/pipeline/status` vuelve a `idle` (sin recuperar el job). Los tickers en cola se pierden también.
+- El SPA consulta `GET /pipeline/status` cada **1.5 s** para actualizar la UI ("procesando…" → tarjetas con resultados).
+- La cola FIFO de ingesta de watchlist (activada por `PUT /watchlist/{ticker}` cuando hay un job corriendo) está **acotada por dedup + catálogo**: un ticker solo se encola una vez y solo si está catalogado. No hay tope numérico explícito más allá de esos filtros.
+- `POST /refresh` ("Recalcular métricas") **sigue síncrono** y no cambia.
+
+**Página `/watchlist`**: buscador con debounce de 300ms (mínimo 2 caracteres), resultados clicables que navegan al ticker seleccionado; botón para añadir el security a la watchlist (muestra indicador de procesado con polling); lista con chips de `score`/`signal` por entrada y botón de eliminar. Los datos se persisten en PostgreSQL.
 
 **Ejemplos curl:**
 
@@ -433,7 +458,7 @@ make integration   # Integration tests with -tags=integration (serial -p 1)
 make lint          # go vet ./...
 ```
 
-Suite M1-M5: **248 pass / 0 fail / 0 skip** (195 baseline M1-M4c + 53 nuevos de M5) — evidencia en `test-results/tests/abys-m4-dashboard.json` y `test-results/tests/abys-m4b-consenso-promedio.json` (y `test-results/tests/abys-m4c-refresh-pipeline.json` para M4c).
+Suite M1-M5.1: **269 pass / 0 fail / 1 skip** (248 baseline M1-M5 + 21 nuevos de M5.1) — evidencia en `test-results/tests/abys-m51-watchlist-integration.json`. La suite de integración corre contra `abys_test` y **no trunca la BD de despliegue**.
 
 ### 12. Run the dashboard (M4)
 
@@ -532,7 +557,7 @@ Ver arriba en la sección §13. Resumen:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DATABASE_URL` | Yes (for collector/analytics/API) | `postgres://abys:abys@localhost:5432/abys?sslmode=disable` | PostgreSQL connection string |
+| `DATABASE_URL` | Yes (for collector/analytics/API) | `postgres://abys:abys@localhost:55432/abys?sslmode=disable` | PostgreSQL connection string |
 | `SEC_EDGAR_USER_AGENT` | Yes (for collector) | `AbysInvest/1.0 (dev)` (fallback only) | User-Agent per SEC EDGAR policy |
 | `BLS_API_KEY` | No | (empty) | API key for BLS (25 queries/día sin key) |
 | `GROWTH_RATE_DEFAULT` | No | `7` | Tasa `g` por defecto para PEG, Graham y DCF (%) |
@@ -637,7 +662,21 @@ Idempotente por `(security_id, as_of, model_version)`. Índices en `(security_id
 - **M4c ✔** — Refresh de datos + fix mapeo XBRL (2026-09-23): botones `Recalcular métricas` y `Pipeline completo` en dashboard; endpoints `POST /refresh` y `POST /force-refresh` (loopback-only, anti-concurrencia); fix del diccionario XBRL con 6 conceptos GAAP nuevos; DCF operativo para NVDA, QCOM, ADBE, CRM, CSCO, IBM. Suite 195/0/0.
 - **M4d ✔** — Air live-reload (2026-09-24): `make air-install` + `make dev-api` con auto-rebuild/restart al cambiar .go (`.air.toml` raíz, delay 500ms); frontend Vite HMR aparte; deploy opcional con `--with-air` (unit alterna `abys-invest-api-air.service`, sources en `/opt/abys-invest/src`, air en `/usr/local/bin`). 195/0/0 sin cambios.
 - **M5 ✔** — Buscador + Watchlist (2026-09-25): `GET /securities/search?q=<2+ chars>&limit=<1-50>` (ranking exacto→prefijo→nombre), `GET /watchlist` (content negotiation: text/html→SPA, application/json→JSON con `Vary: Accept`), `PUT/DELETE /watchlist/{ticker}` (loopback-only, 403 fuera de localhost, idempotentes, 404 si ticker no catalogado); página `/watchlist` con buscador debounce 300ms (min 2 chars), resultados clicables + añadir, lista con eliminar. Permite guardar delistados. Suite 248/0/1.
+- **M5.1 ✔** — Watchlist integración (2026-09-26): `POST /force-refresh` asíncrono (202 + job en 2º plano, timeout 30 min); nuevo `GET /pipeline/status` (8 claves JSON puro); `PUT /watchlist/{ticker}` dispara ingesta en 2º plano (prices→sector→metrics→scores, SIN EDGAR) con cola FIFO dedup; `GET /watchlist` ampliado con `score`/`signal` (LEFT JOIN LATERAL); dashboard con sección "Mi watchlist" (tarjetas + polling); build `index-BDERmpRv.js`. Suite 269/0/1. Infra: suite contra `abys_test` (guard `EnsureTestDatabase`), puerto BD 55432.
 - **M6 🔲** — Alertas: `cmd/alerts/`, `internal/alerts/`, endpoint `/alerts` (prefijo reservado). Diferido a M6 por decisión del usuario (SPEC §7).
+
+---
+
+## Deuda técnica y limitaciones conocidas
+
+| ID | Limitación | Detalle | Estado |
+|----|-----------|---------|--------|
+| **F1** | `kind=force` en `/pipeline/status` devuelve `tickers:[]` | El job de tipo `force` no registra los tickers en el campo `tickers` de la respuesta de estado; la UI no puede listar los tickers del pipeline force. **Fix futuro**: resolver el universo de tickers antes de `start` del job. | Pendiente |
+| **F2** | Mensaje "Pipeline completado (0 tickers)" inexacto | Mientras F1 esté abierto, el dashboard puede mostrar "0 tickers" al finalizar un `force-refresh`, aunque el pipeline sí procesó datos. | Pendiente (depende de F1) |
+| **L1** | Timeout 30 min hardcoded | El timeout del job asíncrono está fijado en el código (`30 * time.Minute`); no es configurable por entorno. Un pipeline largo puede expirar sin opción de extensión dinámica. | Pendiente |
+| **L2** | Estado en memoria | El estado del job vive solo en memoria. Un **reinicio del servicio pierde el job en curso** (y la cola FIFO): `/pipeline/status` vuelve a `idle` sin recuperar progreso. Sin persistencia → no hay recuperación ante crash. | Pendiente |
+| **L3** | Cola FIFO sin tope numérico | La cola de ingesta de watchlist está acotada solo por dedup (un ticker entra una vez) y por el catálogo (solo tickers existentes). No hay límite máximo explícito de entries en cola. | Monitorear |
+| **D1** | `docker-compose.yml` expone puerto **5432** | El compose sigue mapeando `"5432:5432"` en `db`. Las referencias de `.env.example`, `Makefile` y `deploy/setup.sh` usan **55432** para la BD real de Abys y 55432 para `abys_test`. El compose puede estar mapeando al puerto del cluster del sistema (5432) o a la BD incorrecta — verificar si aplica al flujo de desarrollo local. | Deuda documentada; fuera de alcance de este task |
 
 ---
 

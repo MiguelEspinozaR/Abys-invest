@@ -112,6 +112,13 @@ type DerivedMetric struct {
 // ticker and the one scores.security_id uses, and it stays stable across a
 // delete + re-add of the same security. CreatedAt is the addition order shown in
 // the list (it does come from the watchlist row).
+//
+// M5.1: Score y Signal son el último score persistido del security (LEFT JOIN
+// LATERAL sobre scores, plan B3) para que el dashboard dibuje las tarjetas de
+// "Mi watchlist" sin N+1 requests. NO llevan omitempty: null explícito
+// significa "el security todavía no tiene score" y la UI distingue ambos casos
+// sin convenciones (los campos de catálogo que sí pueden faltar, exchange /
+// sector / industry, conservan su omitempty previo).
 type WatchlistItem struct {
 	ID        int64     `json:"id" db:"id"`
 	Ticker    string    `json:"ticker" db:"ticker"`
@@ -120,6 +127,9 @@ type WatchlistItem struct {
 	Sector    *string   `json:"sector,omitempty" db:"sector"`
 	Industry  *string   `json:"industry,omitempty" db:"industry"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	// Último score persistido del security (null si aún no tiene).
+	Score  *int    `json:"score" db:"score"`
+	Signal *string `json:"signal" db:"signal"`
 }
 
 // Score is one persisted score row (migrations/009). It holds the score 0-100,

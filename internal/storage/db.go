@@ -50,6 +50,20 @@ func Ping(ctx context.Context, pool *pgxpool.Pool) error {
 	return pool.Ping(ctx)
 }
 
+// EnsureTestDatabase guards destructive helpers (integration tests which
+// TRUNCATE data tables). It verifies the current database name ends with
+// "_test"; otherwise it returns an error so tests never wipe real data.
+func EnsureTestDatabase(ctx context.Context, pool *pgxpool.Pool) error {
+	var name string
+	if err := pool.QueryRow(ctx, `SELECT current_database()`).Scan(&name); err != nil {
+		return fmt.Errorf("storage: current_database: %w", err)
+	}
+	if !strings.HasSuffix(name, "_test") {
+		return fmt.Errorf("storage: refuse destructive test on non-test database %q (name must end with _test)", name)
+	}
+	return nil
+}
+
 // RunMigrations executes every *.sql file in dir in ascending filename order.
 // Migrations are idempotent (IF NOT EXISTS / DO blocks), so re-running is safe.
 func RunMigrations(ctx context.Context, pool *pgxpool.Pool, dir string) error {

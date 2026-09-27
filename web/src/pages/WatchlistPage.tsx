@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiErrorMessage, deleteJSON, putJSON } from '../api/client';
-import type { SearchResults, WatchlistAck, WatchlistItem, WatchlistResponse } from '../api/types';
-import { fmtDate } from '../lib/format';
-import { useFetch } from '../lib/useFetch';
+import type { PipelineStatus, SearchResults, WatchlistAck, WatchlistItem, WatchlistResponse } from '../api/types';
+import ScoreBadge from '../components/ScoreBadge';
+import { fmtDate, fmtNumber } from '../lib/format';
+import { isTickerInPipeline, pollPipelineUntilDone, useFetch } from '../lib/useFetch';
 
 // M5 (SPEC §11bis CA-M5-3): página dedicada /watchlist = buscador sobre todo el
 // catálogo (GET /securities/search, mínimo 2 caracteres, debounce de 300 ms)
@@ -14,6 +15,12 @@ import { useFetch } from '../lib/useFetch';
 // /ticker/:ticker o se añade a la watchlist con "+". La lista guardada
 // permite eliminar con "✕". Los estados de error y el resultado de la última
 // acción se muestran en una vela inline (mismo patrón que el dashboard M4c).
+//
+// M5.1: PUT /watchlist/{ticker} ya no solo persiste: dispara en el servidor la
+// ingesta prices→sector→metrics→scores del valor, así que tras el 200 el
+// score/signal aún no existe. La página sigue el job con el mismo polling del
+// dashboard (/pipeline/status cada 1.5 s) y recarga la lista al terminar para
+// pintar el score recién calculado; las filas en curso marcan "procesando…".
 
 const MIN_QUERY_LEN = 2;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -23,6 +30,18 @@ export default function WatchlistPage() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  // M5.1: ticker recién añadido cuya ingesta se está siguiendo (null = no).
+  const [watchTicker, setWatchTicker] = useState<string | null>(null);
+  const [pipeline, setPipeline] = useState<PipelineStatus | null>(null);
+
+  // Evita setState tras desmontaje durante el polling en segundo plano.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   // Debounce del término: evita una petición por pulsación.
   const [debounced, setDebounced] = useState('');
@@ -39,6 +58,11 @@ export default function WatchlistPage() {
   const search = useFetch<SearchResults>(searchPath);
   const watchlist = useFetch<WatchlistResponse>('/watchlist');
 
+  // M5.1: reload en un ref porque useFetch devuelve una identidad nueva en cada
+  // render y no debe re-disparar el efecto de polling.
+  const reloadWatchlist = useRef(watchlist.reload);
+  reloadWatchlist.current = watchlist.reload;
+
   const saved = useMemo(() => new Set((watchlist.data ?? []).map((item) => item.ticker)), [watchlist.data]);
 
   // add/remove son idempotentes en la API; tras la acción se recarga la lista
@@ -52,17 +76,54 @@ export default function WatchlistPage() {
       if (kind === 'add') {
         await putJSON<WatchlistAck>(path);
         setStatus({ ok: true, text: `${ticker} añadida a la watchlist` });
+        // El PUT ya encoló la ingesta en el servidor: la seguimos en segundo
+        // plano (no bloquea la UI) para pintar el score al terminar.
+        setWatchTicker(ticker);
       } else {
         await deleteJSON<WatchlistAck>(path);
         setStatus({ ok: true, text: `${ticker} eliminada de la watchlist` });
       }
-      watchlist.reload();
+      reloadWatchlist.current();
     } catch (err) {
       setStatus({ ok: false, text: `No se pudo ${kind === 'add' ? 'añadir' : 'eliminar'} ${ticker}: ${apiErrorMessage(err)}` });
     } finally {
       setBusy(null);
     }
   };
+
+  // M5.1: sigue el job de ingesta del ticker recién añadido. Termina cuando el
+  // pipeline está ocioso Y el ticker ya no está en cola; durante la rendija
+  // entre dos jobs el estado pasa por 'done' con el ticker aún pendiente, así
+  // que `pending` forma parte del predicado de parada.
+  useEffect(() => {
+    if (watchTicker === null) return;
+    const ticker = watchTicker;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const final = await pollPipelineUntilDone(
+          (st) => {
+            if (!cancelled && mounted.current) setPipeline(st);
+          },
+          (st) => st.status !== 'running' && !st.pending.includes(ticker),
+        );
+        if (cancelled || !mounted.current) return;
+        setPipeline(final);
+        // Recarga para obtener el score/signal recién calculado (null si el
+        // pipeline falló, lo que la fila refleja como "—").
+        reloadWatchlist.current();
+      } catch (err) {
+        if (!cancelled && mounted.current) {
+          setStatus({ ok: false, text: `No se pudo seguir la ingesta de ${ticker}: ${apiErrorMessage(err)}` });
+        }
+      } finally {
+        if (!cancelled && mounted.current) setWatchTicker(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [watchTicker]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -178,6 +239,7 @@ export default function WatchlistPage() {
                   key={item.id}
                   item={item}
                   disabled={busy !== null}
+                  processing={isTickerInPipeline(pipeline, item.ticker)}
                   onOpen={() => navigate(`/ticker/${item.ticker}`)}
                   onRemove={() => void mutate(item.ticker, 'remove')}
                 />
@@ -193,11 +255,14 @@ export default function WatchlistPage() {
 function WatchlistRow({
   item,
   disabled,
+  processing,
   onOpen,
   onRemove,
 }: {
   item: WatchlistItem;
   disabled: boolean;
+  /** M5.1: el valor está siendo ingerido o esperando en cola. */
+  processing: boolean;
   onOpen: () => void;
   onRemove: () => void;
 }) {
@@ -211,6 +276,14 @@ function WatchlistRow({
         </span>
         <span className="ml-2 text-xs text-slate-400">· añadida {fmtDate(item.created_at)}</span>
       </button>
+      {/* M5.1: score/signal del último cálculo; "—" mientras no exista. */}
+      <span className="w-12 text-right text-sm font-semibold tabular-nums">
+        {item.score != null ? fmtNumber(item.score) : '—'}
+      </span>
+      <ScoreBadge signal={item.signal} />
+      {processing ? (
+        <span className="text-xs text-amber-600 dark:text-amber-400">procesando…</span>
+      ) : null}
       <button
         type="button"
         onClick={onRemove}

@@ -48,6 +48,9 @@ func TestMain(m *testing.M) {
 		panic("M3 integration: Connect falló: " + err.Error())
 	}
 	defer pool.Close()
+	if err := storage.EnsureTestDatabase(ctx, pool); err != nil {
+		panic("M3 integration: guard de BD de test falló (no se debe tocar producción): " + err.Error())
+	}
 	if err := storage.RunMigrations(ctx, pool, "../../migrations"); err != nil {
 		panic("M3 integration: migraciones fallaron: " + err.Error())
 	}

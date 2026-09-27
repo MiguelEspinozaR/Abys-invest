@@ -136,7 +136,9 @@ if [[ ! -f "${SECRETS}" ]]; then
 # RELLENA la DATABASE_URL real ANTES de habilitar el servicio. Este archivo no
 # se versiona (secretos fuera de Git); chmod 600, owner abys:abys.
 # Formato: postgres://usuario:password@host:puerto/bd?sslmode=disable
-DATABASE_URL=postgres://CAMBIAR_USUARIO:CAMBIAR_PASSWORD@localhost:5432/CAMBIAR_BD?sslmode=disable
+# La BD real de Abys-Invest es la instancia dedicada abys-postgres (55432);
+# el puerto 5432 del cluster del sistema pertenece a otros proyectos.
+DATABASE_URL=postgres://CAMBIAR_USUARIO:CAMBIAR_PASSWORD@localhost:55432/CAMBIAR_BD?sslmode=disable
 EOF
     chmod 0600 "${SECRETS}"
     chown "${INSTALL_USER}:${INSTALL_GROUP}" "${SECRETS}"

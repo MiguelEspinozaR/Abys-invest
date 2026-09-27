@@ -1,0 +1,237 @@
+{
+  "task_id": "abys-m51-watchlist-integration",
+  "stage": "TEST",
+  "date": "2026-09-26T20:45:00-04:00",
+  "tested_at_utc": "2026-09-27T00:45:00Z",
+  "tester": "Tester (verificación independiente; sin commit, sin deploy)",
+  "suite": {
+    "pass": 269,
+    "fail": 0,
+    "skip": 1,
+    "command": "DATABASE_URL=<BD de pruebas abys_test@localhost:55432> go test -p 1 -tags=integration -count=1 -v ./...   (go test exit 0)",
+    "count_method": "conteo independiente sobre el log -v: 269 lineas '--- PASS' (top-level + subtests), 0 '--- FAIL', 1 '--- SKIP'. Confirma el dato del Builder (269/0/1).",
+    "baseline_m5": "248/0/1 -> 269/0/1 (+21 PASS, mismo unico SKIP preexistente de M4c)",
+    "packages_ok": 14,
+    "packages": {
+      "cmd/api": "0.043s",
+      "internal/api": "0.588s",
+      "internal/backtest": "0.008s",
+      "internal/collect/edgar": "3.100s",
+      "internal/collect/finviz": "0.013s",
+      "internal/collect/macro": "8.157s",
+      "internal/collect/yahoo": "7.346s",
+      "internal/compare": "0.008s",
+      "internal/metrics": "0.182s",
+      "internal/pipeline": "0.706s",
+      "internal/score": "0.011s",
+      "internal/score/fixtures": "0.005s",
+      "internal/storage": "0.897s",
+      "internal/valuation": "0.006s"
+    },
+    "skip_detail": {
+      "test": "TestForceRefreshLoopbackSkips",
+      "location": "internal/api/refresh_integration_test.go:159",
+      "reason": "requiere acceso a SEC/EDGAR + Yahoo desde el entorno de test (t.Skip preexistente de M4c)",
+      "verdict": "SKIP preexistente y esperado; no es una regresion de M5.1"
+    },
+    "m51_new_tests_verified": [
+      "internal/api/jobs_test.go: TestJobRunnerIdleInitial, TestJobRunnerStartRunning, TestJobRunnerStartConflict, TestJobRunnerRequestIngestQueues, TestJobRunnerDrainsPendingQueue, TestJobRunnerJobError, TestJobRunnerContextIndependentFromCaller, TestJobRunnerDrainIsAtomicWithTerminalState (8 PASS)",
+      "internal/api/m51_jobs_integration_test.go: TestM51PipelineStatusShape, TestM51StatusPoolNilIs200, TestM51ForceRefreshAsync, TestM51ForceRefreshPolicy, TestM51WatchlistIngestBackground, TestM51WatchlistWithScoreAndNegotiation, TestM51WatchlistRemoveAndPipelineNamespace (7 PASS)",
+      "internal/pipeline: TestPipelineM51PoolNil, TestForceRefreshWrapperSig (2 PASS)",
+      "internal/storage/watchlist_test.go: TestWatchlistLatestScoreAndSignal, TestWatchlistLatestScoreMostRecentAsOf, TestListWatchlistTickers (PASS) - cubren score/signal null con claves presentes y gana el as_of mas reciente"
+    ]
+  },
+  "results": {
+    "builds": {
+      "gofmt_l": { "ok": true, "output": "" },
+      "go_build_./...": { "ok": true },
+      "go_vet_./...": { "ok": true },
+      "go_vet_-tags=integration_./...": { "ok": true },
+      "go_version": "go1.26.0 linux/amd64",
+      "go_build_api_bin": { "ok": true, "path": "/tmp/opencode/m51-test-api" }
+    },
+    "npm_build": {
+      "command": "cd web && npm run build (tsc && vite build)",
+      "ok": true,
+      "exit": 0,
+      "duration": "6.68s",
+      "hash": "index-BDERmpRv.js",
+      "css_hash": "index-Ckxr69uU.css",
+      "js_bytes": 193762,
+      "modules_transformed": 43,
+      "builder_claim_verified": true,
+      "note": "hash identico al reportado por el Builder (index-BDERmpRv.js); ambos assets referenciados en web/dist/index.html"
+    },
+    "smoke_api": {
+      "port": 18089,
+      "note": "puerto aislado; el deploy en :8082 no se toco (health 200 antes y despues)",
+      "static_dir": "web/dist",
+      "force_202": {
+        "ok": true,
+        "http": 202,
+        "response_time_s": 0.001013,
+        "body": "{\"status\":\"running\",\"kind\":\"force\",\"tickers\":[],\"steps\":{},\"started_at\":\"2026-09-26T20:40:02.606925772-04:00\",\"finished_at\":null,\"error\":null,\"pending\":[]}",
+        "async": true,
+        "note": "responde 202 en 1 ms y devuelve el estado inicial (kind=force, started_at no nulo) sin esperar al pipeline"
+      },
+      "force_409": {
+        "ok": true,
+        "http": 409,
+        "body": "{\"error\":{\"code\":\"conflict\",\"message\":\"ya hay un pipeline en ejecución\"}}",
+        "note": "segundo POST /force-refresh con el job en curso -> 409 envelope estandar (CodeConflict)"
+      },
+      "status_keys": {
+        "ok": true,
+        "http": 200,
+        "count": 8,
+        "keys": ["status", "kind", "tickers", "steps", "started_at", "finished_at", "error", "pending"],
+        "status_values_observed": ["idle", "running", "done"],
+        "all_values_in_allowed_set": true,
+        "allowed_set": ["idle", "running", "done", "error"],
+        "idle_initial": "{\"status\":\"idle\",\"kind\":null,\"tickers\":[],\"steps\":{},\"started_at\":null,\"finished_at\":null,\"error\":null,\"pending\":[]}",
+        "done_final": "{\"status\":\"done\",\"kind\":\"force\",\"tickers\":[],\"steps\":{\"edgar\":2,\"metrics\":2,\"prices\":2,\"scores\":2,\"sector\":2},...}"
+      },
+      "watchlist_put_200": {
+        "ok": true,
+        "http": 200,
+        "body": "{\"ok\":true}",
+        "response_time_s": 0.006293,
+        "blocking": false,
+        "status_after": {
+          "status": "running",
+          "kind": "watchlist",
+          "tickers": ["AAPL"],
+          "steps_then": { "prices": 1 },
+          "steps_final": { "prices": 1, "sector": 1, "metrics": 1, "scores": 1 },
+          "steps_note": "4 claves y SIN 'edgar' -> WatchlistRefresh parcial correcto (CA-M5.1-2)",
+          "duration_ms": 3878
+        }
+      },
+      "watchlist_score": {
+        "ok": true,
+        "http": 200,
+        "content_type": "application/json",
+        "vary_accept": true,
+        "items": [
+          { "ticker": "AAPL", "id": 2225, "score": 31, "signal": "vender", "score_type": "number" },
+          { "ticker": "NVDA", "id": 5053, "score": 35, "signal": "vender", "score_type": "number" }
+        ],
+        "id_is_securities_id": true,
+        "null_score_case": "no observable en vivo: tras el force-refresh ambos tickers de la watchlist tienen score. El caso null (claves 'score'/'signal' presentes con valor null) esta cubierto por tests verdes: internal/api/m51_jobs_integration_test.go:557-558 y internal/storage/watchlist_test.go TestWatchlistLatestScoreAndSignal.",
+        "regression_user_report": "GET /score/NVDA deja de ser 404: NVDA ahora tiene score 35 persistido (antes noprocessors) -> CA-M5.1-2 resuelta"
+      },
+      "negotiation_html": {
+        "watchlist_text_html": {
+          "ok": true,
+          "http": 200,
+          "content_type": "text/html; charset=utf-8",
+          "bytes": 396,
+          "is_index_html": true,
+          "root_div_present": true
+        },
+        "pipeline_status_text_html": {
+          "ok": true,
+          "http": 200,
+          "content_type": "application/json",
+          "documented_behavior": "devuelve JSON (no hay pagina SPA para /pipeline/status), segun plan M5.1 §5.4; negociacion intacta"
+        },
+        "pipeline_extra_404": {
+          "ok": true,
+          "http": 404,
+          "content_type": "application/json",
+          "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"ruta no encontrada: /pipeline/extra\"}}"
+        }
+      },
+      "regression_job_survives": {
+        "ok": true,
+        "incident": "POST /force-refresh atado a r.Context() -> 'failed to fetch' + 500 context canceled (journal 2026-09-26)",
+        "iterations": 4,
+        "variants": [
+          { "n": 1, "abort": "curl -m 2 (cliente corta a los 2 s)", "post_http": 202, "status_after": "running", "final_status": "done", "final_steps": { "edgar": 2, "metrics": 2, "prices": 2, "scores": 2, "sector": 2 }, "error": null, "duration_ms": 30122 },
+          { "n": 2, "abort": "RST inmediato del cliente (SO_LINGER=0, emula navegar/recargar)", "status_at_0.4s": "running", "status_at_2.4s": "running", "final_status": "done", "final_steps": { "edgar": 2, "metrics": 2, "prices": 2, "scores": 2, "sector": 2 }, "error": null, "duration_ms": 28884 },
+          { "n": 3, "abort": "RST inmediato del cliente", "status_at_0.4s": "running", "status_at_2.4s": "running", "final_status": "done", "final_steps": { "edgar": 2, "metrics": 2, "prices": 2, "scores": 2, "sector": 2 }, "error": null, "duration_ms": 30557 },
+          { "n": 4, "abort": "RST inmediato del cliente", "status_at_0.4s": "running", "status_at_2.4s": "running", "final_status": "done", "final_steps": { "edgar": 2, "metrics": 2, "prices": 2, "scores": 2, "sector": 2 }, "error": null, "duration_ms": 29677 }
+        ],
+        "context_canceled_occurrences": 0,
+        "verdict": "OK: los 4 jobs llegaron a 'done' con las 5 etapas pese a que el cliente abortara la conexion; el 'error' quedo null. Regresion del incidente cerrada."
+      },
+      "api_shutdown": { "ok": true, "log_line": "apagando api", "port_18089_free_after": true, "deploy_8082_untouched": true, "deploy_8082_health_after": 200 }
+    },
+    "persistence": {
+      "data_db": "localhost:55432/abys (BD de datos del usuario, la de DATABASE_URL del secrets.env)",
+      "test_db": "localhost:55432/abys_test (BD dedicada de pruebas, la que exige el guard del Makefile)",
+      "db_before": {
+        "captured_at": "2026-09-26T20:37-04:00 (antes de cualquier ejecucion)",
+        "securities": 10428,
+        "watchlist": 2,
+        "scores": 1,
+        "daily_prices": 1256,
+        "derived_metrics": 8,
+        "fundamentals": 1245,
+        "macro_series": 67,
+        "edgar_staging": 1,
+        "watchlist_rows": [
+          { "watchlist_id": 3, "security_id": 2225, "ticker": "AAPL", "created_at": "2026-09-26 05:01:02.433316-04" },
+          { "watchlist_id": 4, "security_id": 5053, "ticker": "NVDA", "created_at": "2026-09-26 05:01:28.153779-04" }
+        ],
+        "scores_rows": [{ "ticker": "AAPL", "score": 31, "signal": "vender", "as_of": "2026-09-26", "model_version": "1.1.0" }]
+      },
+      "db_after": {
+        "captured_at": "2026-09-26T20:46-04:00 (tras suite + smoke)",
+        "securities": 10428,
+        "watchlist": 2,
+        "scores": 3,
+        "daily_prices": 2513,
+        "derived_metrics": 24,
+        "fundamentals": 2499,
+        "macro_series": 67,
+        "edgar_staging": 2,
+        "watchlist_rows": [
+          { "watchlist_id": 3, "security_id": 2225, "ticker": "AAPL", "created_at": "2026-09-26 05:01:02.433316-04" },
+          { "watchlist_id": 4, "security_id": 5053, "ticker": "NVDA", "created_at": "2026-09-26 05:01:28.153779-04" }
+        ],
+        "scores_rows": [
+          { "ticker": "AAPL", "score": 31, "signal": "vender", "as_of": "2026-09-26", "model_version": "1.1.0" },
+          { "ticker": "AAPL", "score": 31, "signal": "vender", "as_of": "2026-09-27", "model_version": "1.1.0" },
+          { "ticker": "NVDA", "score": 35, "signal": "vender", "as_of": "2026-09-27", "model_version": "1.1.0" }
+        ]
+      },
+      "data_loss": false,
+      "restored": true,
+      "restoration_action": "none_required",
+      "restoration_note": "No hizo falta resiembra: la suite se ejecuto contra abys_test, no contra la BD de datos. La watchlist del usuario quedo INTACTA (2 filas, mismos watchlist_id 3 y 4, mismos created_at -> el PUT /watchlist/AAPL fue idempotente y no creo filas). El unico delta son filas anadidas por el pipeline real ejecutado durante el smoke (requested): scores de NVDA (antes inexistente) y una fila de score AAPL por dia, mas precios/fundamentals/metricas de AAPL y NVDA. Beneficio neto para el usuario: NVDA ya tiene score 35, que era la queja original.",
+      "truncate_note": "Los TRUNCATE de fixtures (storage, pipeline, collect/edgar) solo se ejecutan tras storage.EnsureTestDatabase, que aborta si el nombre de la BD no acaba en _test. Sobre 'abys' esos tests no truncan (y el paquete api/pipeline harían panic en el guard)."
+    },
+    "security": {
+      "database_url_printed": false,
+      "note": "DATABASE_URL nunca se imprimió ni se persistió en este artefacto; solo host/port/nombre de BD y conteos. La API de test se levantó con la variable de entorno, sin volcarla a disco ni a los logs."
+    },
+    "git": {
+      "mutated": false,
+      "deployed": false,
+      "note": "No se ejecutó ningún add/commit/tag/push ni se tocó /opt/abys-invest. git status idéntico al inicial (solo los cambios del Builder) más este fichero de evidencia."
+    }
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "minor",
+      "title": "GET /pipeline/status muestra tickers=[] en los jobs kind=force",
+      "detail": "El handler arranca el force con jobs.start(pool, JobKindForce, nil) (internal/api/refresh.go:106) y el universo se resuelve DENTRO del ejecutor (pipeline.RefreshUniverse, internal/api/jobs.go:367). Por eso jobState.tickers queda vacio durante todo el force: los pasos muestran steps{edgar:2,...} pero el cliente nunca ve quais tickers se estan procesando (el log tambien dice tickers=0).",
+      "impact": "Cosmético/UX: el dashboard puede mostrar progreso y numero de tickers, pero no la lista. Ademas el criterio (a) de D1 (no encolar un ticker que ya cubre el job en curso) es inoperante para jobs force: un PUT /watchlist/AAPL durante un force encolaria AAPL aunque ya este en el universo -> ingesta parcial redundante al terminar el force.",
+      "ac_impact": "No rompe ninguna acceptance criterion (el plan solo exige 'running con steps creciendo' para el force; los tests de tickers/cola son de kind=watchlist).",
+      "recommendation": "Resolver el universo ANTES de start y pasarlo como tickers del job (o publicar el universo al resolverlo), reutilizando el mismo start(). Deuda menor para REVIEW/DOC."
+    }
+  ],
+  "notes": [
+    "DESVIACION DE ENTORNO (importante para el Orchestrator): el DATABASE_URL de /tmp/opencode/abys-secrets.env apunta a la BD de DATOS 'abys' (localhost:55432/abys), no a una BD de pruebas. Ejecutar la suite literalmente como se pidio es incompatible con el resultado esperado 269/0/1: sobre 'abys' el guard storage.EnsureTestDatabase aborta, el paquete internal/api y internal/pipeline hacen panic en TestMain ('guard de BD de test fallo') y storage/macro/yahoo/metrics se saltan en bloque (testPool=nil) -> eso daria decenas de skips, no 269 passes.",
+    "Se ejecuto la suite contra la BD de pruebas dedicada 'abys_test' (localhost:55432/abys_test), que es exactamente lo que exige el target 'make integration' del Makefile (guard: TEST_DATABASE_URL debe acabar en *_test 'para no truncar datos reales'). Decision: verificar el conteo real del Builder y proteger los datos del usuario a la vez. Consecuencia: los datos del usuario NO fueron tocados por la suite (ver persistence).",
+    "Conteo verificado de forma independiente (no se confio en el dato del Builder): 269 PASS / 0 FAIL / 1 SKIP, go test exit 0, los 14 paquetes con tests en 'ok'. El Builder acertaba.",
+    "Hash web verificado de forma independiente: index-BDERmpRv.js (193.64 kB, 6.68 s), identico al esperado.",
+    "Smoke end-to-end contra el binario real sobre la BD de datos: 5 jobs reales ejecutados (1 force + 1 watchlist + 4 force de la regresion), todos status=done y error=null.",
+    "La regresion del 'failed to fetch' se verifico mas alla del 'curl -m 2' pedido: ademas del corte por timeout se inyecto un RST real (SO_LINGER=0) para que el servidor viera desaparecer al cliente, que es el escenario exacto de navegar/recargar. 4/4 iteraciones sobrevivieron.",
+    "El caso 'watchlist item sin score -> score/signal null con claves presentes' no es observable en el smoke en vivo porque el force-refresh dejo score a AAPL y NVDA; queda cubierto por tests de integracion verdes (m51_jobs_integration_test.go:557-558, watchlist_test.go).",
+    "No se modifico el codigo, ni Git, ni el deploy. El unico fichero escrito es esta evidencia.",
+    "Cobertura: se reporta la suites completa y el build web; este hito no fija umbral de cobertura (no hay politica de cobertura en el repo) y no se midio porcentaje."
+  ]
+}

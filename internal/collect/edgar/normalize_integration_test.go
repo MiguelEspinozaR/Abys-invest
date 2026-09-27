@@ -49,6 +49,9 @@ func normalizeSetup(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	if err := storage.EnsureTestDatabase(ctx, pool); err != nil {
+		t.Fatalf("guard de BD de test falló (no se trunca producción): %v", err)
+	}
 	if err := storage.RunMigrations(ctx, pool, "../../../migrations"); err != nil {
 		t.Fatalf("migraciones: %v", err)
 	}

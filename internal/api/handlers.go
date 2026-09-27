@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -95,8 +96,25 @@ func handleSearchSecurities(w http.ResponseWriter, r *http.Request, pool *pgxpoo
 	writeJSON(w, http.StatusOK, secs)
 }
 
+// handlePipelineStatus: GET /pipeline/status — estado del job de pipeline en
+// segundo plano (M5.1, plan B6): status idle|running|done|error, kind
+// watchlist|force, tickers del job, steps por etapa, started_at/finished_at,
+// error y la cola pending.
+//
+// Sin pool, sin loopback y sin negociación de contenido (D5): el estado es del
+// proceso, no de la BD, así que responde 200 incluso con el API degradado — un
+// 503 dejaría al SPA sin poder saber por qué falló (o no arrancó) un job. El
+// acceso es read-only como GET /watchlist.
+func handlePipelineStatus(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, jobs.status())
+}
+
 // handleListWatchlist: GET /watchlist → lista persistida con el detalle del
 // catálogo, en orden de adición (storage.ListWatchlist).
+//
+// M5.1: cada item trae además score/signal del último score del security
+// (LEFT JOIN LATERAL en storage, null si aún no tiene) para que el dashboard
+// dibuje las tarjetas de "Mi watchlist" sin N+1 requests.
 //
 // Es la mitad JSON de la ruta dual /watchlist (navegador → shell del SPA vía
 // negociación en router.go, cliente de la API → lista aquí). Vary: Accept se
@@ -144,6 +162,12 @@ func guardWatchlistMutation(w http.ResponseWriter, r *http.Request, pool *pgxpoo
 // normalizable, 404 si no existe en el catálogo, 200 {"ok":true} en éxito. El
 // ticker llega ya normalizado por el router (misma convención que el resto de
 // endpoints con {ticker}).
+//
+// M5.1: tras el alta, requestIngest pide la ingesta EN SEGUNDO PLANO del ticker
+// (pipeline parcial precios→sector→métricas→score, sin EDGAR) y la respuesta
+// sigue siendo 200 {"ok":true} sin campos nuevos: el watcher del cliente
+// (/pipeline/status) es quien sigue el progreso. Si ya hay un job corriendo, el
+// ticker entra en la cola FIFO y no bloquea ni falla.
 func handleAddWatchlist(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, ticker string) {
 	if !guardWatchlistMutation(w, r, pool) {
 		return
@@ -161,6 +185,8 @@ func handleAddWatchlist(w http.ResponseWriter, r *http.Request, pool *pgxpool.Po
 		writeError(w, http.StatusInternalServerError, CodeInternal, "error al añadir a la watchlist")
 		return
 	}
+	st := jobs.requestIngest(pool, ticker)
+	slog.Info("watchlist: ingesta solicitada", "ticker", ticker, "status", st.Status, "pending", st.Pending)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

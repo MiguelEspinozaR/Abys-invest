@@ -4,7 +4,10 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"testing"
+	"time"
 )
 
 // M5 integration coverage for the watchlist table (migration 010): idempotent
@@ -234,5 +237,199 @@ func TestWatchlistForeignKey(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("ON DELETE CASCADE no limpió la watchlist: quedan %d filas", n)
+	}
+}
+
+// --- M5.1: score/signal del último score + ListWatchlistTickers -------------
+
+// seedScore inserta un score del fixture y devuelve su id (para el caso del
+// empate de as_of resuelto por id DESC). El model_version se deriva del score
+// porque la UNIQUE es (security_id, as_of, model_version): con un model
+// version constante el segundo score del mismo as_of ACTUALIZARÍA el primero y
+// el empate de as_of no existiría (el test pasaría sin probar el ORDER BY id).
+func seedScore(t *testing.T, securityID int64, asOf time.Time, score int, signal string) int64 {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := testPool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	if err := UpsertScore(ctx, tx, &Score{
+		SecurityID: securityID, AsOf: asOf, Score: score, Signal: signal,
+		Justification: "fixture", ModelVersion: fmt.Sprintf("test-%d", score),
+	}); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("UpsertScore(%d): %v", score, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit: %v", err)
+	}
+	var id int64
+	if err := testPool.QueryRow(ctx,
+		`SELECT id FROM scores WHERE security_id = $1 AND as_of = $2 AND model_version = $3`,
+		securityID, asOf, fmt.Sprintf("test-%d", score)).Scan(&id); err != nil {
+		t.Fatalf("select score id: %v", err)
+	}
+	return id
+}
+
+// cleanupWatchlistFixtures borra las filas de watchlist/scores de los fixtures
+// M5WT% al terminar el test. truncateDataTables limpia al INICIO de cada test,
+// pero los tests de otro paquete (internal/api) asertan el contenido EXACTO de
+// la watchlist y comparten BD con -p 1: sin esta limpieza, un fixture de
+// storage rompería los tests de M5 al ejecutarse en otro orden.
+func cleanupWatchlistFixtures(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() {
+		if _, err := testPool.Exec(context.Background(),
+			`DELETE FROM watchlist WHERE security_id IN (SELECT id FROM securities WHERE ticker LIKE 'M5WT%')`); err != nil {
+			t.Errorf("limpieza de watchlist de fixtures: %v", err)
+		}
+		if _, err := testPool.Exec(context.Background(),
+			`DELETE FROM scores WHERE security_id IN (SELECT id FROM securities WHERE ticker LIKE 'M5WT%')`); err != nil {
+			t.Errorf("limpieza de scores de fixtures: %v", err)
+		}
+	})
+}
+
+// TestWatchlistLatestScoreAndSignal (M5.1): el listado proyecta el ÚLTIMO score
+// del security (LEFT JOIN LATERAL, sin N+1) y los security sin score devuelven
+// null explícito con las claves presentes en el JSON.
+func TestWatchlistLatestScoreAndSignal(t *testing.T) {
+	pool := requirePool(t)
+	requireMigrations(t, pool)
+	truncateDataTables(t, pool)
+	cleanupWatchlistFixtures(t)
+	ctx := context.Background()
+
+	idWith := seedSecurity(t, "M5WTD", "M5 Watchlist Scored")
+	idWithout := seedSecurity(t, "M5WTE", "M5 Watchlist Unscored")
+	if err := AddToWatchlist(ctx, pool, idWith); err != nil {
+		t.Fatalf("AddToWatchlist: %v", err)
+	}
+	if err := AddToWatchlist(ctx, pool, idWithout); err != nil {
+		t.Fatalf("AddToWatchlist: %v", err)
+	}
+
+	// Dos as_of distintos: gana el más reciente. Y un empate de as_of con otro
+	// score: gana el id más alto (id DESC del LATERAL).
+	asOfOld := time.Date(2025, 3, 31, 0, 0, 0, 0, time.UTC)
+	asOfNew := time.Date(2025, 6, 30, 0, 0, 0, 0, time.UTC)
+	seedScore(t, idWith, asOfOld, 42, "mantener")
+	seedScore(t, idWith, asOfNew, 77, "comprar")
+	seedScore(t, idWith, asOfNew, 55, "vender") // empate de as_of → id más alto
+
+	items, err := ListWatchlist(ctx, pool)
+	if err != nil {
+		t.Fatalf("ListWatchlist: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("se esperaban 2 entradas, hay %d", len(items))
+	}
+	byTicker := map[string]WatchlistItem{}
+	for _, it := range items {
+		byTicker[it.Ticker] = it
+	}
+
+	scored := byTicker["M5WTD"]
+	if scored.Score == nil || *scored.Score != 55 {
+		t.Fatalf("score esperado 55 (empate de as_of resuelto por id DESC), got %+v", scored.Score)
+	}
+	if scored.Signal == nil || *scored.Signal != "vender" {
+		t.Fatalf("signal esperado vender, got %+v", scored.Signal)
+	}
+	// Contrato de M5.1 (intacto de F1): el id sigue siendo securities.id.
+	if scored.ID != idWith {
+		t.Fatalf("ID debe seguir siendo securities.id: got %d want %d", scored.ID, idWith)
+	}
+
+	unscored := byTicker["M5WTE"]
+	if unscored.Score != nil || unscored.Signal != nil {
+		t.Fatalf("un security sin score debe devolver score/signal nil: %+v", unscored)
+	}
+	// Sin omitempty: las claves "score" y "signal" existen con valor null para
+	// que el SPA distinga "sin score" de "campo ausente".
+	raw, err := json.Marshal(unscored)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, key := range []string{"score", "signal"} {
+		v, ok := obj[key]
+		if !ok {
+			t.Fatalf("la clave %q debe estar presente en el JSON: %s", key, raw)
+		}
+		if v != nil {
+			t.Fatalf("la clave %q debe ser null sin score, got %v", key, v)
+		}
+	}
+}
+
+// TestWatchlistLatestScorePerAsOfDistinct: con as_of distintos gana el más
+// reciente (el caso normal, no el desempate del test anterior).
+func TestWatchlistLatestScoreMostRecentAsOf(t *testing.T) {
+	pool := requirePool(t)
+	requireMigrations(t, pool)
+	truncateDataTables(t, pool)
+	cleanupWatchlistFixtures(t)
+	ctx := context.Background()
+
+	id := seedSecurity(t, "M5WTG", "M5 Watchlist Recent")
+	if err := AddToWatchlist(ctx, pool, id); err != nil {
+		t.Fatalf("AddToWatchlist: %v", err)
+	}
+	seedScore(t, id, time.Date(2025, 1, 31, 0, 0, 0, 0, time.UTC), 10, "vender")
+	seedScore(t, id, time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC), 90, "comprar")
+	seedScore(t, id, time.Date(2024, 12, 31, 0, 0, 0, 0, time.UTC), 5, "vender")
+
+	items, err := ListWatchlist(ctx, pool)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("ListWatchlist: %v (%d items)", err, len(items))
+	}
+	if items[0].Score == nil || *items[0].Score != 90 || items[0].Signal == nil || *items[0].Signal != "comprar" {
+		t.Fatalf("debe ganar el score más reciente (90/comprar), got %+v / %+v", items[0].Score, items[0].Signal)
+	}
+}
+
+// TestListWatchlistTickers (M5.1): los tickers de la watchlist en orden de
+// adición (lo usa pipeline.RefreshUniverse para el universo del force-refresh).
+func TestListWatchlistTickers(t *testing.T) {
+	pool := requirePool(t)
+	requireMigrations(t, pool)
+	truncateDataTables(t, pool)
+	cleanupWatchlistFixtures(t)
+	ctx := context.Background()
+
+	if tickers, err := ListWatchlistTickers(ctx, pool); err != nil {
+		t.Fatalf("ListWatchlistTickers (vacía): %v", err)
+	} else if len(tickers) != 0 {
+		t.Fatalf("una watchlist vacía debe devolver [], got %v", tickers)
+	}
+
+	order := []struct{ ticker, name string }{
+		{"M5WTA", "M5 Watchlist A"},
+		{"M5WTB", "M5 Watchlist B"},
+		{"M5WTC", "M5 Watchlist C"},
+	}
+	for _, s := range order {
+		if err := AddToWatchlist(ctx, pool, seedSecurity(t, s.ticker, s.name)); err != nil {
+			t.Fatalf("AddToWatchlist(%s): %v", s.ticker, err)
+		}
+	}
+
+	tickers, err := ListWatchlistTickers(ctx, pool)
+	if err != nil {
+		t.Fatalf("ListWatchlistTickers: %v", err)
+	}
+	if len(tickers) != len(order) {
+		t.Fatalf("se esperaban %d tickers, hay %d: %v", len(order), len(tickers), tickers)
+	}
+	for i, want := range order {
+		if tickers[i] != want.ticker {
+			t.Fatalf("posición %d: se esperaba %s, hay %s (%v)", i, want.ticker, tickers[i], tickers)
+		}
 	}
 }

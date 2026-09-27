@@ -68,7 +68,11 @@ export async function getJSON<T>(path: string): Promise<T> {
 
 /**
  * POST tipado con el mismo contrato de errores que getJSON. Usado por los
- * endpoints mutadores del dashboard (refresh / force-refresh, plan M4c).
+ * endpoints mutadores del dashboard (refresh, force-refresh y el arranque del
+ * pipeline en M5.1).
+ *
+ * M5.1: `POST /force-refresh` responde **202 Accepted**, que también es `res.ok`,
+ * así que el cuerpo (el PipelineStatus inicial) se decodifica igual que un 200.
  * `path` ya incluye cualquier prefijo de `API_BASE`.
  */
 export async function postJSON<T>(path: string): Promise<T> {

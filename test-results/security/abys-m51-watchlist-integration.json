@@ -1,0 +1,95 @@
+{
+  "scanner": "security-scanning",
+  "date": "2026-09-26T00:00:00Z",
+  "task": "abys-m51-watchlist-integration",
+  "files": [
+    "internal/api/jobs.go",
+    "internal/api/m51_jobs_integration_test.go",
+    "internal/api/refresh.go",
+    "internal/api/handlers.go",
+    "internal/api/router.go",
+    "internal/api/static.go",
+    "internal/pipeline/pipeline.go",
+    "internal/storage/models.go",
+    "internal/storage/watchlist.go",
+    "web/src/pages/DashboardPage.tsx",
+    "web/src/pages/WatchlistPage.tsx",
+    "web/src/api/client.ts",
+    "web/src/api/types.ts"
+  ],
+  "findings": [
+    {
+      "severity": "info",
+      "file": "internal/api/jobs.go",
+      "line": 56,
+      "finding": "jobTimeout hardcoded a 30 minutos (jobTimeout = 30 * time.Minute). Aunque es holgado para el pipeline local (~1-2 min), un job atascado podría consumir recursos durante el tiempo completo.",
+      "recommendation": "Consider hacer el timeout configurable mediante variable de entorno o bandera de configuración para evitar un DoS involontario si un proveedor (Yahoo/SEC) queda colgado."
+    },
+    {
+      "severity": "info",
+      "file": "internal/api/jobs.go",
+      "line": 88,
+      "finding": "La cola FIFO de pending no tiene un tope explícito; el dedup por ticker la acota al universo posible (~10k tickers de la watchlist), pero un cliente malicioso podría llenar la watchlist y provocar presión de memoria.",
+      "recommendation": "Añadir un límite máximo de elementos en la cola pending (p. ej., 500) y rechazar nuevos inserciones cuando se supere, respondiendo 409 o descartando el ticker."
+    },
+    {
+      "severity": "info",
+      "file": "internal/api/jobs.go",
+      "line": 274,
+      "finding": "El job usa context.Background() + timeout 30m, aislado del contexto del request HTTP. Esto evita el bug de 'failed to fetch' cuando el navegador cancela el contexto, pero el timeout hardcoded debe ser revisado (ver hallazgo anterior).",
+      "recommendation": "Ninguna, el patrón está correcto; mantener el contexto propio y fuera del request."
+    },
+    {
+      "severity": "info",
+      "file": "internal/api/refresh.go",
+      "line": 71,
+      "finding": "guardPipeline mantiene el orden pool-nil(503) -> loopback(403) -> 409, y /pipeline/status no filtra información sensible (solo tickers/steps/timestamps, estado del proceso).",
+      "recommendation": "Ninguna, la política loopback-only está correctamente implementada."
+    },
+    {
+      "severity": "info",
+      "file": "internal/storage/models.go",
+      "line": 120,
+      "finding": "Score y Signal son punteros nullable ( *int, *string ) sin omitempty, lo que permite distinguir 'sin score' de 'campo ausente' en el JSON. El LEFT JOIN LATERAL trae NULL cuando no hay score previo.",
+      "recommendation": "Ninguna, el contrato de nullable está correcto y la UI ya lo gestiona."
+    },
+    {
+      "severity": "info",
+      "file": "web/src/api/types.ts",
+      "line": 1,
+      "finding": "Tipos PipelineStatus y WatchlistItem generados acorde al contrato M5.1: todos los campos SIEMPRE presentes en PipelineStatus (null o vacío cuando no aplican), score/signal nullable en WatchlistItem.",
+      "recommendation": "Ninguna, el contrato de tipos está alineado con el backend."
+    },
+    {
+      "severity": "info",
+      "file": "web/src/lib/useFetch.ts",
+      "line": 72,
+      "finding": "Polling del pipeline cada 1.5s (PIPELINE_POLL_MS) sin condiciones de carrera visibles en el frontend; el manejo de errores con flag 'alive' evita setState tras desmontaje y no filtra secretos.",
+      "recommendation": "Ninguna, el polling y manejo de errores están correctos."
+    },
+    {
+      "severity": "info",
+      "file": "web/src/pages/DashboardPage.tsx",
+      "line": 130,
+      "finding": "Renderizado de tickers/nombres como texto React (escapado por defecto); no hay dangerouslySetInnerHTML ni innerHTML con datos de entrada, lo que previene XSS.",
+      "recommendation": "Ninguna, la XSS surface está cubierta por la estrategia de React por defecto."
+    },
+    {
+      "severity": "info",
+      "file":
+"internal/api/jobs.go",
+      "line": 273,
+      "finding": "El job loop corre con defer cancel() y el mutex r.mu protege el estado compartido; un cliente que desconecta no mata el job (el job vive en goroutine con contexto propio).",
+      "recommendation": "Ninguna, el desacoplamiento de contexto está correcto."
+    },
+    {
+      "severity": "info",
+      "file": "internal/storage/watchlist.go",
+      "line": 30,
+      "finding": "SQL LEFT JOIN LATERAL con parámetros posicionales ($1, $2...); no hay inyección SQL. El contrato de Vary: Accept está intacto en GET /watchlist.",
+      "recommendation": "Ninguna, la parametrización de SQL y el header Vary están correctos."
+    }
+  ],
+  "hard_blocks": 0,
+  "summary": "Security scan M5.1 abys-m51-watchlist-integration: 0 hard blocks. Confirmaciones: contexto desacoplado del request (context.Background + timeout 30m, sin fuga de request context), mutex sinc.Mutex correcto con defer en todos los paths, loopback-only en POST /force-refresh, PUT/DELETE /watchlist (403 fuera de localhost), GET /pipeline/status y GET /watchlist abiertos, SQL parametrizado sin inyección, sin secrets detectados por regex, frontend polling 1.5s sin race visibles, XSS prevenido por renderizado React escaped. Hallazgos info: timeout 30m hardcoded, cola FIFO sin tope explícito, nullable score/signal correctly implemented."
+}

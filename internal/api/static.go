@@ -35,6 +35,11 @@ var apiRouteSegments = map[string]struct{}{
 	"watchlist":     {},
 	"refresh":       {},
 	"force-refresh": {},
+	// M5.1: /pipeline/status es el único path de /pipeline (JSON puro, sin
+	// negociación ni página SPA). Reservar el prefijo evita que /pipeline/ y
+	// /pipeline/otro caigan en el fallback SPA y devuelvan index.html en vez
+	// del envelope JSON 404.
+	"pipeline": {},
 }
 
 // RegisterStatic monta el serving de estáticos del frontend (plan M4, D2)

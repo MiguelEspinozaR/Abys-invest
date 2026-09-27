@@ -59,6 +59,11 @@ export type SearchResults = Security[];
  * ticker, y es estable si se borra y se vuelve a añadir el valor.
  * `created_at` es el orden de adición que muestra la lista (sí viene de la fila
  * de watchlist).
+ *
+ * M5.1: `score` y `signal` son el último score persistido del security
+ * (LEFT JOIN LATERAL en storage) y llegan SIEMPRE como clave: `null` significa
+ * "todavía no hay score para este valor", no campo ausente. El dashboard los
+ * usa para las tarjetas de "Mi watchlist" sin pedir /score/{ticker} por item.
  */
 export interface WatchlistItem {
   id: number;
@@ -68,6 +73,8 @@ export interface WatchlistItem {
   sector?: string;
   industry?: string;
   created_at: string;
+  score: number | null;
+  signal: Signal | null;
 }
 
 /** GET /watchlist → lista en orden de adición. */
@@ -269,4 +276,28 @@ export interface ComparablesResponse {
   peer_count: number;
   medians?: Record<string, number | null>;
   security_id: number;
+}
+
+/**
+ * M5.1 — estado del pipeline en segundo plano (`GET /pipeline/status` y el
+ * cuerpo del 202 de `POST /force-refresh`; internal/api/jobs.go). Las 8 claves
+ * están siempre presentes: `kind`, `started_at`, `finished_at` y `error` llegan
+ * como `null` cuando no aplican, y `tickers`/`steps`/`pending` como `[]`/`{}`.
+ */
+export type PipelineStatusState = 'idle' | 'running' | 'done' | 'error';
+
+export type PipelineStatusKind = 'watchlist' | 'force';
+
+export interface PipelineStatus {
+  status: PipelineStatusState;
+  kind: PipelineStatusKind | null;
+  /** tickers del job en curso (o del último job, si ya terminó) */
+  tickers: string[];
+  /** conteos por etapa: edgar|prices|sector|metrics|scores */
+  steps: Record<string, number>;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+  /** cola FIFO de tickers esperando un job watchlist (M5.1) */
+  pending: string[];
 }

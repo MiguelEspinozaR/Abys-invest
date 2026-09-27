@@ -39,9 +39,13 @@ func TestMain(m *testing.M) {
 		panic("pipeline integration: Connect falló: " + err.Error())
 	}
 	defer integPool.Close()
+	if err := storage.EnsureTestDatabase(ctx, integPool); err != nil {
+		panic("pipeline integration: guard de BD de test falló (no se debe tocar producción): " + err.Error())
+	}
 	if err := storage.RunMigrations(ctx, integPool, "../../migrations"); err != nil {
 		panic("pipeline integration: migraciones fallaron: " + err.Error())
 	}
+	_ = integPool
 	os.Exit(m.Run())
 }
 

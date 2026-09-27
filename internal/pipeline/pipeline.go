@@ -9,6 +9,10 @@
 //   - ForceRefresh: full pipeline edgar (fresh re-ingest) -> prices -> sector
 //     -> metrics -> scores.
 //
+// M5.1 añade el progreso por etapa (StepFunc), el pipeline PARCIAL de la
+// watchlist (WatchlistRefresh, sin EDGAR ni catálogo) y el universo del
+// force-refresh (RefreshUniverse = watchlist ∪ securities activas con precio).
+//
 // All functions are deterministic per input, log with slog and never abort the
 // host process; errors are returned so CLI wrappers decide exit codes.
 package pipeline
@@ -19,6 +23,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -89,14 +94,35 @@ func RefreshMetricsAndScores(ctx context.Context, pool *pgxpool.Pool, growth flo
 	}, nil
 }
 
+// StepFunc reporta el avance de una etapa (edgar|prices|sector|metrics|scores)
+// al consumidor (runner de la API → GET /pipeline/status). nil = sin progreso.
+// Se invoca DESPUÉS de que la etapa termina, con el conteo de securities
+// procesados con éxito (0 si la etapa no encontró trabajo).
+type StepFunc func(step string, n int)
+
 // ForceRefresh runs the full pipeline in order: edgar (fresh re-ingest:
 // staging del CIK borrado antes de re-insertar) -> prices -> sector ->
 // metrics -> scores. `companies` accepts tickers/CIKs; when empty the target
 // universe is resolved from the catalog (active securities with price), with a
 // DefaultCompany fallback (bootstrap).
+//
+// Es el wrapper de OnStep=nil de ForceRefreshWithProgress (M5.1): mismo
+// comportamiento, sin callbacks de progreso. cmd/collector, cmd/analytics y los
+// tests de M1-M4 conservan esta firma.
 func ForceRefresh(ctx context.Context, pool *pgxpool.Pool, companies []string, growth float64, ua string, dryRun bool) (ForceResult, error) {
+	return ForceRefreshWithProgress(ctx, pool, companies, growth, ua, dryRun, nil)
+}
+
+// ForceRefreshWithProgress es el cuerpo de ForceRefresh con el reporte de
+// avance por etapa (M5.1). onStep nil equivale a ForceRefresh.
+func ForceRefreshWithProgress(ctx context.Context, pool *pgxpool.Pool, companies []string, growth float64, ua string, dryRun bool, onStep StepFunc) (ForceResult, error) {
 	if pool == nil {
 		return ForceResult{}, errPoolNil
+	}
+	report := func(step string, n int) {
+		if onStep != nil {
+			onStep(step, n)
+		}
 	}
 	if growth <= 0 {
 		growth = DefaultGrowth
@@ -122,6 +148,7 @@ func ForceRefresh(ctx context.Context, pool *pgxpool.Pool, companies []string, g
 		return res, fmt.Errorf("pipeline: edgar: %w", err)
 	}
 	res.Steps["edgar"] = n
+	report("edgar", n)
 
 	// 2) Precios Yahoo para el mismo universo.
 	n, err = RunPricesJob(ctx, pool, tickersCSV)
@@ -129,6 +156,7 @@ func ForceRefresh(ctx context.Context, pool *pgxpool.Pool, companies []string, g
 		return res, fmt.Errorf("pipeline: prices: %w", err)
 	}
 	res.Steps["prices"] = n
+	report("prices", n)
 
 	// 3) Sector/industria.
 	n, err = RunSectorJob(ctx, pool, tickersCSV)
@@ -136,6 +164,7 @@ func ForceRefresh(ctx context.Context, pool *pgxpool.Pool, companies []string, g
 		return res, fmt.Errorf("pipeline: sector: %w", err)
 	}
 	res.Steps["sector"] = n
+	report("sector", n)
 
 	// 4) Métricas + 5) scores.
 	securities, err := resolveTargets(ctx, pool, tickersCSV)
@@ -151,7 +180,132 @@ func ForceRefresh(ctx context.Context, pool *pgxpool.Pool, companies []string, g
 	res.Scores = runScoresJob(ctx, pool, securities, growth, dryRun)
 	res.Steps["metrics"] = res.Metrics
 	res.Steps["scores"] = res.Scores
+	report("metrics", res.Metrics)
+	report("scores", res.Scores)
 	return res, nil
+}
+
+// WatchlistRefresh (M5.1) es el pipeline PARCIAL de los tickers ya catalogados
+// de la watchlist: prices -> sector -> metrics -> scores, en ese orden y SIN
+// EDGAR ni catálogo (el ticker ya existe en securities: lo guarantees el PUT
+// /watchlist/{ticker}, que devuelve 404 si no). Devuelve ForceResult con
+// Steps{prices,sector,metrics,scores} (sin clave "edgar").
+//
+// Métricas y scores se piden en dos llamadas a RunAnalytics (AnalyticsJobMetrics
+// y luego AnalyticsJobScores) en vez de AnalyticsJobAll: el progreso avanza en
+// dos saltos observables y un fallo en scores no pierde el resultado de métricas.
+// Coste: una resolución de targets extra (1 query por ticker).
+//
+// Un ticker sin datos en Yahoo NO produce estado de error: RunPricesJob loguea y
+// continúa (0 exitosos) y runScoresJob omite el ticker sin precio previo, así
+// que el job termina `done` con steps en 0. Es lo correcto para la UX (el ticker
+// recién añadido puede no existir todavía en Yahoo).
+func WatchlistRefresh(ctx context.Context, pool *pgxpool.Pool, tickers []string, growth float64, dryRun bool, onStep StepFunc) (ForceResult, error) {
+	if pool == nil {
+		return ForceResult{}, errPoolNil
+	}
+	report := func(step string, n int) {
+		if onStep != nil {
+			onStep(step, n)
+		}
+	}
+	if growth <= 0 {
+		growth = DefaultGrowth
+	}
+
+	list := normalizeTickerList(tickers)
+	if len(list) == 0 {
+		return ForceResult{}, errors.New("pipeline: WatchlistRefresh sin tickers")
+	}
+	tickersCSV := strings.Join(list, ",")
+
+	res := ForceResult{Steps: map[string]int{}}
+
+	// 1) Precios Yahoo (ticker por ticker; los fallos se loguean, no abortan).
+	n, err := RunPricesJob(ctx, pool, tickersCSV)
+	if err != nil {
+		return res, fmt.Errorf("pipeline: prices: %w", err)
+	}
+	res.Steps["prices"] = n
+	report("prices", n)
+
+	// 2) Sector/industria.
+	n, err = RunSectorJob(ctx, pool, tickersCSV)
+	if err != nil {
+		return res, fmt.Errorf("pipeline: sector: %w", err)
+	}
+	res.Steps["sector"] = n
+	report("sector", n)
+
+	// 3) Métricas derivadas.
+	m, err := RunAnalytics(ctx, pool, tickersCSV, growth, dryRun, AnalyticsJobMetrics)
+	if err != nil {
+		return res, fmt.Errorf("pipeline: metrics: %w", err)
+	}
+	res.Steps["metrics"] = m.Metrics
+	report("metrics", m.Metrics)
+
+	// 4) Scores (job aparte: progreso en dos saltos y métricas ya persistidas).
+	s, err := RunAnalytics(ctx, pool, tickersCSV, growth, dryRun, AnalyticsJobScores)
+	if err != nil {
+		return res, fmt.Errorf("pipeline: scores: %w", err)
+	}
+	res.Steps["scores"] = s.Scores
+	res.Tickers = m.Tickers
+	report("scores", s.Scores)
+	return res, nil
+}
+
+// RefreshUniverse (M5.1) es el universo del force-refresh: la watchlist ∪ las
+// securities activas con precio, deduplicado y ordenado (determinismo: dos
+// ejecuciones con la misma BD producen el mismo CSV para el pipeline). Un ticker
+// de la watchlist entra aunque esté delistado o sin precios: es exactamente el
+// caso del reporte original (NVDA en la watchlist sin procesar).
+func RefreshUniverse(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
+	if pool == nil {
+		return nil, errPoolNil
+	}
+	active, err := activeUniverse(ctx, pool)
+	if err != nil {
+		return nil, fmt.Errorf("pipeline: universo de empresas: %w", err)
+	}
+	watch, err := storage.ListWatchlistTickers(ctx, pool)
+	if err != nil {
+		return nil, fmt.Errorf("pipeline: universo de watchlist: %w", err)
+	}
+	seen := make(map[string]struct{}, len(active)+len(watch))
+	out := make([]string, 0, len(active)+len(watch))
+	for _, group := range [][]string{active, watch} {
+		for _, t := range normalizeTickerList(group) {
+			if _, dup := seen[t]; dup {
+				continue
+			}
+			seen[t] = struct{}{}
+			out = append(out, t)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// normalizeTickerList normaliza una lista de tickers (TrimSpace + Upper),
+// descarta vacíos y deduplica preservando el orden de entrada (FIFO visible en
+// la cola del runner de la API).
+func normalizeTickerList(tickers []string) []string {
+	out := make([]string, 0, len(tickers))
+	seen := make(map[string]struct{}, len(tickers))
+	for _, t := range tickers {
+		t = strings.ToUpper(strings.TrimSpace(t))
+		if t == "" {
+			continue
+		}
+		if _, dup := seen[t]; dup {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	return out
 }
 
 // activeUniverse returns the tickers of active securities that have at least

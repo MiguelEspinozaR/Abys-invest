@@ -159,8 +159,18 @@ func NewRouter(pool *pgxpool.Pool, opts ...Option) *http.ServeMux {
 	mux.HandleFunc("POST /refresh", func(w http.ResponseWriter, r *http.Request) {
 		handleRefresh(w, r, pool)
 	})
+	// M5.1 (SPEC §6 y §11ter): POST /force-refresh es ASÍNCRONO (202) y corre
+	// en segundo plano con contexto propio; GET /pipeline/status publica su
+	// progreso (idle|running|done|error, kind, tickers, steps, timestamps,
+	// error y la cola pending). El status es read-only: sin pool (responde 200
+	// con el estado del proceso, D5) y sin restricción de red, para que el SPA
+	// pueda seguir el job aunque el API esté degradado o venga de otra máquina.
+	// La anti-concurrencia (409) y el loopback-only viven en los handlers.
 	mux.HandleFunc("POST /force-refresh", func(w http.ResponseWriter, r *http.Request) {
 		handleForceRefresh(w, r, pool)
+	})
+	mux.HandleFunc("GET /pipeline/status", func(w http.ResponseWriter, r *http.Request) {
+		handlePipelineStatus(w, r)
 	})
 
 	return mux

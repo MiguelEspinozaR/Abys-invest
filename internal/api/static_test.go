@@ -126,8 +126,10 @@ func TestStaticServing(t *testing.T) {
 		// error (500 internal_error vía panic-recovery); lo esencial para T4
 		// es que NUNCA sea HTML/SPA. Los paths malformados de la API
 		// (/securities/, /score/UNKNOWN/extra) caen en el catch-all y el
-		// guard isAPIRoute les responde el envelope 404 JSON.
-		for _, p := range []string{"/score/UNKNOWN", "/securities/", "/score/UNKNOWN/extra", "/prices/X/extra", "/backtest/rsi/x", "/alerts"} {
+		// guard isAPIRoute les responde el envelope 404 JSON. M5.1 añadió
+		// "/pipeline/extra" al prefijo reservado: /pipeline/status es JSON
+		// puro y no existe página SPA para ese namespace.
+		for _, p := range []string{"/score/UNKNOWN", "/securities/", "/score/UNKNOWN/extra", "/prices/X/extra", "/backtest/rsi/x", "/alerts", "/pipeline/extra"} {
 			rec := staticGet(t, h, p)
 			if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
 				t.Fatalf("%s debe responder envelope JSON de la API, no SPA (ct=%q body=%q)", p, ct, rec.Body.String())

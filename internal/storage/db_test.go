@@ -20,13 +20,15 @@ import (
 var testPool *pgxpool.Pool
 
 func TestMain(m *testing.M) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		pool, err := Connect(ctx, dsn)
-		cancel()
-		if err == nil {
+		if err == nil && EnsureTestDatabase(ctx, pool) == nil {
 			testPool = pool
+		} else if err == nil {
+			pool.Close()
 		}
 	}
 	code := m.Run()
@@ -57,6 +59,9 @@ func truncateDataTables(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	if err := EnsureTestDatabase(ctx, pool); err != nil {
+		t.Fatalf("guard de BD de test falló (no se trunca producción): %v", err)
+	}
 	_, err := pool.Exec(ctx, `TRUNCATE derived_metrics, daily_prices, macro_series, fundamentals, edgar_staging, securities RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatalf("TRUNCATE falló: %v", err)

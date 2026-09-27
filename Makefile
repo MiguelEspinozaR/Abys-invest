@@ -8,7 +8,12 @@ API_BIN        := $(BIN_DIR)/api
 COLLECTOR_BIN  := $(BIN_DIR)/collector
 ANALYTICS_BIN  := $(BIN_DIR)/analytics
 
-DATABASE_URL   ?= postgres://abys:abys@localhost:5432/abys?sslmode=disable
+# BD real de Abys-Invest = instancia dedicada abys-postgres (55432). El
+# cluster del sistema (5432) pertenece a otros proyectos; no tiene el esquema.
+DATABASE_URL      ?= postgres://abys:abys@localhost:55432/abys?sslmode=disable
+# BD dedicada para la suite de integración (make integration usa esta, nunca
+# la de datos; el guard exige un nombre *_test).
+TEST_DATABASE_URL ?= postgres://abys:abys@localhost:55432/abys_test?sslmode=disable
 SEC_EDGAR_UA   ?= AbysInvest/1.0 (contact@abys-invest.dev)
 API_PORT       ?= 8080
 
@@ -20,7 +25,7 @@ MARGIN_SAFETY    ?= 30
 DCF_DISCOUNT     ?= 10
 COMP_MIN_SEC     ?= 5
 
-.PHONY: build build-web build-all deploy-local test lint vet docker-up docker-down migrate air-install dev-api run-api run-collector run-prices run-macro run-sector run-analytics run-scores run-all-data integration clean
+.PHONY: build build-web build-all deploy-local test lint vet docker-up docker-down migrate air-install dev-api run-api run-collector run-prices run-macro run-sector run-analytics run-scores run-all-data integration integration-run clean
 
 ## build: compila api, collector y analytics en bin/
 build:
@@ -115,11 +120,18 @@ run-scores:
 run-all-data:
 	$(MAKE) migrate run-collector run-prices run-macro run-sector run-analytics run-scores
 
-## integration: tests de integración end-to-end (requiere BD levantada)
-## Se usan -p 1 (secuencial): los paquetes comparten la misma BD de desarrollo
-## y el suite storage trunca las tablas de datos en cada ejecución.
+## integration: tests de integración end-to-end (requiere BD de pruebas).
+## Se usan -p 1 (secuencial): los paquetes comparten la misma BD de tests y
+## el suite storage trunca las tablas de datos en cada ejecución.
+## Guard de seguridad: se ejecuta SIEMPRE contra TEST_DATABASE_URL (que debe
+## apuntar a una BD con sufijo *_test). Si apunta a la BD de producción
+## (p. ej. /abys o /5432/abys) se aborta para no truncar datos reales.
 integration:
-	go test -p 1 ./... -count=1 -tags=integration
+	@sh -c 'case "$(TEST_DATABASE_URL)" in */*_test?*) echo "==> integración contra BD de test: $(TEST_DATABASE_URL)";; *) echo "ERROR: TEST_DATABASE_URL debe apuntar a una BD *_test (no a la de producción): $(TEST_DATABASE_URL)" 1>&2; exit 1;; esac'
+	TEST_DATABASE_URL=$$TEST_DATABASE_URL $(MAKE) integration-run
+
+integration-run:
+	DATABASE_URL=$(TEST_DATABASE_URL) go test -p 1 ./... -count=1 -tags=integration
 
 clean:
 	rm -rf $(BIN_DIR)

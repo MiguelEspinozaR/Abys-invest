@@ -26,7 +26,13 @@ func TestMain(m *testing.M) {
 		pool, err := storage.Connect(ctx, dsn)
 		cancel()
 		if err == nil {
-			testPool = pool
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			if err := storage.EnsureTestDatabase(ctx, pool); err == nil {
+				testPool = pool
+			} else {
+				pool.Close()
+			}
+			cancel()
 		}
 	}
 	code := m.Run()
