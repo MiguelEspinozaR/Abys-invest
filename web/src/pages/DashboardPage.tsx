@@ -178,169 +178,166 @@ export default function DashboardPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <main className="mx-auto max-w-6xl px-4 py-6">
-        <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">Dashboard</h1>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Catálogo con score y señal — {rows.length} tickers
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              to="/watchlist"
-              className="rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
-            >
-              Watchlist
-            </Link>
-            <button
-              type="button"
-              onClick={() => void runRefresh('refresh')}
-              disabled={loading || refreshing !== null}
-              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
-            >
-              {refreshing === 'refresh' ? (
-                <>
-                  <Spinner className="mr-2" />
-                  Recalculando…
-                </>
-              ) : (
-                'Recalcular métricas'
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => void runRefresh('force')}
-              disabled={loading || refreshing !== null}
-              className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/40"
-            >
-              {refreshing === 'force' ? (
-                <>
-                  <Spinner className="mr-2" />
-                  Pipeline en ejecución…
-                </>
-              ) : (
-                'Pipeline completo'
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => void load()}
-              disabled={loading || refreshing !== null}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            >
-              {loading ? 'Cargando…' : 'Actualizar'}
-            </button>
-          </div>
-        </header>
-
-        {pipelineStepsLine(pipeline) ? (
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-            {pipelineStepsLine(pipeline)}
-          </div>
-        ) : null}
-
-        {refreshStatus ? (
-          <div
-            className={`mb-4 rounded-xl border p-4 text-sm ${
-              refreshStatus.ok
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300'
-                : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300'
-            }`}
+    // M5.2: el wrapper min-h-screen/bg-slate-50 y el fondo/tema los aporta el
+    // <Layout/> (ruta padre en App.tsx); aquí solo queda el contenido con su
+    // max-w intacto. El link "Watchlist" de la cabecera se quitó: ahora lo da el
+    // sidebar (se mantiene el CTA dentro de la sección cuando está vacía, que es
+    // una acción contextual, no navegación global).
+    <main className="mx-auto max-w-6xl px-4 py-6">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Catálogo con score y señal — {rows.length} tickers
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void runRefresh('refresh')}
+            disabled={loading || refreshing !== null}
+            className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
           >
-            {refreshStatus.text}
-          </div>
-        ) : null}
+            {refreshing === 'refresh' ? (
+              <>
+                <Spinner className="mr-2" />
+                Recalculando…
+              </>
+            ) : (
+              'Recalcular métricas'
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => void runRefresh('force')}
+            disabled={loading || refreshing !== null}
+            className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/40"
+          >
+            {refreshing === 'force' ? (
+              <>
+                <Spinner className="mr-2" />
+                Pipeline en ejecución…
+              </>
+            ) : (
+              'Pipeline completo'
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading || refreshing !== null}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            {loading ? 'Cargando…' : 'Actualizar'}
+          </button>
+        </div>
+      </header>
 
-        {error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-            <p>No se pudo cargar el catálogo: {error}</p>
-            <button
-              type="button"
-              onClick={() => void load()}
-              className="mt-3 rounded border border-current px-3 py-1 text-xs font-medium hover:bg-red-100 dark:hover:bg-red-900/40"
-            >
-              Reintentar
-            </button>
-          </div>
-        ) : loading ? (
-          <TableSkeleton />
-        ) : rows.length === 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-            Sin tickers con score disponible en la API.
-          </div>
-        ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                  <th className="px-4 py-3">Ticker</th>
-                  <th className="px-4 py-3">Nombre</th>
-                  <th className="px-4 py-3 text-right">Precio</th>
-                  <th className="px-4 py-3 text-right">Graham</th>
-                  <th className="px-4 py-3 text-right">DCF</th>
-                  <th className="px-4 py-3 text-right">Score</th>
-                  <th className="px-4 py-3">Señal</th>
-                  <th className="px-4 py-3 text-right">P/E</th>
-                  <th className="px-4 py-3 text-right">ROE</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => {
-                  const valuation = row.valuation;
-                  const pe = valuation?.metrics?.pe_ratio;
-                  const roe = valuation?.metrics?.roe;
-                  return (
-                    <tr
-                      key={row.security.id}
-                      onClick={() => navigate(`/ticker/${row.security.ticker}`)}
-                      className="cursor-pointer border-t border-slate-100 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50"
-                    >
-                      <td className="px-4 py-2.5 font-mono font-semibold">
-                        {row.security.ticker}
-                      </td>
-                      <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
-                        {row.security.name}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">
-                        {valuation?.price != null ? fmtNumber(valuation.price) : '—'}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">
-                        {valuation?.value?.graham != null ? fmtNumber(valuation.value.graham) : '—'}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">
-                        {valuation?.value?.dcf != null ? fmtNumber(valuation.value.dcf) : '—'}
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                        {fmtNumber(row.score.score)}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <ScoreBadge score={row.score.score} signal={row.score.signal} />
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">
-                        {pe != null ? fmtNumber(pe) : '—'}
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums">
-                        {roe != null ? fmtPct(roe * 100) : '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+      {pipelineStepsLine(pipeline) ? (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+          {pipelineStepsLine(pipeline)}
+        </div>
+      ) : null}
 
-        <WatchlistSection
-          items={watchlistItems}
-          loading={watchlist.loading}
-          error={watchlist.error}
-          pipeline={pipeline}
-          onRetry={watchlist.reload}
-        />
-      </main>
-    </div>
+      {refreshStatus ? (
+        <div
+          className={`mb-4 rounded-xl border p-4 text-sm ${
+            refreshStatus.ok
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300'
+              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300'
+          }`}
+        >
+          {refreshStatus.text}
+        </div>
+      ) : null}
+
+      {error ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+          <p>No se pudo cargar el catálogo: {error}</p>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="mt-3 rounded border border-current px-3 py-1 text-xs font-medium hover:bg-red-100 dark:hover:bg-red-900/40"
+          >
+            Reintentar
+          </button>
+        </div>
+      ) : loading ? (
+        <TableSkeleton />
+      ) : rows.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+          Sin tickers con score disponible en la API.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                <th className="px-4 py-3">Ticker</th>
+                <th className="px-4 py-3">Nombre</th>
+                <th className="px-4 py-3 text-right">Precio</th>
+                <th className="px-4 py-3 text-right">Graham</th>
+                <th className="px-4 py-3 text-right">DCF</th>
+                <th className="px-4 py-3 text-right">Score</th>
+                <th className="px-4 py-3">Señal</th>
+                <th className="px-4 py-3 text-right">P/E</th>
+                <th className="px-4 py-3 text-right">ROE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const valuation = row.valuation;
+                const pe = valuation?.metrics?.pe_ratio;
+                const roe = valuation?.metrics?.roe;
+                return (
+                  <tr
+                    key={row.security.id}
+                    onClick={() => navigate(`/ticker/${row.security.ticker}`)}
+                    className="cursor-pointer border-t border-slate-100 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50"
+                  >
+                    <td className="px-4 py-2.5 font-mono font-semibold">
+                      {row.security.ticker}
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-600 dark:text-slate-300">
+                      {row.security.name}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      {valuation?.price != null ? fmtNumber(valuation.price) : '—'}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      {valuation?.value?.graham != null ? fmtNumber(valuation.value.graham) : '—'}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      {valuation?.value?.dcf != null ? fmtNumber(valuation.value.dcf) : '—'}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                      {fmtNumber(row.score.score)}
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <ScoreBadge score={row.score.score} signal={row.score.signal} />
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      {pe != null ? fmtNumber(pe) : '—'}
+                    </td>
+                    <td className="px-4 py-2.5 text-right tabular-nums">
+                      {roe != null ? fmtPct(roe * 100) : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <WatchlistSection
+        items={watchlistItems}
+        loading={watchlist.loading}
+        error={watchlist.error}
+        pipeline={pipeline}
+        onRetry={watchlist.reload}
+      />
+    </main>
   );
 }
 

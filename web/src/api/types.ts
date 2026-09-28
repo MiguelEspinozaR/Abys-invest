@@ -17,11 +17,27 @@ export interface ApiErrorEnvelope {
   error: { code: string; message: string };
 }
 
-/** GET /health */
+/** Una fila de `tables` en GET /health (conteo exacto de registros). */
+export interface HealthTableCount {
+  name: string;
+  rows: number;
+}
+
+/**
+ * GET /health (M5.2, ampliación ADITIVA del contrato M1: `status`, `database` y
+ * `version` no cambian). Los 4 campos nuevos solo vienen con la BD conectada;
+ * `undefined` = no disponible (la API los OMITE, no los manda null) y la UI
+ * pinta "—". `latency_ms` es la latencia del ping a PostgreSQL, no la del
+ * request completo.
+ */
 export interface HealthResponse {
   status: string; // "ok" | "degraded"
   database: string; // "connected" | "disconnected"
   version: string;
+  latency_ms?: number;
+  postgres_version?: string; // "18.6"
+  db_size?: string; // "21 MB"
+  tables?: HealthTableCount[]; // 9 entradas
 }
 
 /** Fila del catálogo `securities` (GET /securities, GET /securities/{ticker}). */

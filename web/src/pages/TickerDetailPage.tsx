@@ -60,75 +60,77 @@ export default function TickerDetailPage() {
   const currentPrice = lastClose ?? valuation.data?.price;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <main className="mx-auto max-w-5xl px-4 py-6">
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <Link
-                to="/"
-                className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300"
-              >
-                ← Dashboard
-              </Link>
-              <h1 className="mt-1 text-2xl font-bold">{ticker ?? '—'}</h1>
-              {security.loading && (
-                <p className="mt-1 text-sm text-slate-500">Cargando detalles…</p>
-              )}
-              {security.error && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">
-                  {security.error}
-                  <button
-                    type="button"
-                    onClick={security.reload}
-                    className="ml-2 rounded border border-current px-2 py-0.5 text-xs hover:bg-red-50 dark:hover:bg-red-950/30"
-                  >
-                    Reintentar
-                  </button>
-                </p>
-              )}
-              {security.data && (
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  {security.data.name}
-                  {(security.data.sector || security.data.industry) && (
-                    <> · {[security.data.sector, security.data.industry].filter(Boolean).join(' · ')}</>
-                  )}
-                </p>
-              )}
-            </div>
-            <div className="text-right">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Precio actual</p>
-              <p className="text-2xl font-bold tabular-nums">
-                {currentPrice != null ? fmtNumber(currentPrice) : '—'}
+    // M5.2: el wrapper min-h-screen/bg-slate-50 y el fondo/tema los aporta el
+    // <Layout/> (ruta padre en App.tsx). El "← Dashboard" del header se mantiene
+    // por decisión del plan (B3): es la vuelta al origen del clic, no navegación
+    // global.
+    <main className="mx-auto max-w-5xl px-4 py-6">
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <Link
+              to="/"
+              className="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300"
+            >
+              ← Dashboard
+            </Link>
+            <h1 className="mt-1 text-2xl font-bold">{ticker ?? '—'}</h1>
+            {security.loading && (
+              <p className="mt-1 text-sm text-slate-500">Cargando detalles…</p>
+            )}
+            {security.error && (
+              <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                {security.error}
+                <button
+                  type="button"
+                  onClick={security.reload}
+                  className="ml-2 rounded border border-current px-2 py-0.5 text-xs hover:bg-red-50 dark:hover:bg-red-950/30"
+                >
+                  Reintentar
+                </button>
               </p>
-              {prices.error && (
-                <p className="mt-1 text-xs text-red-500 dark:text-red-400">
-                  Sin precio: {prices.error}
-                </p>
-              )}
-            </div>
+            )}
+            {security.data && (
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {security.data.name}
+                {(security.data.sector || security.data.industry) && (
+                  <> · {[security.data.sector, security.data.industry].filter(Boolean).join(' · ')}</>
+                )}
+              </p>
+            )}
           </div>
-        </section>
-
-        <div className="mt-6 space-y-6">
-          <Section title="Score" state={score} render={renderScore} />
-
-          <Section title="Valoración" state={valuation} empty="Sin valoración para este ticker." render={renderValuation(score)} />
-
-          <Section title="Métricas" state={metrics} empty="Sin métricas disponibles." render={(data) => <MetricsTable metrics={data} />} />
-
-          <Section title="Histórico de scores" state={history} empty="Sin histórico de scores." render={renderHistory} />
-
-          {comparables.data && comparables.data.peers.length > 0 && (
-            <Section
-              title={`Comparables · ${comparables.data.sector ?? 'sector'}`}
-              state={comparables}
-              render={renderComparables}
-            />
-          )}
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Precio actual</p>
+            <p className="text-2xl font-bold tabular-nums">
+              {currentPrice != null ? fmtNumber(currentPrice) : '—'}
+            </p>
+            {prices.error && (
+              <p className="mt-1 text-xs text-red-500 dark:text-red-400">
+                Sin precio: {prices.error}
+              </p>
+            )}
+          </div>
         </div>
-      </main>
-    </div>
+      </section>
+
+      <div className="mt-6 space-y-6">
+        <Section title="Score" state={score} render={renderScore} />
+
+        <Section title="Valoración" state={valuation} empty="Sin valoración para este ticker." render={renderValuation(score)} />
+
+        <Section title="Métricas" state={metrics} empty="Sin métricas disponibles." render={(data) => <MetricsTable metrics={data} />} />
+
+        <Section title="Histórico de scores" state={history} empty="Sin histórico de scores." render={renderHistory} />
+
+        {comparables.data && comparables.data.peers.length > 0 && (
+          <Section
+            title={`Comparables · ${comparables.data.sector ?? 'sector'}`}
+            state={comparables}
+            render={renderComparables}
+          />
+        )}
+      </div>
+    </main>
   );
 }
 

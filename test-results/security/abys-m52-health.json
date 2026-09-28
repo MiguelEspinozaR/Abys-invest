@@ -1,0 +1,74 @@
+{
+  "scanner": "opencode/nemotron-3.5-lightning-free Security Scanner",
+  "date": "2026-09-27T00:00:00Z",
+  "task": "abys-m52-health",
+  "files": [
+    "internal/api/health.go",
+    "internal/api/health_test.go",
+    "internal/api/health_integration_test.go",
+    "web/src/components/Layout.tsx",
+    "web/src/pages/HealthPage.tsx",
+    "internal/api/middleware.go",
+    "cmd/api/health_test.go",
+    "cmd/api/health_integration_test.go",
+    "web/src/App.tsx",
+    "web/src/api/client.ts",
+    "web/src/api/types.ts",
+    "web/src/lib/format.ts",
+    "web/src/pages/DashboardPage.tsx",
+    "web/src/pages/WatchlistPage.tsx",
+    "web/src/pages/TickerDetailPage.tsx"
+  ],
+  "findings": [
+    {
+      "severity": "info",
+      "file": "internal/api/health.go",
+      "finding": "SQL query construction in buildCountQuery uses a constant table list (healthTableNames) with regex validation (healthTableNameRe = ^[a-z_][a-z0-9_]*$) and public. qualification. No user input is interpolated into the SQL. The UNION ALL query is deterministic and safe from injection. However, the regex permissiveness and the fixed constant list mean a new table added to the schema without updating healthTableNames would be silently omitted (risk R2).",
+      "recommended_fix": "Keep the anti-deriva test (TestHealthTablesCoincidenConEsquema) and update healthTableNames when adding new tables to the public schema."
+    },
+    {
+      "severity": "medium",
+      "file": "internal/api/health.go",
+      "finding": "Abuse/DoS risk: /health executes 3 PostgreSQL queries (1 for server_version/db_size + 1 UNION ALL for table counts) per request with a 3-second timeout (context.WithTimeout). A slow or locked database could cause the timeout to fire, returning 503 or partial data. As a public read-only readiness probe on small tables (~9 rows), the risk is limited, but a degraded DB could still impact availability.",
+      "recommended_fix": "The 3s timeout (decision D4) is the existing mitigation. Monitor /health latency metrics. Consider circuit-breaker patterns if BD latency becomes a concern."
+    },
+    {
+      "severity": "info",
+      "file": "internal/api/health.go",
+      "finding": "Info disclosure: /health exposes postgres_version, db_size, and per-table row counts. This is comparable to M1 which exposed API version and published_at. Since /health is designed as a public readiness probe (D12, systemd probe), the disclosure is acceptable by design, but it should be documented as intended behavior.",
+      "recommended_fix": "Document in the README that /health deliberately exposes DB metrics for readiness probing; no change needed."
+    },
+    {
+      "severity": "info",
+      "file": "web/src/pages/HealthPage.tsx",
+      "finding": "Frontend uses getJSONAllowing('/health', [503]) which correctly allows the 503 status so the page can display degraded state without throwing. No dangerouslySetInnerHTML is used. NavLink in Layout.tsx renders static labels without user input, so XSS risk is minimal.",
+      "recommended_fix": "No action needed. The error handling pattern (alive ref, data preservation) is correct."
+    },
+    {
+      "severity": "info",
+      "file": "web/src/api/client.ts",
+      "finding": "getJSONAllowing reuses API_BASE and Accept: application/json. For /health, the 503 is treated as informational (not an error), allowing the page to show BD degradation. For other endpoints, the function falls through to parseError and throw ApiError, preserving strong error handling for the rest of the app.",
+      "recommended_fix": "No action needed. The segregated handling for /health is intentional (D9)."
+    },
+    {
+      "severity": "major",
+      "file": "Makefile",
+      "finding": "F1 (preexistente, no-M5.2): Makefile lineas 130-131 — `make integration` sin export TEST_DATABASE_URL propaga vacío al sub-make y la suite de BD se salta EN VERDE (exit 0, 0 tests). Falso verde, sin riesgo de borrado de datos.",
+      "recommended_fix": "Owner: git-manager/miky. Marcar status open. Document that TEST_DATABASE_URL must be set for integration tests; the Makefile target should warn or fail if the variable is missing."
+    },
+    {
+      "severity": "minor",
+      "file": "Makefile",
+      "finding": "F2 (preexistente): sin el flag -p 1 la suite de tests es flaky por deadlock entre dos TestMain corriendo migraciones (error 40P01).",
+      "recommended_fix": "Usar `make integration -p 1` o asegurar que solo un TestMain ejecute migraciones. No es bloqueante si se usa -p 1."
+    },
+    {
+      "severity": "info",
+      "file": "Makefile",
+      "finding": "F4 (info): deploy local :8082 está mixto (air compiló el binario M5.2 pero sirve bundle M5.1).",
+      "recommended_fix": "Reiniciar el servidor local después de build M5.2 o establecer Makefile objetivo que rebuildue el bundle al levantar el dev server."
+    }
+  ],
+  "hard_blocks": 0,
+  "summary": "Security scan M5.2 abys-m52-health: 0 hard blocks. Findings summary: SQL query in buildCountQuery is parameterized via constant table list with regex validation — no injection risk (info). /health performs 3 queries with 3s timeout; read-only public endpoint on small tables, timeout is adequate mitigation (medium). /health exposes postgres_version, db_size, table row counts by design as a readiness probe (info). Frontend: getJSONAllowing correctly allows 503 for /health, no dangerouslySetInnerHTML, NavLink uses static labels (info). Preexistente F1: Makefile integration target requires TEST_DATABASE_URL (major, open, owner=git-manager/miky). Preexistente F2: test suite flaky without -p 1 (minor). Info F4: dev server bundle M5.1 after air build M5.2 (info). No secrets detected by regex advisory scan; repo uses placeholders (abys:abys) and .env gitignored."
+}

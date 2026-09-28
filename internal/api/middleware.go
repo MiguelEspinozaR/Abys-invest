@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
@@ -48,21 +47,33 @@ func WithMiddleware(next http.Handler) http.Handler {
 
 // HealthHandler serves the readiness probe (degraded → 503 when the database
 // is unavailable). The cmd wrapper keeps package-main compatibility.
+//
+// M5.2: el body se amplía de forma ADITIVA (health.go). El status HTTP depende
+// SOLO del Ping (decisión D3); si la BD responde, mide la latencia de ese ping y
+// añade postgres_version, db_size y tables — si alguna de esas queries falla se
+// responde 200 con los campos disponibles y un slog.Warn (una métrica
+// secundaria nunca degrada el probe de readiness). Todo el handler vive bajo
+// un presupuesto de 3 s (decisión D4). Sin BD (pool nil o ping fallido) el 503
+// conserva EXACTAMENTE las 3 claves del contrato M1 (omitempty).
 func HealthHandler(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		dbOK := pool != nil && pool.Ping(contextBackground(r)) == nil
-		w.Header().Set("Content-Type", "application/json")
-		if dbOK {
-			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"status": "ok", "database": "connected", "version": Version,
-			})
-			return
+		ctx, cancel := context.WithTimeout(contextBackground(r), healthTimeout)
+		defer cancel()
+
+		resp := HealthResponse{Status: "degraded", Database: "disconnected", Version: Version}
+		if pool != nil {
+			start := time.Now()
+			if err := pool.Ping(ctx); err == nil {
+				resp.Status, resp.Database = "ok", "connected"
+				resp.LatencyMS = ptr(msSince(start)) // latencia del ping, no del request
+				collectHealthMetrics(ctx, pool, &resp)
+			}
 		}
-		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"status": "degraded", "database": "disconnected", "version": Version,
-		})
+		code := http.StatusOK
+		if resp.Status != "ok" {
+			code = http.StatusServiceUnavailable
+		}
+		writeJSON(w, code, resp) // errors.go:43 ya fija Content-Type: application/json
 	}
 }
 

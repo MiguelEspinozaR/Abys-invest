@@ -2,7 +2,7 @@
 
 **Value investing analysis engine** — SEC EDGAR fundamentals → score 0-100 with buy/hold/sell signal, Graham/DCF intrinsic value, comparables & SMA backtest.
 
-> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M6. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**. **M4d ✔ (Air live-reload dev + deploy opcional) completed**. **M5 ✔ (buscador + watchlist) completed.** **M5.1 ✔ (watchlist integración: pipeline asíncrono, GET /pipeline/status, ingesta automática en 2º plano, Mi watchlist en dashboard) completed.**
+> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M6. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**. **M4d ✔ (Air live-reload dev + deploy opcional) completed**. **M5 ✔ (buscador + watchlist) completed.** **M5.1 ✔ (watchlist integración: pipeline asíncrono, GET /pipeline/status, ingesta automática en 2º plano, Mi watchlist en dashboard) completed.** **M5.2 ✔ (página Health: GET /health ampliado + sidebar con secciones Finanzas/Sistema) completed** (2026-09-27; suite 276/0/1).
 
 ---
 
@@ -20,6 +20,7 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 | M4 — UI & Deploy | ✅ Done | Dashboard React + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback), deploy systemd. Alertas (CA M4-2) diferidas a M6 por decisión usuario 2026-09-23. |
 | M5 — Buscador + Watchlist | ✅ Done | `GET /securities/search?q=&limit=`, `GET /watchlist` (content negotiation: text/html→SPA, application/json→JSON, `Vary: Accept`), `PUT/DELETE /watchlist/{ticker}` (loopback-only, 403 fuera de localhost, idempotentes, 404 ticker no catalogado); página `/watchlist` con buscador (debounce 300ms, min 2 chars). Watchlist permite delistados. Suite 248/0/1. |
 | M5.1 — Watchlist integración | ✅ Done | `POST /force-refresh` ahora **asíncrono** (202 Accepted + estado inicial; job en 2º plano con `context.Background()` + timeout 30 min, NO el contexto del HTTP request); nuevo `GET /pipeline/status` (8 claves: `status` idle\|running\|done\|error, `kind` watchlist\|force, `tickers`, `steps` {edgar,prices,sector,metrics,scores}, `started_at`, `finished_at`, `error`, `pending`); `PUT /watchlist/{ticker}` dispara ingesta en 2º plano (prices→sector→metrics→scores, SIN EDGAR), cola FIFO con dedup por ticker si hay job corriendo; `GET /watchlist` ampliado con `score` (number\|null) y `signal` (string\|null) del último score por LEFT JOIN LATERAL; dashboard con sección "Mi watchlist" (tarjetas ticker/nombre/score/signal, enlace /ticker/{ticker}, "procesando…" mientras job corre). El SPA hace polling de `GET /pipeline/status` (intervalo 1.5s). Navegar/recargar YA NO aborta el pipeline (era el bug "failed to fetch"). Suite 269/0/1; bundle `index-BDERmpRv.js`. |
+| M5.2 — Página Health | ✅ Done | `GET /health` ampliado **aditivamente** (4 campos nuevos sin tocar el contrato M1): response 200 (BD conectada) `{status, database, version, latency_ms (ms ping), postgres_version (e.g. "18.6"), db_size (e.g. "21 MB"), tables: [{name, rows}...]}` con 9 tablas: securities, daily_prices, fundamentals, derived_metrics, scores, watchlist, macro_series, edgar_staging, xbrl_concept_map. 503 sin BD: SOLO `{status:degraded, database:disconnected, version}` (3 claves; los campos ampliados van omitted). Timeout de contexto 3s; status HTTP depende solo del Ping; si metadata/conteos fallan → 200 con campos presentes + `slog.Warn`. Frontend: nuevo sidebar/layout (`web/src/components/Layout.tsx`) con secciones "Finanzas" (Dashboard, Watchlist) y "Sistema" (Health); nueva página `/health` (HealthPage.tsx) con 4 tarjetas (Conexión, Latencia, Versión PostgreSQL, Tamaño) + tabla de tablas con conteos + botón Refrescar con spinner + "Última comprobación" localizada es-BO. Bundle nuevo: `index-BeqNKrtA.js` (CSS `index-CD-PyuE9.css`). Suite 276/0/1 (165 unit/0/0 + integración). F5 en `/health` muestra JSON crudo (aceptado por diseño). |
 | M4b — Consenso promedio + señal textual | ✅ Done | Señal en UI como palabra `comprar\|mantener\|vender` (sin duplicar el score); columnas Graham y DCF por ticker; consenso = promedio `(graham+dcf)/2`; `model_version` 1.1.0. Decisión usuario 2026-09-23. |
 | M4c — Refresh de datos + fix mapeo XBRL | ✅ Done | Botones "Recalcular métricas" (`POST /refresh`) y "Pipeline completo" (`POST /force-refresh`) en el dashboard; fix del diccionario XBRL con 6 variantes GAAP nuevas; DCF operativo para NVDA (65.72), QCOM (188.9), ADBE (394.3), CRM (245.5), CSCO (46.9), IBM (162.2). Suite 195/0/0. |
 
@@ -101,7 +102,7 @@ Flujo de datos:
 
 | Módulo | Ruta | Propósito |
 |--------|------|-----------|
-| `cmd/api` | `cmd/api/main.go` | Servidor HTTP con 11 endpoints REST + `GET /health` (DB status) |
+| `cmd/api` | `cmd/api/main.go` | Servidor HTTP con 11 endpoints REST + `GET /health` ampliado (M5.2: `status`, `database`, `version`, `latency_ms`, `postgres_version`, `db_size`, `tables`) |
 | `cmd/collector` | `cmd/collector/main.go` | CLI wrapper: worker de ingesta (SEC EDGAR, Yahoo prices, BLS macro, **sector/industry enrichment**) (`-job edgar|prices|macro|sector|all`) |
 | `cmd/analytics` | `cmd/analytics/main.go` | CLI wrapper: cálculo batch de métricas derivadas (`-tickers`, `-g`, `-dry-run`) y **job scores** (`-job scores`) |
 | `internal/pipeline` | `internal/pipeline/` | Jobs de pipeline: edgar, prices, sector, metrics, scores (wrappers CLI sobre `cmd/collector`/`cmd/analytics`); contratos de invocación intactos |
@@ -370,7 +371,7 @@ curl http://localhost:8080/health
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/health` | Estado de la BD y versión |
+| GET | `/health` | Estado de la BD, versión y métricas ampliadas (M5.2). **200 con BD**: `{status:"ok", database:"connected", version, latency_ms (ms del Ping), postgres_version (e.g. "18.6"), db_size (e.g. "21 MB"), tables:[{name,rows}...]}` con 9 tablas. **503 sin BD**: SOLO `{status:"degraded", database:"disconnected", version}` (3 claves; los campos ampliados se omiten). El `status` HTTP depende solo del Ping; si metadata o conteos fallan → 200 con los campos disponibles + `slog.Warn`. Timeout de contexto 3s. |
 | GET | `/securities?limit=&offset=` | Catálogo de empresas |
 | GET | `/securities/{ticker}` | Detalle de una empresa |
 | GET | `/prices/{ticker}?from=&to=` | Precios diarios (default 5a) |
@@ -418,8 +419,14 @@ Requiere `SEC_EDGAR_USER_AGENT` definido en el entorno del servicio para `force-
 **Ejemplos curl:**
 
 ```bash
-# Health
+# Health (200 con BD)
 curl http://localhost:8080/health
+# {"status":"ok","database":"connected","version":"0.1.0","latency_ms":0.43,"postgres_version":"18.6","db_size":"21 MB","tables":[{"name":"securities","rows":10428},… 9 entradas …]}
+
+# Health (503 sin BD): solo 3 claves
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8080/health  # 503
+curl http://localhost:8080/health
+# {"status":"degraded","database":"disconnected","version":"0.1.0"}
 
 # Valoración
 curl http://localhost:8080/valuation/AAPL
@@ -458,7 +465,7 @@ make integration   # Integration tests with -tags=integration (serial -p 1)
 make lint          # go vet ./...
 ```
 
-Suite M1-M5.1: **269 pass / 0 fail / 1 skip** (248 baseline M1-M5 + 21 nuevos de M5.1) — evidencia en `test-results/tests/abys-m51-watchlist-integration.json`. La suite de integración corre contra `abys_test` y **no trunca la BD de despliegue**.
+Suite M1-M5.2: **276 pass / 0 fail / 1 skip** (271 baseline M1-M5.1 + 5 nuevos de M5.2: 3 unit en `internal/api/health_test.go`, 2 integración en `internal/api/health_integration_test.go` — más el desfase de base 271→276 documentado en la evidencia). La suite de integración corre contra `abys_test` y **no trunca la BD de despliegue**.
 
 ### 12. Run the dashboard (M4)
 
@@ -482,6 +489,12 @@ make run-api
 cd web && npm run dev
 # Vite en :5173 con proxy /api → http://localhost:8080
 ```
+
+**Página `/health` (M5.2):** nueva página del SPA con 4 tarjetas (Conexión, Latencia, Versión PostgreSQL, Tamaño de la BD) + tabla de conteos por tabla (9: securities, daily_prices, fundamentals, derived_metrics, scores, watchlist, macro_series, edgar_staging, xbrl_concept_map). Botón "Refrescar" con `Spinner` (sin auto-refresh/polling). Muestra "Última comprobación" con hora en locale `es-BO`. Sin BD: muestra "Sin conexión" + aviso ámbar + "—" en las demás tarjetas (503 degradado, no pantalla de error).
+
+**Sidebar de navegación (M5.2):** nuevo layout compartido (`web/src/components/Layout.tsx`) con `<Outlet/>` para rutas anidadas. Secciones: **"Finanzas"** (Dashboard, Watchlist) y **"Sistema"** (Health). Ruta activa marcada con `NavLink` (indigo, `aria-current="page"`). Fijo en `lg+` (240 px); barra con hamburguesa en `<lg`. Las páginas existentes (Dashboard, Watchlist, TickerDetail) perdieron su wrapper `min-h-screen` duplicado y links de navegación redundantes (el sidebar los aporta).
+
+**Nota:** `/health` con F5 o bookmark en el navegador muestra el **JSON crudo** (200/503), no la página SPA. Es aceptado por diseño: `/health` es el probe de readiness de `deploy/setup.sh` y una respuesta HTML 200 enmascararía una BD caída. La página se alcanza navegando desde el link del sidebar.
 
 ### 13. Deploy systemd (M4)
 
@@ -663,6 +676,7 @@ Idempotente por `(security_id, as_of, model_version)`. Índices en `(security_id
 - **M4d ✔** — Air live-reload (2026-09-24): `make air-install` + `make dev-api` con auto-rebuild/restart al cambiar .go (`.air.toml` raíz, delay 500ms); frontend Vite HMR aparte; deploy opcional con `--with-air` (unit alterna `abys-invest-api-air.service`, sources en `/opt/abys-invest/src`, air en `/usr/local/bin`). 195/0/0 sin cambios.
 - **M5 ✔** — Buscador + Watchlist (2026-09-25): `GET /securities/search?q=<2+ chars>&limit=<1-50>` (ranking exacto→prefijo→nombre), `GET /watchlist` (content negotiation: text/html→SPA, application/json→JSON con `Vary: Accept`), `PUT/DELETE /watchlist/{ticker}` (loopback-only, 403 fuera de localhost, idempotentes, 404 si ticker no catalogado); página `/watchlist` con buscador debounce 300ms (min 2 chars), resultados clicables + añadir, lista con eliminar. Permite guardar delistados. Suite 248/0/1.
 - **M5.1 ✔** — Watchlist integración (2026-09-26): `POST /force-refresh` asíncrono (202 + job en 2º plano, timeout 30 min); nuevo `GET /pipeline/status` (8 claves JSON puro); `PUT /watchlist/{ticker}` dispara ingesta en 2º plano (prices→sector→metrics→scores, SIN EDGAR) con cola FIFO dedup; `GET /watchlist` ampliado con `score`/`signal` (LEFT JOIN LATERAL); dashboard con sección "Mi watchlist" (tarjetas + polling); build `index-BDERmpRv.js`. Suite 269/0/1. Infra: suite contra `abys_test` (guard `EnsureTestDatabase`), puerto BD 55432.
+- **M5.2 ✔** — Página Health (2026-09-27): `GET /health` ampliado aditivamente con `latency_ms` (ms del Ping), `postgres_version` (e.g. "18.6"), `db_size` (e.g. "21 MB") y `tables` (9 entradas: securities, daily_prices, fundamentals, derived_metrics, scores, watchlist, macro_series, edgar_staging, xbrl_concept_map). 503 sin BD: solo 3 claves (`status`,`database`,`version`). Contexto con timeout 3s; status HTTP depende solo del Ping; best-effort de metadata con `slog.Warn`. Nuevo sidebar/layout con secciones "Finanzas" (Dashboard, Watchlist) y "Sistema" (Health); página `/health` con 4 tarjetas + tabla de conteos + Refrescar con spinner + "Última comprobación" es-BO. Bundle `index-BeqNKrtA.js`. Suite 276/0/1 (165/0/0 unit + integración). F5 en `/health` muestra JSON crudo (aceptado por diseño).
 - **M6 🔲** — Alertas: `cmd/alerts/`, `internal/alerts/`, endpoint `/alerts` (prefijo reservado). Diferido a M6 por decisión del usuario (SPEC §7).
 
 ---
@@ -677,6 +691,14 @@ Idempotente por `(security_id, as_of, model_version)`. Índices en `(security_id
 | **L2** | Estado en memoria | El estado del job vive solo en memoria. Un **reinicio del servicio pierde el job en curso** (y la cola FIFO): `/pipeline/status` vuelve a `idle` sin recuperar progreso. Sin persistencia → no hay recuperación ante crash. | Pendiente |
 | **L3** | Cola FIFO sin tope numérico | La cola de ingesta de watchlist está acotada solo por dedup (un ticker entra una vez) y por el catálogo (solo tickers existentes). No hay límite máximo explícito de entries en cola. | Monitorear |
 | **D1** | `docker-compose.yml` expone puerto **5432** | El compose sigue mapeando `"5432:5432"` en `db`. Las referencias de `.env.example`, `Makefile` y `deploy/setup.sh` usan **55432** para la BD real de Abys y 55432 para `abys_test`. El compose puede estar mapeando al puerto del cluster del sistema (5432) o a la BD incorrecta — verificar si aplica al flujo de desarrollo local. | Deuda documentada; fuera de alcance de este task |
+| **F3** | `make integration` sin `export TEST_DATABASE_URL` se salta la suite en verde | Confirmado como hallazgo F1 (2026-09-27): el guard de la línea 130 del Makefile evalúa `$(TEST_DATABASE_URL)` con el valor por defecto de la línea 16 (una BD *_test), y la línea 131 propaga al sub-make con `TEST_DATABASE_URL=$$TEST_DATABASE_URL` que el shell expande a vacío (anulando el `?=`). Los 7 TestMain hacen `if dsn == ""; os.Exit(0)` → 0 tests ejecutados, make exit 0. **Falso-visible real**, no hipótesis. Protección de datos intacta (EnsureTestDatabase nunca se relaja). | Confirmado (preexistente, no causado por M5.2) |
+| **L4** | Lista de 9 tablas hardcodeada en `internal/api/health.go` | `healthTableNames` es una constante Go con las 9 tablas del esquema público. Si una migración futura añade o renombra una tabla, la query de conteos falla (→ `tables` ausente en 200, sin cambio de status HTTP) o la página muestra conteos incompletos. **Mitigado** por `TestHealthTablesCoincidenConEsquema` (anti-deriva): compara `healthTableNames` con `SELECT table_name FROM information_schema.tables WHERE table_schema='public'` en la suite de integración; si hay deriva, el test falla y obliga a actualizar la lista. | Mitigado (test anti-deriva); sin fix automático |
+| **D2** | GET /health con navegador directo muestra JSON crudo | La URL `/health` es ruta API reservada en `internal/api/static.go` (`apiRouteSegments`). Un F5 o bookmark en `/health` muestra el JSON crudo (200 con BD / 503 sin BD), **no** la página SPA del HealthPage. Es **aceptado por diseño** (D12, CA-M5.2-4): `/health` es el probe de readiness de `deploy/setup.sh` (`curl -sf .../health`) y una respuesta HTML 200 enmascararía una BD caída. La página se alcanza por cliente (link del sidebar). Si el usuario quisiera negociación de contenido como `/watchlist`, es un task aparte con su SPEC. | Aceptado por diseño; no se prevé fix |
+| **F4** | `buildCountQuery` usa `i > 0` como separador UNION ALL — riesgo de SQL inválido si el primer nombre de tabla falla el regex | `internal/api/health.go` `buildCountQuery` construye la query UNION ALL con `i > 0` como separador entre ramas `count(*)`; si el PRIMER nombre de tabla fallara el filtro regex, el SQL terminaría con `UNION ALL` inicial y sería error de sintaxis. Hoy inalcanzable (las 9 constantes pasan el regex; test fija el SQL exacto); efecto benigno si ocurriera (D3 → 200 con `tables` omitido). Fix de 1 línea: contador `written`. | Latente; fix trivial |
+| **L5** | `<main>` anidado y padding duplicado en Layout.tsx y páginas | `web/src/components/Layout.tsx` + páginas: `<main>` anidado (landmark inválido) y padding duplicado (px-4 py-6 en layout y en cada página). Del plan. | Del plan |
+| **D3** | `es-BO` con `toLocaleTimeString` emite formato 12h (e.g. "8:45:12 p. m."), no HH:MM:SS | `es-BO` con `toLocaleTimeString` emite formato 12h (e.g. "8:45:12 p. m."), no HH:MM:SS; conforme a SPEC/CA (que exigen es-BO) pero a confirmar por el usuario si prefiere 12h estilo test3 o `hour12:false`. | A confirmar por usuario |
+| **R10** | `latency_ms` es latencia del PING a PostgreSQL, no del request HTTP | `latency_ms` es la latencia del PING a PostgreSQL, no del request HTTP. | Nota documentada |
+| **Divulgación** | /health expone versión PostgreSQL, tamaño de BD y conteos por tabla en probe público sin auth | /health expone versión PostgreSQL, tamaño de BD y conteos por tabla en un probe público sin auth — aceptado por diseño (así lo acordaron scanner/reviewer), junto a la nota de que todo el API es anónimo ya. | Aceptado por diseño |
 
 ---
 

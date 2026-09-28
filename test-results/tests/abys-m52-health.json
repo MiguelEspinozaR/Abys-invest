@@ -1,0 +1,532 @@
+{
+  "task_id": "abys-m52-health",
+  "stage": "TEST",
+  "date": "2026-09-27T20:35:00-04:00",
+  "tested_at_utc": "2026-09-28T00:35:00Z",
+  "tester": "Tester (verificación independiente; sin commit, sin git, sin deploy, sin modificar código de producto)",
+  "verdict": "PASS_WITH_FINDINGS",
+  "verdict_detail": "Todo el comportamiento técnico de M5.2 reproduce exactamente lo afirmado por el Builder: 276/0/1 integración, 165/0/0 unit, /health 200 con las 4 métricas ampliadas y rows coherentes con la BD real, 503 con exactamente 3 claves, no colisión con la API y build web limpio. Se registran 3 findings: (1) el hallazgo del Makefile CONFIRMADO (make integration se pone verde sin ejecutar NINGÚN test de BD), (2) README.md sin actualizar — el paso 14 del plan y CA-M5.2-5 no se cumplieron, y (3) el deploy vivo :8082 está en estado mixto (backend M5.2 ya desplegado por air + frontend M5.1 viejo).",
+
+  "summary": {
+    "unit": { "pass": 165, "fail": 0, "skip": 0, "exit": 0 },
+    "integration": { "pass": 276, "fail": 0, "skip": 1, "exit": 0 },
+    "integration_runs": 2,
+    "integration_reproducible": true,
+    "npm_build": { "ok": true, "exit": 0, "js": "index-BeqNKrtA.js", "css": "index-CD-PyuE9.css" },
+    "endpoints_checked": 7,
+    "endpoints_ok": 7,
+    "findings": 5,
+    "findings_by_severity": { "major": 1, "minor": 2, "info": 2 },
+    "findings_blocking_m52": 0,
+    "findings_in_m52_scope_unmet": ["F3 (README: paso 14 del plan y parte de CA-M5.2-5)"],
+    "data_loss": false,
+    "git_mutated": false
+  },
+
+  "suites": [
+    {
+      "id": "unit",
+      "name": "Suite de unidad (sin tag de integración, sin BD)",
+      "command": "env -u DATABASE_URL -u TEST_DATABASE_URL go test -p 1 -count=1 -v ./...",
+      "exit": 0,
+      "counts": { "pass": 165, "fail": 0, "skip": 0, "top_level_pass": 146, "subtest_pass": 19 },
+      "count_method": "conteo independiente sobre el log -v del Tester (grep de líneas '--- PASS' a nivel superior y de subtests). No se confió en el dato del Builder.",
+      "builder_claim": "~165 PASS / 0 FAIL",
+      "builder_claim_verified": true,
+      "packages_ok": 12,
+      "packages_no_test_files": 3,
+      "packages": {
+        "cmd/api": "0.006s",
+        "internal/api": "0.041s",
+        "internal/backtest": "0.007s",
+        "internal/collect/edgar": "1.754s",
+        "internal/collect/finviz": "0.010s",
+        "internal/collect/macro": "5.020s",
+        "internal/collect/yahoo": "6.599s",
+        "internal/compare": "0.011s",
+        "internal/metrics": "0.040s",
+        "internal/pipeline": "0.314s",
+        "internal/score": "0.010s",
+        "internal/valuation": "0.006s"
+      },
+      "health_tests_in_unit": [
+        "internal/api: TestHealthCountQueryListsMainTables (PASS) — fija el SQL UNION ALL: 8 uniones, 9 count(*), orden y qualified public.",
+        "internal/api: TestParsePostgresVersion (PASS) — '18.6 (Ubuntu 18.6-1.pgdg26.04+2)'→'18.6', '16.4', '17', '', 'weird', '  15.2 (Debian)  '.",
+        "internal/api: TestHealthResponseOmitsEmptyMetrics (PASS) — byte a byte: el 503 serializa solo 3 claves y latency 0.00 SÍ sale (por eso *float64).",
+        "cmd/api: TestHealthDegradedWithoutDB (PASS) — 503 + 3 claves + ninguno de los 4 campos nuevos (regresión M1 conservada tras migrar a map[string]any).",
+        "cmd/api: TestHealthHandlerNeverPanics (PASS) — contexto cancelado, sin panic."
+      ]
+    },
+    {
+      "id": "integration",
+      "name": "Suite de integración completa (BD de pruebas abys_test)",
+      "command": "export TEST_DATABASE_URL=<secrets.env con el nombre de BD sustituido por abys_test>; DATABASE_URL=\"$TEST_DATABASE_URL\" go test -p 1 ./... -count=1 -tags=integration -v",
+      "equivalent_make_target": "make integration  (DATABASE_URL=$(TEST_DATABASE_URL) go test -p 1 ./... -count=1 -tags=integration)",
+      "exit": 0,
+      "counts": { "pass": 276, "fail": 0, "skip": 1, "top_level_pass": 196, "subtest_pass": 80 },
+      "count_method": "conteo independiente sobre el log -v del Tester. Se.launcharon DOS ejecuciones completas con -p 1: ambas dieron 276/0/1 y exit 0 (reproducible, no un afortunado).",
+      "builder_claim": "~276 PASS / 0 FAIL / 1 SKIP",
+      "builder_claim_verified": true,
+      "verified_db": "abys_test (localhost:55432) — verificado con `select current_database()` antes de ejecutar. NUNCA la BD de datos 'abys'.",
+      "packages_ok": 14,
+      "packages": {
+        "cmd/api": "0.053s",
+        "internal/api": "0.814s",
+        "internal/backtest": "0.010s",
+        "internal/collect/edgar": "2.887s",
+        "internal/collect/finviz": "0.010s",
+        "internal/collect/macro": "8.144s",
+        "internal/collect/yahoo": "7.259s",
+        "internal/compare": "0.006s",
+        "internal/metrics": "0.141s",
+        "internal/pipeline": "0.522s",
+        "internal/score": "0.011s",
+        "internal/score/fixtures": "0.006s",
+        "internal/storage": "1.089s",
+        "internal/valuation": "0.006s"
+      },
+      "pass_by_package": {
+        "cmd/api": 3,
+        "internal/api": 105,
+        "internal/backtest": 5,
+        "internal/collect/edgar": 33,
+        "internal/collect/finviz": 4,
+        "internal/collect/macro": 20,
+        "internal/collect/yahoo": 6,
+        "internal/compare": 16,
+        "internal/metrics": 11,
+        "internal/pipeline": 18,
+        "internal/score": 1,
+        "internal/score/fixtures": 26,
+        "internal/storage": 15,
+        "internal/valuation": 15,
+        "total": 276
+      },
+      "skip_detail": {
+        "count": 1,
+        "test": "TestForceRefreshLoopbackSkips",
+        "location": "internal/api/refresh_integration_test.go:159",
+        "reason": "requiere acceso a SEC/EDGAR + Yahoo desde el entorno de test (t.Skip preexistente de M4c)",
+        "verdict": "SKIP preexistente y esperado; NO es una regresión de M5.2. Es el MISMO único skip que la evidencia de M5.1 registraba."
+      },
+      "delta_vs_m51_evidence": {
+        "m51_evidence_count": "269/0/1",
+        "m52_count": "276/0/1",
+        "delta": "+7 PASS, 0 FAIL nuevos, mismo único SKIP",
+        "explanation": "El +7 NO son 7 tests nuevos de M5.2. Diff de nombres de test entre el log de M5.1 y el de M5.2: 269 tests comunes, 0 desaparecidos, 7 nuevos. De esos 7, SOLO 5 son de M5.2 (TestHealthAmpliado, TestHealthTablesCoincidenConEsquema en internal/api/health_integration_test.go; TestHealthCountQueryListsMainTables, TestParsePostgresVersion, TestHealthResponseOmitsEmptyMetrics en internal/api/health_test.go). Los otros 2 (TestRunPipelineJobForceNilPool, TestRunPipelineJobUnknownKind) son de M5.1 y los introdujo el commit 73d287f (verificado con `git log -S`), pero NO aparecían en el log de la evidencia de M5.1: la base de 269 documentada allí estálightly desfasada respecto a HEAD. Base real de HEAD antes de M5.2 = 271/0/1; 271 + 5 = 276/0/1. Cuadra exacto.",
+        "side_note": "Los 3 tests unitarios de internal/api/health_test.go NO tienen build tag, así que también cuentan dentro de la suite '-tags=integration' (por eso el plan estimaba '271 = 269 + 2' y se quedó corto: solo contó los 2 tests de integración y olvidó los 3 unitarios, además del desfase de la base). El conteo real 276 es el correcto."
+      },
+      "m52_new_tests_verified": [
+        "internal/api/health_test.go: TestHealthCountQueryListsMainTables, TestParsePostgresVersion, TestHealthResponseOmitsEmptyMetrics (3 PASS)",
+        "internal/api/health_integration_test.go: TestHealthAmpliado (200 + 7 claves + 9 tablas + rows > 0), TestHealthTablesCoincidenConEsquema (anti-deriva: compara healthTableNames con information_schema.tables del esquema público) (2 PASS)",
+        "cmd/api/health_integration_test.go: TestHealthConnectedAfterMigrations ampliado (ya existía en M1; ahora con struct local y aserciones de las 4 métricas) (1 PASS, modificado no añadido)"
+      ]
+    }
+  ],
+
+  "results": {
+    "builds": {
+      "gofmt_l": { "ok": true, "output": "" },
+      "go_build_api_bin": { "ok": true, "path": "/tmp/opencode/m52-tester-api" },
+      "go_build_./...": { "ok": true },
+      "go_vet_./...": { "ok": true },
+      "go_vet_-tags=integration_./...": { "ok": true },
+      "go_version": "go1.26.0 linux/amd64",
+      "node": "v22.22.1",
+      "npm": "9.2.0"
+    },
+
+    "coverage": {
+      "policy": "El repo NO define umbral de cobertura (mismo criterio que la evidencia de M5.1). Se REPORTA el número, no se inventa ni se evalúa un umbral.",
+      "unit_internal_api": "34.3% de statements",
+      "unit_cmd_api": "2.9% de statements",
+      "unit_total_api_packages": "33.0% de statements (internal/api + cmd/api)",
+      "integration_internal_api": "74.9% de statements (con BD)",
+      "integration_api_packages_total": "71.8% de statements (con BD)",
+      "health_go_by_function_integration": {
+        "buildCountQuery": "90.9%",
+        "parsePostgresVersion": "100.0%",
+        "msSince": "100.0%",
+        "collectHealthMetrics": "75.0%",
+        "ptr": "100.0%",
+        "HealthHandler (middleware.go:58)": "100.0%"
+      },
+      "note": "collectHealthMetrics queda al 75% porque sus ramas de fallo (slog.Warn cuando falla la query de versión/tamaño, cuando falla la de conteos, fila ilegible, rows.Err) NO están cubiertas por ningún test: la suite solo ejercita el camino feliz. Es coherente con la decisión D3 (best-effort) y con el riesgo R1 (si la BD se cuelga, se omite `tables` y se sigue respondiendo 200), pero esa degradación NO está probada automáticamente: solo se verificó que no degrada el status en el caso sin BD (503 con 3 claves)."
+    },
+
+    "npm_build": {
+      "command": "cd web && npm run build  (tsc && vite build)",
+      "ok": true,
+      "exit": 0,
+      "duration_wall": "14.79s",
+      "vite_build_time": "5.76s",
+      "tsc_strict": {
+        "tsconfig": "strict: true, noUnusedLocals: true, noUnusedParameters: true, noFallthroughCasesInSwitch: true",
+        "npx tsc --noEmit": "exit 0",
+        "npx tsc --noEmit --strict --noUnusedLocals --noUnusedParameters --noFallthroughCasesInSwitch": "exit 0"
+      },
+      "hash": "index-BeqNKrtA.js",
+      "css_hash": "index-CD-PyuE9.css",
+      "js_bytes": 204662,
+      "css_bytes": 20086,
+      "modules_transformed": 46,
+      "assets_referenced_in_index_html": ["/assets/index-BeqNKrtA.js", "/assets/index-CD-PyuE9.css"],
+      "note": "El hash index-BeqNKrtA.js es el que el Tester obtuvo; el Builder no dejó un hash comparable en el repo, así que aquí no hay affirmation de coincidencia que hacer (a diferencia de M5.1, donde sí se pudo comparar contra index-BDERmpRv.js)."
+    },
+
+    "smoke_api": {
+      "harness": "binario real compilado desde el árbol de trabajo (/tmp/opencode/m52-tester-api), dos instancias aisladas: :8092 CON BD de datos y :8093 SIN BD (env -u DATABASE_URL), ambas con STATIC_DIR=web/dist.",
+      "data_db_verified": "localhost:55432/abys (nombre verificado con select current_database(); la URL completa no se imprimió ni se persistió)",
+      "no_db_instance": "pool nil: el binario arranca y registra 'DATABASE_URL no definido; /health responderá 503 (degraded)'",
+      "port_isolation": "el deploy en :8082 no se tocó (health 200 antes y después; el servicio no se reinició)",
+      "checks": [
+        {
+          "id": 1,
+          "name": "GET /health con BD → 200 + métricas ampliadas",
+          "at": "2026-09-27T20:22:17-04:00 (00:22:17Z)",
+          "http": 200,
+          "content_type": "application/json",
+          "content_length": 438,
+          "time_total_s": 0.017537,
+          "body_raw": "{\"status\":\"ok\",\"database\":\"connected\",\"version\":\"0.1.0\",\"latency_ms\":0.325,\"postgres_version\":\"18.6\",\"db_size\":\"21 MB\",\"tables\":[{\"name\":\"securities\",\"rows\":10428},{\"name\":\"daily_prices\",\"rows\":6281},{\"name\":\"fundamentals\",\"rows\":5335},{\"name\":\"derived_metrics\",\"rows\":48},{\"name\":\"scores\",\"rows\":6},{\"name\":\"watchlist\",\"rows\":5},{\"name\":\"macro_series\",\"rows\":67},{\"name\":\"edgar_staging\",\"rows\":5},{\"name\":\"xbrl_concept_map\",\"rows\":20}]}",
+          "assertions": {
+            "status_ok": true,
+            "database_connected": true,
+            "version_0_1_0": true,
+            "latency_ms_numeric": true,
+            "latency_ms_type": "float",
+            "latency_ms_ge_0": true,
+            "postgres_version_format_XX_Y": true,
+            "postgres_version_value": "18.6",
+            "db_size_non_empty": true,
+            "db_size_value": "21 MB",
+            "tables_count": 9,
+            "tables_order_equals_healthTableNames": true,
+            "rows_all_ge_0": true
+          }
+        },
+        {
+          "id": 2,
+          "name": "GET /health SIN BD (pool nil) → 503 con EXACTAMENTE 3 claves",
+          "at": "2026-09-27T20:22:22-04:00 (00:22:22Z)",
+          "http": 503,
+          "content_type": "application/json",
+          "content_length": 66,
+          "time_total_s": 0.00152,
+          "body_raw": "{\"status\":\"degraded\",\"database\":\"disconnected\",\"version\":\"0.1.0\"}\n",
+          "body_json": {"status": "degraded", "database": "disconnected", "version": "0.1.0"},
+          "key_count": 3,
+          "keys": ["database", "status", "version"],
+          "new_fields_absent": ["latency_ms", "postgres_version", "db_size", "tables"],
+          "no_null_values": true,
+          "additivity_ok": true,
+          "byte_exact_note": "El payload JSON es EXACTAMENTE el esperado, carácter a carácter. La única diferencia frente a la cadena de 65 bytes es un '\\n' final (Content-Length 66) que añade json.NewEncoder.Encode() en writeJSON (internal/api/errors.go:43) — comportamiento PREEXISTENTE de M1, no introducido por M5.2. El test unitario TestHealthResponseOmitsEmptyMetrics compara contra la misma forma sin el newline porque serializa con json.Marshal."
+        },
+        {
+          "id": 3,
+          "name": "GET /health con Accept: text/html → sigue siendo JSON (no SPA), 200 con BD",
+          "at": "2026-09-27T20:22:27-04:00 (00:22:27Z)",
+          "http": 200,
+          "content_type": "application/json",
+          "content_length": 438,
+          "browser_accept_header": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "body_is_json": true,
+          "body_is_html": false,
+          "contains_root_div": false,
+          "keys": ["database", "db_size", "latency_ms", "postgres_version", "status", "tables", "version"],
+          "vary_accept_present": false,
+          "vary_note": "Correcto: /health NO negocia contenido, así que no necesita Vary: Accept (a diferencia de /watchlist, que sí lo emite).",
+          "verdict": "CA-M5.2-4 OK"
+        },
+        {
+          "id": 4,
+          "name": "GET /health/extra → 404 con envelope JSON (no index.html)",
+          "at": "2026-09-27T20:22:30-04:00",
+          "con_db_8092": { "http": 404, "content_type": "application/json", "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"ruta no encontrada: /health/extra\"}}" },
+          "sin_db_8093": { "http": 404, "content_type": "application/json", "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"ruta no encontrada: /health/extra\"}}" },
+          "served_index_html": false,
+          "verdict": "CA-M5.2-4 OK — el prefijo /health no cae en el fallback del SPA"
+        },
+        {
+          "id": 5,
+          "name": "Coherencia de los rows de /health con la BD real (mismo instante)",
+          "at": "2026-09-27T20:22:45-04:00",
+          "method": "GET /health por HTTP y, en paralelo, count(*) directo por psql sobre la misma BD; comparación nombre a nombre.",
+          "table": {
+            "securities": { "api": 10428, "psql": 10428, "match": true },
+            "daily_prices": { "api": 6281, "psql": 6281, "match": true },
+            "fundamentals": { "api": 5335, "psql": 5335, "match": true },
+            "derived_metrics": { "api": 48, "psql": 48, "match": true },
+            "scores": { "api": 6, "psql": 6, "match": true },
+            "watchlist": { "api": 5, "psql": 5, "match": true },
+            "macro_series": { "api": 67, "psql": 67, "match": true },
+            "edgar_staging": { "api": 5, "psql": 5, "match": true },
+            "xbrl_concept_map": { "api": 20, "psql": 20, "match": true }
+          },
+          "all_match": true,
+          "note": "Los conteos de tablas SÍ son producto y van en la evidencia. Coinciden los 9/9, incluido securities=10428 y watchlist=5 que indicaba el encargo."
+        },
+        {
+          "id": 6,
+          "name": "Navegación SPA: /health NO sirve el index.html (ruta API reservada)",
+          "at": "2026-09-27T20:24:20-04:00",
+          "method": "GET con Accept: text/html a cada ruta de cliente y a /health, comparando content-type y tamaño.",
+          "routes": {
+            "/": { "http": 200, "content_type": "text/html; charset=utf-8", "bytes": 396, "serves_spa": true },
+            "/watchlist": { "http": 200, "content_type": "text/html; charset=utf-8", "bytes": 396, "serves_spa": true },
+            "/ticker/AAPL": { "http": 200, "content_type": "text/html; charset=utf-8", "bytes": 396, "serves_spa": true },
+            "/health": { "http": 200, "content_type": "application/json", "bytes": 438, "serves_spa": false }
+          },
+          "index_html_size": 396,
+          "verdict": "Correcto por diseño. F5 o link directo a /health muestran el JSON crudo (438 bytes), no la página — es el comportamiento ACEPTADO explícitamente (plan M5.2 D12 / R4, misma política que la ruta API /watchlist) y es lo que mantiene /health utilizable como probe de readiness: una respuesta HTML 200 enmascararía una BD caída para `curl -sf` de deploy/setup.sh. La página /health se alcanza por cliente, navigating desde el link del sidebar."
+        },
+        {
+          "id": 7,
+          "name": "Estabilidad de /health (10 llamadas encadenadas + 5 lecturas de latencia)",
+          "at": "2026-09-27T20:25:00-04:00",
+          "http_codes_10_runs": [200, 200, 200, 200, 200, 200, 200, 200, 200, 200],
+          "latency_ms_samples": [0.455, 0.186, 0.174, 0.235, 0.233],
+          "tables_count_every_time": 9,
+          "securities_every_time": 10428,
+          "time_total_s_range": [0.005254, 0.009273],
+          "verdict": "Sin variabilidad ni intermitencias observables en local. El presupuesto de 3 s (healthTimeout) queda muy por encima del peor caso medido (~9 ms de pared, de los cuales ~0.5 ms son el ping)."
+        }
+      ],
+      "cleanup": {
+        "instances_stopped": true,
+        "ports_8092_8093_free_after": true,
+        "deploy_8082_untouched": true,
+        "deploy_8082_health_after": 200
+      }
+    },
+
+    "frontend": {
+      "app_routes": {
+        "layout_parent_route": true,
+        "file": "web/src/App.tsx",
+        "layout_file": "web/src/components/Layout.tsx (nuevo, 138 líneas)",
+        "children": ["/ → DashboardPage", "/ticker/:ticker → TickerDetailPage", "/watchlist → WatchlistPage", "/health → HealthPage"],
+        "route_count": 4,
+        "route_count_unchanged_vs_m51": true,
+        "all_wrapped_in_layout": true,
+        "verdict": "CA-M5.2-2 (estructura) OK. Las 4 rutas cuelgan de <Route element={<Layout/>}> con <Outlet/>; el listado de rutas no cambió respecto a M5.1."
+      },
+      "health_page": {
+        "file": "web/src/pages/HealthPage.tsx (nuevo, 289 líneas)",
+        "imported_in_app": true,
+        "health_response_type_in_types_ts": true,
+        "health_table_count_type_in_types_ts": true,
+        "get_json_allowing_in_client_ts": true,
+        "cards": ["Conexión (badge OK/Error con aria-label)", "Latencia (nota 'ping a PostgreSQL')", "Versión PostgreSQL", "Tamaño de la BD"],
+        "table_with_counts": true,
+        "total_row": true,
+        "states_implemented": ["carga (skeletons de tarjetas + TableSkeleton)", "error sin data (mensaje + Reintentar)", "error con data previa (aviso sobre la última lectura buena)", "datos", "degradado (aviso ámbar + '—' en lo que falta)"],
+        "refresh_button_with_spinner": true,
+        "refresh_disabled_while_running": true,
+        "ultima_comprobacion_es_BO": true,
+        "type_guard_isHealthResponse": true,
+        "alive_flag_avoid_setstate_after_unmount": true
+      },
+      "layout_nav": {
+        "sections": { "Finanzas": ["Dashboard", "Watchlist"], "Sistema": ["Health"] },
+        "active_route_marked": true,
+        "active_mark_mechanism": "NavLink con className por función (isActive) + aria-current=\"page\" automático de react-router",
+        "desktop_fixed_lg": "fixed inset-y-0 left-0 z-30 w-60 hidden lg:flex + lg:pl-60 en el contenido",
+        "mobile_burger_lt_lg": "barra sticky lg:hidden con botón hamburguesa (SVG inline) que despliega #nav-movil y se cierra al navegar",
+        "new_dependencies": "ninguna (D6 respetada: sin lucide-react, sin react-query)"
+      },
+      "static_smoke_sin_navegador": {
+        "bundle_served_by_api": { "http": 200, "content_type": "text/javascript; charset=utf-8", "bytes": 204662, "time_total_s": 0.002541 },
+        "bundle_served_identical_to_dist": true,
+        "css_served": { "http": 200, "content_type": "text/css; charset=utf-8", "bytes": 20086 },
+        "index_html_served_identical_to_dist": true,
+        "strings_present_in_bundle": ["Salud del sistema", "Conexión", "Latencia", "Versión PostgreSQL", "Tamaño de la BD", "Tablas (", "Última comprobación", "Refrescar", "Actualizando…", "No se pudo consultar el estado del servidor", "Abys-Invest", "Finanzas", "Sistema", "Dashboard", "Watchlist", "postgres_version", "db_size", "latency_ms", "Abrir navegación", "nav-movil", "aria-controls", "aria-expanded", "aria-current (x3)"],
+        "route_literals_in_bundle": ["/", "/ticker/:ticker", "/watchlist", "/health", "/refresh", "/force-refresh", "/pipeline/status", "/scores"],
+        "responsive_css_generated": {
+          "media_1024px_lg": true,
+          "media_640px_sm": true,
+          "media_prefers_color_scheme_dark": true,
+          "lg_selectors": [".lg\\:flex", ".lg\\:hidden", ".lg\\:pl-60", ".lg\\:grid-cols-3", ".lg\\:grid-cols-4"],
+          "sm_selectors": [".sm\\:grid-cols-2", ".sm\\:grid-cols-3"],
+          "padding_left_15rem_lg_pl_60": true,
+          "dark_selectors_count": 45,
+          "verdict": "Las clases del sidebar responsive y del tema oscuro SÍ se emiten en el CSS compilado. La maquetación existe; el aspecto renderizado queda pendiente de verificación humana."
+        },
+        "note": "Los 9 nombres de tabla NO aparecen en el bundle (correcto): la página renderiza lo que devuelve la API, no una lista hardcodeada en el frontend. `getJSONAllowing` tampoco aparece por nombre porque esbuild minifica los identificadores de función."
+      },
+      "regression_visual_3_pages": {
+        "risk": "R5 del plan (el Layout toca 3 páginas)",
+        "diff_stat": { "web/src/pages/DashboardPage.tsx": "315 líneas cambiadas", "web/src/pages/TickerDetailPage.tsx": "126", "web/src/pages/WatchlistPage.tsx": "239" },
+        "observed": "el diff de las 3 páginas es la eliminación del wrapper duplicado (`<div className=\"min-h-screen bg-slate-50 ...\">` + `<main className=\"mx-auto max-w-6xl px-4 py-6\">`, que ahora aporta Layout) más el re-indentado que provoca. Sus `max-w-*` se conservan.",
+        "logical_changes_detected": "ninguno detectado por inspección del diff",
+        "verified_by": "npm run build (tsc estricto, exit 0) + smoke de estáticos + contraste de /health vs rutas SPA",
+        "pending": "el aspecto real del dashboard/watchlist/ticker con el sidebar nuevo NO se puede afirmar sin navegador (ver pending_human_verification)"
+      }
+    },
+
+    "regression_m1_health": {
+      "claim": "los tests previos de health (M1) siguen verdes tras migrar cmd/api/health_test.go a map[string]any conservando las aserciones M1",
+      "verified": true,
+      "detail": [
+        "cmd/api/health_test.go: TestHealthDegradedWithoutDB (PASS) — el mapa pasó de map[string]string a map[string]any (necesario: encoding/json no puede meter un número o un array en un map de strings). Las aserciones M1 se conservan íntegra: 503, status=degraded, database=disconnected, version==api.Version. Se AÑADIERON: len(body)==3 y ausencia explícita de los 4 campos nuevos.",
+        "cmd/api/health_test.go: TestHealthHandlerNeverPanics (PASS) — intacto.",
+        "cmd/api/health_integration_test.go: TestHealthConnectedAfterMigrations (PASS) — cambió de map[string]string a un struct LOCAL con tags JSON explícitos (para no tautologizar el tipo de producción). Aserciones M1 conservadas: 200, status=ok, database=connected, version no vacío.",
+        "internal/api (M4) static_test.go: TestStaticServing (PASS) con sus 8 subtests, incluidos 'health-sigue-siendo-api' y 'ruta-api-desconocida-no-cae-en-spa'.",
+        "internal/api (M4) static_integration_test.go: TestStaticWithDB (PASS) con 'health-200'.",
+        "internal/api (M5) TestM5WatchlistContentNegotiation (PASS) con sus 4 subtests: la negociación de /watchlist no se rompió al añadir /health."
+      ],
+      "suite_fail_skip_delta": "ninguno: 0 FAIL y el mismo único SKIP (TestForceRefreshLoopbackSkips) que la base. Además 0 skips en unit, donde la base también era 0."
+    },
+
+    "makefile_finding": {
+      "id": "F1",
+      "claim_to_verify": "El Builder afirma que `make integration` sin `export TEST_DATABASE_URL` se salta la suite en verde por la línea 131 del Makefile",
+      "verified": true,
+      "verdict": "CONFIRMADO. Es un falso-verde real, no una hipótesis.",
+      "reproduction": {
+        "command": "env -u TEST_DATABASE_URL -u DATABASE_URL make integration",
+        "guard_line_130_output": "==> integración contra BD de test: <la BD *_test por defecto del Makefile>",
+        "guard_result": "PASA (pero valida la variable de MAKE, no la del entorno)",
+        "line_131_echoed_by_make": "TEST_DATABASE_URL=$TEST_DATABASE_URL make integration-run",
+        "line_134_echoed_by_make": "DATABASE_URL= go test -p 1 ./... -count=1 -tags=integration",
+        "make_exit": 0,
+        "wall_time": "24.7s",
+        "reported_packages": "los 14 paquetes 'ok' + 2 'no test files'",
+        "tests_actually_executed": 0
+      },
+      "mechanism": "1) La línea 130 expande `$(TEST_DATABASE_URL)`, que GNU make resuelve con el valor por defecto de la línea 16 (una BD *_test) — así que el guard valida un valor que el usuario nunca exportó. 2) La línea 131 pasa al sub-make `TEST_DATABASE_URL=$$TEST_DATABASE_URL`: al no estar exportada en el entorno, el shell la expande a VACÍA, y una variable de entorno (aunque vacía) cuenta como 'definida', por lo que anula el `?=` de la línea 16. 3) `integration-run` ejecuta con `DATABASE_URL=` vacío. 4) Todos los TestMain del repo hacen `if dsn == \"\"; os.Exit(0)` (p. ej. internal/api/m3_integration_test.go:38-41) — salida silenciosa 0, sin un solo test, sin aviso. 5) make devuelve 0 y la línea se lee verde.",
+      "consequence": "Un `make integration`/`make integration-run` en una shell nueva (CI, un shell nuevo, un teammate) da un verde engañoso con 0 tests de BD ejecutados. Solo los paquetes sin BD (backtest, compare, valuation, score) corren de verdad. Un guard de seguridad que se puede saltarse por omission es peor que no tener guard.",
+      "protection_still_intact": "La parte que SÍ protege los datos del usuario está bien: aunque el DATABASE_URL se vacíe, el guard no puede quedar apuntando a 'abys', así que EnsureTestDatabase nunca se relaja. El riesgo aquí es de FALSOS VERDES, no de borrado de datos.",
+      "not_caused_by_m52": "Preexistente del baseline (la línea 129-134 no aparece en el diff de M5.2). Lo reporta el Builder; el Tester lo reproduce de forma independiente.",
+      "suggested_fix_not_applied": "Que el guard use la MISMA variable que la ejecuta. P. ej. exigir que `TEST_DATABASE_URL` esté exportada en el entorno (`test -n \"$$TEST_DATABASE_URL\" || { echo 'ERROR: export TEST_DATABASE_URL=...'; exit 1; }`) y/o eliminar el `?=` de la línea 16 para que no exista un valor por defecto que oculte el error. Alternativa: que TestMain aborte con error en vez de `os.Exit(0)` cuando falta DATABASE_URL. NO se aplicó ningún cambio (el Tester no modifica código de producto)."
+    },
+
+    "persistence": {
+      "data_db": "localhost:55432/abys (BD de datos del usuario)",
+      "test_db": "localhost:55432/abys_test (BD dedicada de pruebas; verificada antes de ejecutar)",
+      "suite_target": "abys_test — NUNCA la de datos",
+      "data_db_before": {
+        "captured_at": "2026-09-27T20:19-04:00 (antes de cualquier ejecución)",
+        "securities": 10428, "daily_prices": 6281, "fundamentals": 5335, "derived_metrics": 48,
+        "scores": 6, "watchlist": 5, "macro_series": 67, "edgar_staging": 5, "xbrl_concept_map": 20,
+        "public_tables": 9
+      },
+      "data_db_after": {
+        "captured_at": "2026-09-27T20:26-04:00 (tras 2 suites + smoke)",
+        "securities": 10428, "daily_prices": 6281, "fundamentals": 5335, "derived_metrics": 48,
+        "scores": 6, "watchlist": 5, "macro_series": 67, "edgar_staging": 5, "xbrl_concept_map": 20,
+        "public_tables": 9
+      },
+      "data_loss": false,
+      "data_modified": false,
+      "note": "IDÉNTICOS before/after en las 9 tablas. El smoke fue solo-lectura (no se lanzó ningún pipeline ni ningún POST). El residuo de fixtures está en abys_test (securities=3, watchlist=0, scores=0 al terminar), que es lo esperado. Ningún TRUNCATE tocó la BD de datos: storage.EnsureTestDatabase aborta si el nombre no acaba en _test.",
+      "test_db_guard": "los 7 TestMain llaman a storage.EnsureTestDatabase; con la BD de datos los paquetes internal/api e internal/pipeline harían panic. La suite se ejecutó siempre contra abys_test."
+    },
+
+    "parallelism_anomaly": {
+      "id": "F2",
+      "observed_during": "una corrida de cobertura que lancé SIN `-p 1` (error mío, no del Builder)",
+      "symptom": "--- FAIL: TestHealthConnectedAfterMigrations — health_integration_test.go:45: migraciones: storage: run migration 005_create_xbrl_concept_map.sql: ERROR: se ha detectado un deadlock (SQLSTATE 40P01)",
+      "root_cause": "internal/api/m3_integration_test.go:54 y cmd/api/health_integration_test.go:36 ejecutan AMBOS storage.RunMigrations en su TestMain sobre la misma BD de tests. En paralelo, las dos sentencias de la migración 005 se bloquean entre sí (deadlock 40P01).",
+      "flakiness_measured": "1 de 6 corridas en paralelo falló (y 1 de 3 en una tanda anterior): ~17-33%",
+      "with_p_1": "0 fallos en 3 corridas con -p 1 (y 0 en las 2 suites completas de 276)",
+      "is_a_m52_defect": false,
+      "is_preexisting": true,
+      "evidence_preexisting": "`git show HEAD:cmd/api/health_integration_test.go` y `git show HEAD:internal/api/m3_integration_test.go` ya tienen ambos RunMigrations; el diff de M5.2 no toca esa parte de ninguno de los dos.",
+      "verdict": "No es un FAIL de M5.2 ni del commit: es la razón por la que el Makefile documenta y usa `-p 1` ('los paquetes comparten la misma BD de tests'). Merece una nota porque cualquier dev que lance la suite a mano sin -p 1 verá un FAIL errático en un test de health y puede culpar a M5.2.",
+      "no_action_taken": "no se modificó código; el fallo solo se reproduce fuera del contrato del Makefile"
+    },
+
+    "security": {
+      "database_url_printed_in_artifact": false,
+      "database_url_printed_in_transcript": false,
+      "note": "El valor de DATABASE_URL nunca se imprimió ni se persistió. De /tmp/opencode/abys-secrets.env solo se extrajeron (a) el NOMBRE de la BD, verificado con `select current_database()`, y (b) host:puerto. TEST_DATABASE_URL se construyó sustituyendo solo el nombre de la BD por abys_test. Las APIs de prueba se levantaron pasando la variable por el entorno, sin volcarla a disco ni a los logs. Única URL que apareció en pantalla es el valor POR DEFECTO de la línea 16 del Makefile (postgres://abys:abys@localhost:55432/abys_test), que ya está versionado en el repo y que el propio `make integration` imprime por diseño; no es un secreto.",
+      "secrets_in_diff": false,
+      "gitleaks_run": "no (no es alcance de este hito; sin hallazgos visibles en el diff revisado: no hay literales de credenciales nuevos)"
+    },
+
+    "git": {
+      "mutated": false,
+      "deployed_by_tester": false,
+      "status_before": "6 modificados + 7 untracked, todos de M5.2 (cmd/api/health_integration_test.go, cmd/api/health_test.go, internal/api/middleware.go, web/src/{App.tsx,api/client.ts,api/types.ts,lib/format.ts,pages/*} y los nuevos internal/api/health*.go, web/src/components/Layout.tsx, web/src/pages/HealthPage.tsx)",
+      "status_after": "IDÉNTICO al inicial. El único fichero escrito por el Tester es esta evidencia (test-results/tests/abys-m52-health.json).",
+      "commands_forbidden_not_run": "ningún add/commit/tag/push; ningún reinicio ni reload del servicio en :8082",
+      "deploy_8082": "abys-invest-api.service está inactive/dead desde 2026-09-25; el que sirve :8082 es abys-invest-api-air.service (activo, API_PORT=8082, WorkingDirectory=/home/miky/Abys-Invest, STATIC_DIR=/opt/abys-invest/web/dist). El Tester no lo tocó: health 200 antes y después."
+    }
+  },
+
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "major",
+      "title": "`make integration` se pone VERDE sin ejecutar un solo test de BD si no se exporta TEST_DATABASE_URL",
+      "detail": "CONFIRMADO por reproducción. El guard de la línea 130 evalúa `$(TEST_DATABASE_URL)`, que GNU make resuelve con el valor por defecto de la línea 16 (una BD *_test), así que valida un valor que el usuario nunca exportó. La línea 131 propaga al sub-make `TEST_DATABASE_URL=$$TEST_DATABASE_URL`; sin export, el shell la expande a vacío, y una variable de entorno vacía cuenta como definida y anula el `?=`. `integration-run` acaba ejecutando `DATABASE_URL= go test ...` y los 7 TestMain del repo hacen `if dsn == \"\"; os.Exit(0)` (silencioso, sin error). Resultado observado: make exit 0, 14 paquetes 'ok', 0 tests de BD ejecutados, 24.7 s.",
+      "impact": "Falsos verdes sistemáticos en cualquier shell donde no se haya hecho export (CI, shell nueva, otro dev). Un 'make integration' en verde deja de ser evidencia de nada. No hay riesgo de borrado de datos: el guard no puede quedar apuntando a 'abys', y EnsureTestDatabase sigue protegiendo la BD de datos.",
+      "ac_impact": "No rompe ningún criterio de aceptación de M5.2 (es previo al hito), pero invalida el 'make integration' como puerta de calidad que el propio plan de M5.2 cita como comando de verificación (CA-M5.2-5).",
+      "recommendation": "Que el guard valide la MISMA variable que se ejecuta: exigir `TEST_DATABASE_URL` exportada y no vacía antes de entrar, y/o quitar el `?=` de la línea 16 para que no exista un valor por defecto que oculte el olvido. Complementario: que TestMain falle con error en vez de `os.Exit(0)` cuando falta DATABASE_URL. NO aplicado (el Tester no modifica producto).",
+      "attribution": "preexistente; reportado por el Builder y reproducido independientemente por el Tester"
+    },
+    {
+      "id": "F2",
+      "severity": "minor",
+      "title": "La suite de integración es deadlock-flaky si se lanza sin `-p 1` (y el síntoma cae en un test de health nuevo)",
+      "detail": "`cmd/api/health_integration_test.go:36` e `internal/api/m3_integration_test.go:54` ejecutan ambos `storage.RunMigrations` en su TestMain sobre la misma BD de tests; en paralelo, la migración 005 (`005_create_xbrl_concept_map.sql`) se bloquea a sí misma y aborta con SQLSTATE 40P01. Medido: 1/6 corridas en paralelo falló. Con `-p 1` (lo que hace el Makefile): 0 fallos en 3 corridas.",
+      "impact": "Un dev que lance la suite a mano sin -p 1 ve un FAIL errático en TestHealthConnectedAfterMigrations y puede atribuirlo a M5.2. No afecta a `make integration`.",
+      "ac_impact": "ninguno; la causa es preexistente (verificado con `git show HEAD:` en ambos archivos) y el diff de M5.2 no toca esa parte.",
+      "recommendation": "Documentar el '-p 1' con la razón (deadlock en TestMain, no solo 'tablas compartidas'), o hacer idempotente/concurrente la fase de migraciones. NO aplicado."
+    },
+    {
+      "id": "F3",
+      "severity": "minor",
+      "title": "README.md NO actualizado: el paso 14 del plan y parte de CA-M5.2-5 no se cumplieron",
+      "detail": "`git status` no muestra README.md: el fichero no ha sido tocado en el árbol de trabajo. Contenido actual verificado: (a) la tabla de endpoints (§10, línea 373) sigue diciendo 'GET /health | Estado de la BD y versión' — no menciona latency_ms, postgres_version, db_size ni tables; (b) el ejemplo curl de §10 (línea 421) es `curl http://localhost:8080/health` sin ejemplo de respuesta; (c) no hay ninguna sección de la página /health; (d) no se documenta el Layout/sidebar; (e) el Roadmap llega a M5.1 y no tiene entrada M5.2; (f) la tabla de Deuda técnica no tiene las deudas nuevas (F3/L4). El plan (línea 134 y paso 14 de la línea 577) exigía exactamente esas 4 ediciones.",
+      "impact": "CA-M5.2-5 queda incumplido en su parte de documentación. Además hace FALSAS dos mitigaciones declaradas en el propio plan: R10 afirma que la semántica de latency_ms (latencia del ping, no del request) está 'Documentado en el README' — no lo está; y R12 afirma que la dependencia del sidebar está 'documentada en README §12' — no lo está. Quien lea solo el README no puede saber que latency_ms no es la latencia del request.",
+      "ac_impact": "CA-M5.2-5 (tests y documentación) parcialmente incumplido. No afecta a ningún criterio funcional (los 5 criterios de comportamiento están verdes).",
+      "recommendation": "Que el Builder/DOC ejecute el paso 14 tal como está escrito (endpoint ampliado con ejemplo de respuesta, página Health + sidebar, entrada de Roadmap M5.2 con el nº de suite 276/0/1, y deudas nuevas). NO aplicado por el Tester.",
+      "attribution": "gap de entregable detectado por el Tester"
+    },
+    {
+      "id": "F4",
+      "severity": "info",
+      "title": "El deploy vivo :8082 quedó en estado MIXTO: backend M5.2 ya desplegado, frontend todavía M5.1",
+      "detail": "Observación de estado, NO una acción del Tester. abys-invest-api-air.service está activo con WorkingDirectory=/home/miky/Abys-Invest y STATIC_DIR=/opt/abys-invest/web/dist, y su `build.cmd` compila `./cmd/api` del REPO. El journal muestra 'internal/api/middleware.go has changed' (20:08:09) y 'internal/api/health.go has changed' (20:08:22) → rebuild → el binario /opt/abys-invest/bin/api (20:08:24) ya sirve el /health ampliado. Verificado por HTTP: GET :8082/health devuelve las 7 claves con postgres_version 18.6 y db_size 21 MB. PERO el bundle que sirve es /assets/index-PmMvGtRy.js (189025 bytes, 2026-09-25 21:17): el bundle de M5.1. En ese JS no aparecen ni 'Salud del sistema', ni 'Conexión', ni 'Versión PostgreSQL', ni 'Finanzas'/'Sistema' (0 ocurrencias de cada una).",
+      "impact": "En el deploy actual, GET /health devuelve el body ampliado pero la página /health del SPA NO existe y no hay sidebar: la HealthPage es inalcanzable para el usuario hasta que se construya y copie el frontend. El dashboard vivo sigue con su layout M5.1. Esto es coherente con que M5.2 no включа deploying el frontend, pero es un estado que el Orchestrator/Deployer debe conocer antes de cerrar el hito.",
+      "ac_impact": "ninguno sobre el código; es un hecho sobre el entorno.",
+      "recommendation": "El deploy de M5.2 (frontend incluido: `make build-web` + copiar web/dist a /opt/abys-invest/web/dist) está pendiente. Recordar que con air activo el backend se despliega solo al tocar el árbol de trabajo, mientras que el frontend NO: es una asimetría fácil de no notar.",
+      "attribution": "estado preexistente observado por el Tester"
+    },
+    {
+      "id": "F5",
+      "severity": "info",
+      "title": "La base 269/0/1 documentada en la evidencia de M5.1 está desfasada respecto a HEAD (la real era 271/0/1)",
+      "detail": "El diff de nombres de test entre el log de M5.1 (269) y el de M5.2 (276) da 269 comunes, 0 desaparecidos y 7 nuevos. 5 son de M5.2; los otros 2 (TestRunPipelineJobForceNilPool, TestRunPipelineJobUnknownKind) los introdujo el commit 73d287f (verificado con `git log -S`) y ya estaban en HEAD, pero no aparecían en el log de M5.1. Base real antes de M5.2 = 271/0/1; +5 de M5.2 = 276/0/1.",
+      "impact": "Ninguno en el código. Sí explica por qué el plan estimaba '≈271 = 269 + 2' y se quedó corto: además de olvidar que los 3 tests unitarios de internal/api/health_test.go (sin build tag) también cuentan dentro de la suite '-tags=integration', partió de una base outdated. Sirve de referencia para que el Orchestrator no compare el 276 de M5.2 contra un 269 que en HEAD nunca existió.",
+      "ac_impact": "ninguno",
+      "recommendation": "Tomar 271/0/1 como base de HEAD y 276/0/1 como resultado de M5.2 al calcular el delta del Roadmap."
+    }
+  ],
+
+  "pending_human_verification": [
+    "Aspecto visual de la página /health con DATOS: las 4 tarjetas (Conexión con badge, Latencia con su subtexto 'ping a PostgreSQL', Versión PostgreSQL, Tamaño de la BD), la tabla de 9 conteos con separador de miles es-ES y la fila 'Total', y el formato 'Última comprobación' en es-BO. El Tester solo verificó por smoke estático que las clases y los strings EXISTEN en el bundle y en el CSS compilado; no puede afirmar cómo se ven.",
+    "SIDEBAR RESPONSIVE: el comportamiento real en ≥lg (fijo, 240 px, contenido con pl-60) y en <lg (barra sticky + hamburguesa que despliega y se cierra al navegar) NO se ha visto. Evidencia estática favorable: el CSS compilado emite @media (min-width:1024px) con .lg\\:flex, .lg\\:hidden, .lg\\:pl-60, .lg\\:grid-cols-4 y padding-left:15rem. El modo oscuro usa prefers-color-scheme (45 selectores dark:), o sea que sigue al SO, igual que las páginas previas.",
+    "REGRESIÓN VISUAL de las 3 páginas que pierden el wrapper duplicado (dashboard, watchlist, ticker): que su maquetación, tema y responsive sigan intactos con el sidebar nuevo. El diff es solo eliminación de markup + re-indentado y tsc pasa, pero 'no se rompió' visualmente es una afirmación que necesita ojos.",
+    "Estados UX en vivo: (a) skeletons de carga, (b) el 503 degradado pintado como 'Sin conexión' + aviso ámbar + '—' en el resto (NO pantalla de error), (c) el error de red con 'Reintentar' y el aviso no bloqueante sobre la última lectura buena, (d) el botón 'Refrescar' con Spinner y deshabilitado mientras corre. El código implementa los cuatro y compila; el render no se ha visto.",
+    "Navegación real: entrar a /health desde el link del sidebar, comprobar que NavLink marca la ruta activa (aria-current='page') y que el menú móvil se cierra al pulsar.",
+    "F5 / link directo a /health en el navegador: se espera JSON crudo (438 bytes) y no la página. Está aceptado por diseño (D12/R4) y el Tester lo verificó por HTTP, pero que se entienda bien en el navegador es jugement del usuario.",
+    "El deploy de :8082 está en estado mixto (ver F4): hay que construir/copiar el frontend para que la página exista en producción."
+  ],
+
+  "notes": [
+    "Verificación INDEPENDIENTE: no se confió en el reporte del Builder. Los conteos 276/0/1 y 165/0/0 se obtuvieron contando líneas '--- PASS'/'--- FAIL'/'--- SKIP' (top-level y subtests) sobre logs -v propios, y los endpoints se probaron con curl contra el binario real.",
+    "BD: la suite se ejecutó SIEMPRE contra abys_test (verificado con `select current_database()` = 'abys_test' justo antes de correr). La BD de datos 'abys' quedó intacta: sus 9 conteos son idénticos antes y después (10428/6281/5335/48/6/5/67/5/20). El smoke fue solo-lectura; no se lanzó ningún pipeline ni ningún POST.",
+    "La URL de la BD nunca se imprimió ni se persistió en este artefacto. Solo el nombre verificado de la BD, host:puerto y conteos (que son producto). La única URL que apareció en pantalla fue el valor por defecto de la línea 16 del Makefile, que ya está versionado en el repo y que `make integration` imprime por diseño.",
+    "COBERTURA: se reporta el número medido (74.9% en internal/api con BD; 71.8% sumando cmd/api; health.go al 100% salvo collectHealthMetrics al 75%) y NO se inventa ni se evalúa un umbral: el repo no tiene política de cobertura. Observación: las ramas de fallo de collectHealthMetrics (las 4 rutas slog.Warn) no están cubiertas por ningún test; la degradación 'best-effort' de D3 solo está probada en su forma más simple (sin BD → 503 con 3 claves).",
+    "La suite completa se ejecutó DOS veces con -p 1 y dio 276/0/1 en ambas (exit 0), así que el número es reproducible y no un afortunado. La única diferencia entre ambas corridas es el ORDEN de dos subtests de TestDimensionsFromSnapshotDegrades (iteración de map no determinista); ambos PASS.",
+    "Sobre el 276: es el conteo correcto, pero el desglose (+7 respecto al 269 documentado en M5.1) no son 7 tests nuevos de M5.2. Solo 5 lo son. Ver F5 y results.suites[1].delta_vs_m51_evidence para la explicación exacta.",
+    "El 503 sin BD es ADITIVO-correcto: 3 claves exactas, ninguno de los 4 campos nuevos, ni siquiera null. El único byte extra es el '\\n' final que añade writeJSON (errors.go:43) — comportamiento preexistente de M1, idéntico byte a byte en el payload JSON.",
+    "Sobre el F1 (Makefile): además de confirmarlo en el log, se verificó el mecanismo leyendo el código — `os.Exit(0)` silencioso en TestMain cuando falta DATABASE_URL. El riesgo es de falsos verdes, NO de borrado de datos: EnsureTestDatabase no se relaja en ningún caso.",
+    "Sobre el F3 (README): se comprobó con git status (README.md no aparece) y con búsquedas de 'postgres_version|db_size|latency_ms|M5.2|sidebar' en las 685 líneas del README (0 coincidencias). No se modificó el README: el Tester no toca producto ni docs de producto.",
+    "No se modificó código de producto, ni Git, ni el deploy. El único fichero escrito es esta evidencia. git status es idéntico al inicial.",
+    "Todo lo que NO se pudo verificar sin navegador está listado en pending_human_verification; nada de esa lista se da por bueno."
+  ]
+}

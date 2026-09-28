@@ -67,6 +67,42 @@ export async function getJSON<T>(path: string): Promise<T> {
 }
 
 /**
+ * Resultado de getJSONAllowing: el status HTTP recibido y el cuerpo parseado.
+ */
+export interface AllowedGet<T> {
+  httpStatus: number;
+  data: T;
+}
+
+/**
+ * M5.2 (decisión D9): GET que NO lanza para los estados aceptados y devuelve el
+ * cuerpo parseado. Existe para `GET /health`, cuyo 503 **no es un error de API
+ * para esa vista** sino información ("degradado") con los campos base dentro
+ * (status/database/version) — getJSON lanzaría y la página no podría pintar la
+ * BD caída. Para cualquier otro estado no-2xx se comporta exactamente como
+ * getJSON (lanza ApiError con el envelope), y un cuerpo no-JSON en un estado
+ * aceptado también lanza ApiError (mismo contrato de error que el resto).
+ *
+ * Reusa API_BASE y el `Accept: application/json` de getJSON: en dev la llamada
+ * es `/api/health`, en prod `/health` por XHR (nunca navegación de documento,
+ * así que nunca llega HTML del fallback SPA).
+ */
+export async function getJSONAllowing<T>(path: string, allowed: number[]): Promise<AllowedGet<T>> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok && !allowed.includes(res.status)) {
+    throw await parseError(res);
+  }
+  try {
+    return { httpStatus: res.status, data: (await res.json()) as T };
+  } catch {
+    // Estado aceptado pero cuerpo no-JSON: no hay nada que mostrar.
+    throw new ApiError(res.status, `http_${res.status}`, res.statusText || `HTTP ${res.status}`);
+  }
+}
+
+/**
  * POST tipado con el mismo contrato de errores que getJSON. Usado por los
  * endpoints mutadores del dashboard (refresh, force-refresh y el arranque del
  * pipeline en M5.1).
