@@ -25,7 +25,7 @@ MARGIN_SAFETY    ?= 30
 DCF_DISCOUNT     ?= 10
 COMP_MIN_SEC     ?= 5
 
-.PHONY: build build-web build-all deploy-local test lint vet docker-up docker-down migrate air-install dev-api run-api run-collector run-prices run-macro run-sector run-analytics run-scores run-all-data integration integration-run clean
+.PHONY: build build-web build-all deploy-local test lint vet docker-up docker-down migrate air-install dev-api run-api run-collector run-prices run-macro run-sector run-growth run-analytics run-scores run-all-data integration integration-run clean
 
 ## build: compila api, collector y analytics en bin/
 build:
@@ -102,6 +102,11 @@ run-prices:
 run-macro:
 	DATABASE_URL=$(DATABASE_URL) BLS_API_KEY="$(BLS_API_KEY)" go run ./cmd/collector -job macro -macro-series $(MACRO_SERIES)
 
+## run-growth: motor de crecimiento y WACC por security (M6a: growth_metrics +
+## wacc_metrics). Sin red: lee fundamentals/precios y la beta observada.
+run-growth:
+	DATABASE_URL=$(DATABASE_URL) go run ./cmd/analytics -job growth -tickers $(TICKERS)
+
 ## run-analytics: cálculo de métricas derivadas (8 métricas §13)
 run-analytics:
 	DATABASE_URL=$(DATABASE_URL) GROWTH_RATE_DEFAULT=$(G) go run ./cmd/analytics -tickers $(TICKERS)
@@ -116,9 +121,10 @@ run-scores:
 		DCF_DISCOUNT_RATE=$(DCF_DISCOUNT) COMPARABLES_MIN_SECURITIES=$(COMP_MIN_SEC) \
 		go run ./cmd/analytics -job scores -tickers $(TICKERS)
 
-## run-all-data: pipeline E2E M3 (migrate → ingesta → sector → métricas → score)
+## run-all-data: pipeline E2E M3 + M6a (migrate → ingesta → sector → growth/wacc →
+## métricas → score). growth va antes de métricas: ese es el orden del pipeline.
 run-all-data:
-	$(MAKE) migrate run-collector run-prices run-macro run-sector run-analytics run-scores
+	$(MAKE) migrate run-collector run-prices run-macro run-sector run-growth run-analytics run-scores
 
 ## integration: tests de integración end-to-end (requiere BD de pruebas).
 ## Se usan -p 1 (secuencial): los paquetes comparten la misma BD de tests y

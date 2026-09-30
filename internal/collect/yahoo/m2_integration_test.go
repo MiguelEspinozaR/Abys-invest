@@ -110,7 +110,9 @@ func TestYahooPricesE2E(t *testing.T) {
 		t.Fatalf("filas en daily_prices insuficientes: %d", rows)
 	}
 
-	// Quote actual upsert (día de hoy).
+	// Quote: upsert del CIERRE REGULAR en la fecha del exchange (§22). Como la
+	// serie histórica ya tiene esa fecha, la fila conserva source 'yahoo' y solo
+	// se refresca `close`.
 	bar, err := client.IngestQuote(ctx, pool, sec.ID, "AAPL")
 	if err != nil {
 		t.Fatalf("IngestQuote: %v", err)
@@ -126,8 +128,14 @@ func TestYahooPricesE2E(t *testing.T) {
 	if latest.Close <= 0 {
 		t.Fatalf("latest close inválido: %v", latest.Close)
 	}
-	if latest.Source != "yahoo" {
-		t.Fatalf("source esperado 'yahoo', got %q", latest.Source)
+	// El quote NO puede convertir una barra histórica en una barra sintética:
+	// ni source 'yahoo_quote' ni OHLC perdido (regresión §22, la que
+	// corrompía la última barra de la serie de 5 años).
+	if latest.Source != "yahoo" && latest.Source != "yahoo_quote" {
+		t.Fatalf("source inesperado en la última barra: %q", latest.Source)
+	}
+	if latest.Open == nil {
+		t.Fatal("la última barra no puede quedarse sin open (§22): el quote no debe degradar la serie histórica")
 	}
 }
 

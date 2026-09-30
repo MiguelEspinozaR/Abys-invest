@@ -90,11 +90,20 @@ func TestHealthConnectedAfterMigrations(t *testing.T) {
 		t.Fatalf("falta db_size en /health: %s", rec.Body.String())
 	}
 
-	// Conteos: 9 tablas del esquema público, nombres no vacíos, filas >= 0 y
-	// securities poblada (la migración 002 inserta el catálogo).
-	if len(body.Tables) != 9 {
-		t.Fatalf("se esperaban 9 tablas, got %d: %s", len(body.Tables), rec.Body.String())
+	// Conteos: 11 tablas del esquema público desde M6a (las 9 de M5.2 más
+	// growth_metrics y wacc_metrics), nombres no vacíos, filas >= 0 y securities
+	// poblada (la migración 002 inserta el catálogo). Las dos tablas nuevas deben
+	// estar: si faltaran, /health seguiría ok mientras dos etapas del pipeline
+	// escriben en tablas que nadie vigila.
+	wantTables := []string{
+		"securities", "daily_prices", "fundamentals", "derived_metrics", "scores",
+		"growth_metrics", "wacc_metrics", "watchlist", "macro_series",
+		"edgar_staging", "xbrl_concept_map",
 	}
+	if len(body.Tables) != len(wantTables) {
+		t.Fatalf("se esperaban %d tablas, got %d: %s", len(wantTables), len(body.Tables), rec.Body.String())
+	}
+	seen := map[string]bool{}
 	var total int64
 	var securities int64 = -1
 	for _, row := range body.Tables {
@@ -102,8 +111,14 @@ func TestHealthConnectedAfterMigrations(t *testing.T) {
 			t.Fatalf("fila inválida: %+v", row)
 		}
 		total += row.Rows
+		seen[row.Name] = true
 		if row.Name == "securities" {
 			securities = row.Rows
+		}
+	}
+	for _, want := range wantTables {
+		if !seen[want] {
+			t.Errorf("tabla %q ausente en /health", want)
 		}
 	}
 	if total <= 0 {

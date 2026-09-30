@@ -60,13 +60,15 @@ func guardPipeline(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) b
 	return true
 }
 
-// handleRefresh: POST /refresh — recalcula métricas y scores de las
-// securities activas con precio (GROWTH_RATE_DEFAULT / MARGIN_OF_SAFETY /
-// COMPARABLES_* del entorno, mismo contrato que los endpoints de valoración).
-// Sigue siendo SÍNCRONO (no es una ingesta) y toma el mismo lock que el job en
-// segundo plano: si hay un job en curso responde 409 para no competir por la BD
-// (derived_metrics/scores) con él. Respuesta: {"ok":true,"tickers":N,
-// "duration_ms":D}.
+// handleRefresh: POST /refresh — recalcula growth_metrics + wacc_metrics +
+// métricas y scores de las securities activas con precio (GROWTH_RATE_DEFAULT /
+// WACC_* / MARGIN_OF_SAFETY / COMPARABLES_* del entorno, mismo contrato que los
+// endpoints de valoración). Sigue siendo SÍNTRONO (no es una ingesta) y toma el
+// mismo lock que el job en segundo plano: si hay un job en curso responde 409
+// para no competir por la BD (growth_metrics/wacc_metrics/derived_metrics/
+// scores) con él. Respuesta: {"ok":true,"tickers":N,"growth":G,"wacc":W,
+// "duration_ms":D}. growth/wacc son conteos de filas persistidas (campos
+// aditivos: un cliente antiguo los ignora).
 func handleRefresh(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) {
 	if !guardPipeline(w, r, pool) {
 		return
@@ -87,13 +89,15 @@ func handleRefresh(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":          true,
 		"tickers":     res.Tickers,
+		"growth":      res.Growth,
+		"wacc":        res.WACC,
 		"duration_ms": time.Since(start).Milliseconds(),
 	})
 }
 
 // handleForceRefresh: POST /force-refresh — pipeline completo (edgar con
-// re-ingesta fresca → prices → sector → metrics → scores) sobre el universo
-// watchlist ∪ securities activas con precio.
+// re-ingesta fresca → prices → sector → growth/wacc → metrics → scores) sobre el
+// universo watchlist ∪ securities activas con precio.
 //
 // M5.1: responde 202 Accepted con el estado INICIAL del job (PipelineStatus) y
 // no ejecuta nada con r.Context() aquí dentro: el trabajo corre en la goroutine

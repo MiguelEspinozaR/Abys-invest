@@ -17,6 +17,9 @@ import (
 // Analytics jobs accepted by RunAnalytics (same contracts as -job in
 // cmd/analytics).
 const (
+	// AnalyticsJobGrowth computes ONLY growth_metrics + wacc_metrics (M6a):
+	// an isolated job to recompute them without touching the MVP metrics.
+	AnalyticsJobGrowth  = "growth"
 	AnalyticsJobMetrics = "metrics"
 	AnalyticsJobScores  = "scores"
 	AnalyticsJobAll     = "all"
@@ -25,6 +28,8 @@ const (
 // AnalyticsResult summarizes an analytics CLI job pass.
 type AnalyticsResult struct {
 	Tickers int `json:"tickers"` // securities objetivo
+	Growth  int `json:"growth"`  // securities con growth_metrics persistida OK
+	WACC    int `json:"wacc"`    // securities con wacc_metrics persistida OK
 	Metrics int `json:"metrics"` // securities con métricas persistidas OK
 	Scores  int `json:"scores"`  // securities con score persistido OK
 }
@@ -41,9 +46,9 @@ func RunAnalytics(ctx context.Context, pool *pgxpool.Pool, tickersCSV string, gr
 		growth = DefaultGrowth
 	}
 	switch job {
-	case AnalyticsJobMetrics, AnalyticsJobScores, AnalyticsJobAll:
+	case AnalyticsJobGrowth, AnalyticsJobMetrics, AnalyticsJobScores, AnalyticsJobAll:
 	default:
-		return AnalyticsResult{}, fmt.Errorf("job desconocido %q (esperado metrics|scores|all)", job)
+		return AnalyticsResult{}, fmt.Errorf("job desconocido %q (esperado growth|metrics|scores|all)", job)
 	}
 
 	securities, err := resolveTargets(ctx, pool, tickersCSV)
@@ -56,6 +61,12 @@ func RunAnalytics(ctx context.Context, pool *pgxpool.Pool, tickersCSV string, gr
 	}
 
 	res := AnalyticsResult{Tickers: len(securities)}
+	// growth ANTES de metrics/scores en el job `all` (M6a D1: el orden fija que
+	// la fila exista cuando M6b cablee el valor individual a las fórmulas).
+	if job == AnalyticsJobGrowth || job == AnalyticsJobAll {
+		g := runGrowthWaccJob(ctx, pool, securities, dryRun)
+		res.Growth, res.WACC = g.Growth, g.WACC
+	}
 	if job == AnalyticsJobMetrics || job == AnalyticsJobAll {
 		res.Metrics = runMetricsJob(ctx, pool, securities, growth, dryRun)
 	}

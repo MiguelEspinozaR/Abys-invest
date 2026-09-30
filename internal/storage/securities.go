@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const securityColumns = `id, ticker, cik, name, type, currency, status, exchange, sector, industry, created_at, updated_at`
+const securityColumns = `id, ticker, cik, name, type, currency, status, exchange, sector, industry, beta, beta_updated_at, created_at, updated_at`
 
 // UpsertSecurity inserts a security keyed by ticker; on conflict it updates the
 // catalog fields and returns the (possibly existing) row with its ID.
@@ -132,21 +132,34 @@ func escapeLike(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }
 
-// UpdateSecuritySector sets sector/industry for a ticker, overwriting any
-// previous value (the enricher runs on demand). Returns pgx.ErrNoRows when
-// the ticker is not cataloged.
-func UpdateSecuritySector(ctx context.Context, q DBTX, ticker string, sector, industry *string) error {
+// UpdateSecurityReference persists sector, industry and the observed beta of a
+// ticker in a single UPDATE (the same quoteSummary fetch produces all three,
+// plan D17). Returns pgx.ErrNoRows when the ticker is not cataloged.
+//
+// Sector/industry are overwritten when provided (the enricher runs on demand).
+// The beta uses COALESCE on both beta and beta_updated_at: a response without
+// defaultKeyStatistics (or with a rejected beta) must NOT erase a beta that is
+// already known, otherwise a temporary Yahoo gap would silently push every
+// company to WACC configured_fallback. A beta outside (0, 10] is not a beta:
+// it is stored as NULL so the engine degrades explicitly.
+func UpdateSecurityReference(ctx context.Context, q DBTX, ticker string, sector, industry *string, beta *float64) error {
+	var storedBeta any
+	if beta != nil && *beta > 0 && *beta <= 10 {
+		storedBeta = *beta
+	}
 	tag, err := q.Exec(ctx, `
 UPDATE securities
-SET sector     = $2,
-    industry   = $3,
-    updated_at = now()
-WHERE ticker = $1`, ticker, sector, industry)
+SET sector          = $2,
+    industry        = $3,
+    beta            = COALESCE($4, securities.beta),
+    beta_updated_at = CASE WHEN $4 IS NULL THEN securities.beta_updated_at ELSE now() END,
+    updated_at      = now()
+WHERE ticker = $1`, ticker, sector, industry, storedBeta)
 	if err != nil {
-		return fmt.Errorf("storage: update security sector %s: %w", ticker, err)
+		return fmt.Errorf("storage: update security reference %s: %w", ticker, err)
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("storage: update security sector %s: %w", ticker, pgx.ErrNoRows)
+		return fmt.Errorf("storage: update security reference %s: %w", ticker, pgx.ErrNoRows)
 	}
 	return nil
 }
@@ -158,6 +171,7 @@ type rowScanner interface {
 func scanSecurity(row rowScanner, s *Security) error {
 	return row.Scan(
 		&s.ID, &s.Ticker, &s.CIK, &s.Name, &s.Type, &s.Currency, &s.Status,
-		&s.Exchange, &s.Sector, &s.Industry, &s.CreatedAt, &s.UpdatedAt,
+		&s.Exchange, &s.Sector, &s.Industry, &s.Beta, &s.BetaUpdatedAt,
+		&s.CreatedAt, &s.UpdatedAt,
 	)
 }

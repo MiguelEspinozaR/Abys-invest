@@ -56,7 +56,10 @@ func seedPipelineAAPL(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 
-	if _, err := integPool.Exec(ctx, `TRUNCATE derived_metrics, daily_prices, macro_series, fundamentals, edgar_staging, securities RESTART IDENTITY CASCADE`); err != nil {
+	// growth_metrics y wacc_metrics explícitos: el CASCADE de securities ya los
+	// cubre, pero el orden explícito deja el test determinista si mañana una de
+	// las dos deja de depender de securities.
+	if _, err := integPool.Exec(ctx, `TRUNCATE growth_metrics, wacc_metrics, derived_metrics, daily_prices, macro_series, fundamentals, edgar_staging, securities RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("TRUNCATE falló: %v", err)
 	}
 

@@ -152,6 +152,47 @@ export interface IntrinsicValue {
   model_version: string;
 }
 
+/**
+ * Bloque `growth` de /valuation/{ticker} (M6a, api.GrowthDetail).
+ * Todos los rates son PORCENTAJES (10.5 = 10.5%/año). Ausente = la security
+ * todavía no pasó por el motor; normalized_growth_rate ausente = datos
+ * insuficientes (nunca 0 de relleno).
+ */
+export interface GrowthDetail {
+  normalized_growth_rate?: number; // % (ausente = sin datos)
+  source: string; // eps_fcf_3y | revenue_3y | insufficient_data | ...
+  confidence: 'high' | 'medium' | 'low';
+  revenue_cagr_3y?: number;
+  revenue_cagr_5y?: number;
+  eps_cagr_3y?: number;
+  eps_cagr_5y?: number;
+  fcf_cagr_3y?: number;
+  fcf_cagr_5y?: number;
+  clamped: boolean; // se aplicó el clamp [-10, 25]%
+  revenue_discrepancy: boolean; // revenue divergió de EPS/FCF
+  as_of: string;
+  model_version: string;
+}
+
+/**
+ * Bloque `wacc` de /valuation/{ticker} (M6a, api.WaccDetail). Rates en
+ * PORCENTAJES. `beta_observed: false` significa beta asumida por configuración
+ * (wacc_source = 'configured_fallback'), no medida.
+ */
+export interface WaccDetail {
+  wacc?: number; // % (ausente = sin estructura de capital)
+  cost_of_equity?: number; // % Ke = Rf + beta x ERP
+  cost_of_debt_after_tax?: number; // % Kd x (1 - tax)
+  risk_free_rate?: number;
+  equity_risk_premium?: number;
+  beta?: number;
+  beta_observed: boolean;
+  source: 'capm_individual' | 'capm_hybrid' | 'configured_fallback';
+  confidence: 'high' | 'medium';
+  as_of: string;
+  model_version: string;
+}
+
 /** GET /valuation/{ticker} (api.ValuationDetail). */
 export interface ValuationResponse {
   ticker: string;
@@ -159,6 +200,8 @@ export interface ValuationResponse {
   currency?: string;
   value: IntrinsicValue;
   upside_pct?: number; // downside/upside vs. consenso
+  growth?: GrowthDetail; // M6a, aditivo y opcional
+  wacc?: WaccDetail; // M6a, aditivo y opcional
   metrics?: Record<string, number | null>; // metric → valor (null si no calculable)
   as_of: string; // última fecha de precio
   computed_at: string;

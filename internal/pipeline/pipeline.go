@@ -53,6 +53,8 @@ const (
 // ScoresResult summarizes a metrics + scores refresh pass.
 type ScoresResult struct {
 	Tickers int `json:"tickers"` // securities objetivo seleccionadas
+	Growth  int `json:"growth"`  // securities con growth_metrics persistida OK
+	WACC    int `json:"wacc"`    // securities con wacc_metrics persistida OK
 	Metrics int `json:"metrics"` // securities con métricas persistidas OK
 	Scores  int `json:"scores"`  // securities con score persistido OK
 }
@@ -60,16 +62,19 @@ type ScoresResult struct {
 // ForceResult summarizes a full pipeline force-refresh pass.
 type ForceResult struct {
 	Tickers int            `json:"tickers"` // securities objetivo (metrics+scores)
+	Growth  int            `json:"growth"`  // securities con growth_metrics persistida OK
+	WACC    int            `json:"wacc"`    // securities con wacc_metrics persistida OK
 	Metrics int            `json:"metrics"` // securities con métricas persistidas OK
 	Scores  int            `json:"scores"`  // securities con score persistido OK
-	Steps   map[string]int `json:"steps"`   // conteos por etapa (edgar/prices/sector/metrics/scores)
+	Steps   map[string]int `json:"steps"`   // conteos por etapa (edgar/prices/sector/growth/metrics/scores)
 }
 
 var errPoolNil = errors.New("pipeline: pool nil (BD no disponible)")
 
-// RefreshMetricsAndScores re-computes and persists derived_metrics + scores
-// (plan M4c "Refresh", sin red) for every active security with a price.
-// dryRun logs without persisting. Returns the processed counts.
+// RefreshMetricsAndScores re-computes and persists growth_metrics + wacc_metrics
+// + derived_metrics + scores (plan M4c "Refresh" + M6a, sin red) for every
+// active security with a price. dryRun logs without persisting. Returns the
+// processed counts.
 func RefreshMetricsAndScores(ctx context.Context, pool *pgxpool.Pool, growth float64, dryRun bool) (ScoresResult, error) {
 	if pool == nil {
 		return ScoresResult{}, errPoolNil
@@ -87,8 +92,14 @@ func RefreshMetricsAndScores(ctx context.Context, pool *pgxpool.Pool, growth flo
 		return ScoresResult{}, nil
 	}
 
+	// growth ANTES de metrics/scores (M6a D1): las filas quedan disponibles
+	// para cuando M6b cablee el valor individual a las fórmulas.
+	g := runGrowthWaccJob(ctx, pool, securities, dryRun)
+
 	return ScoresResult{
 		Tickers: len(securities),
+		Growth:  g.Growth,
+		WACC:    g.WACC,
 		Metrics: runMetricsJob(ctx, pool, securities, growth, dryRun),
 		Scores:  runScoresJob(ctx, pool, securities, growth, dryRun),
 	}, nil
@@ -176,6 +187,10 @@ func ForceRefreshWithProgress(ctx context.Context, pool *pgxpool.Pool, companies
 		return res, nil
 	}
 	res.Tickers = len(securities)
+	g := runGrowthWaccJob(ctx, pool, securities, dryRun)
+	res.Growth, res.WACC = g.Growth, g.WACC
+	res.Steps["growth"] = g.Growth
+	report("growth", g.Growth)
 	res.Metrics = runMetricsJob(ctx, pool, securities, growth, dryRun)
 	res.Scores = runScoresJob(ctx, pool, securities, growth, dryRun)
 	res.Steps["metrics"] = res.Metrics
@@ -186,10 +201,10 @@ func ForceRefreshWithProgress(ctx context.Context, pool *pgxpool.Pool, companies
 }
 
 // WatchlistRefresh (M5.1) es el pipeline PARCIAL de los tickers ya catalogados
-// de la watchlist: prices -> sector -> metrics -> scores, en ese orden y SIN
-// EDGAR ni catálogo (el ticker ya existe en securities: lo guarantees el PUT
-// /watchlist/{ticker}, que devuelve 404 si no). Devuelve ForceResult con
-// Steps{prices,sector,metrics,scores} (sin clave "edgar").
+// de la watchlist: prices -> sector -> growth/wacc -> metrics -> scores, en ese
+// orden y SIN EDGAR ni catálogo (el ticker ya existe en securities: lo
+// garantiza el PUT /watchlist/{ticker}, que devuelve 404 si no). Devuelve
+// ForceResult con Steps{prices,sector,growth,metrics,scores} (sin clave "edgar").
 //
 // Métricas y scores se piden en dos llamadas a RunAnalytics (AnalyticsJobMetrics
 // y luego AnalyticsJobScores) en vez de AnalyticsJobAll: el progreso avanza en
@@ -237,7 +252,24 @@ func WatchlistRefresh(ctx context.Context, pool *pgxpool.Pool, tickers []string,
 	res.Steps["sector"] = n
 	report("sector", n)
 
-	// 3) Métricas derivadas.
+	// 3) Growth + WACC (M6a). Sin red: lee fundamentals/precios y la beta
+	// observada que el paso 2 acaba de refrescar, así que va DESPUÉS de sector
+	// y ANTES de metrics/scores.
+	securities, err := resolveTargets(ctx, pool, tickersCSV)
+	if err != nil {
+		return res, fmt.Errorf("pipeline: resolución de tickers: %w", err)
+	}
+	if len(securities) == 0 {
+		slog.Warn("sin securities objetivo tras la ingesta")
+		return res, nil
+	}
+	g := runGrowthWaccJob(ctx, pool, securities, dryRun)
+	res.Growth, res.WACC = g.Growth, g.WACC
+	res.Steps["growth"] = g.Growth
+	res.Tickers = len(securities)
+	report("growth", g.Growth)
+
+	// 4) Métricas derivadas.
 	m, err := RunAnalytics(ctx, pool, tickersCSV, growth, dryRun, AnalyticsJobMetrics)
 	if err != nil {
 		return res, fmt.Errorf("pipeline: metrics: %w", err)
@@ -245,13 +277,12 @@ func WatchlistRefresh(ctx context.Context, pool *pgxpool.Pool, tickers []string,
 	res.Steps["metrics"] = m.Metrics
 	report("metrics", m.Metrics)
 
-	// 4) Scores (job aparte: progreso en dos saltos y métricas ya persistidas).
+	// 5) Scores (job aparte: progreso en dos saltos y métricas ya persistidas).
 	s, err := RunAnalytics(ctx, pool, tickersCSV, growth, dryRun, AnalyticsJobScores)
 	if err != nil {
 		return res, fmt.Errorf("pipeline: scores: %w", err)
 	}
 	res.Steps["scores"] = s.Scores
-	res.Tickers = m.Tickers
 	report("scores", s.Scores)
 	return res, nil
 }
@@ -404,13 +435,15 @@ func resolveTargets(ctx context.Context, pool *pgxpool.Pool, tickersCSV string) 
 	return out, nil
 }
 
-// getSecurityByID fetches a security row by its primary key.
+// getSecurityByID fetches a security row by its primary key. It includes
+// beta/beta_updated_at (M6a D17): the WACC stage reads the OBSERVED beta from
+// this row instead of issuing a second query per security.
 func getSecurityByID(ctx context.Context, pool *pgxpool.Pool, id int64) (*storage.Security, error) {
-	row := pool.QueryRow(ctx, `SELECT id, ticker, cik, name, type, currency, status, exchange, sector, industry, created_at, updated_at
+	row := pool.QueryRow(ctx, `SELECT id, ticker, cik, name, type, currency, status, exchange, sector, industry, beta, beta_updated_at, created_at, updated_at
 		FROM securities WHERE id = $1`, id)
 	s := &storage.Security{}
 	if err := row.Scan(&s.ID, &s.Ticker, &s.CIK, &s.Name, &s.Type, &s.Currency, &s.Status,
-		&s.Exchange, &s.Sector, &s.Industry, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		&s.Exchange, &s.Sector, &s.Industry, &s.Beta, &s.BetaUpdatedAt, &s.CreatedAt, &s.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("pipeline: get security by id %d: %w", id, err)
 	}
 	return s, nil

@@ -1,4 +1,5 @@
-// Command analytics computes the 8 MVP valuation metrics (SPEC §13) for the
+// Command analytics computes the per-security growth/wacc (M6a) and the 8 MVP
+// valuation metrics (SPEC §13) for the
 // selected securities and, optionally, the M3 score (0-100) persisted into
 // the scores table.
 //
@@ -8,6 +9,7 @@
 // Usage:
 //
 //	go run ./cmd/analytics -tickers AAPL            # job por defecto: metrics
+//	go run ./cmd/analytics -job growth -tickers AAPL # growth_metrics + wacc_metrics
 //	go run ./cmd/analytics -job scores -tickers AAPL
 //	go run ./cmd/analytics -job all -tickers AAPL
 //	go run ./cmd/analytics -g 8 -dry-run
@@ -34,6 +36,9 @@ import (
 const (
 	migrationsDir = "migrations"
 
+	// jobGrowth (M6a) calcula SOLO growth_metrics + wacc_metrics: el job
+	// aislado para recalcular el motor individual sin tocar las métricas MVP.
+	jobGrowth  = "growth"
 	jobMetrics = "metrics"
 	jobScores  = "scores"
 	jobAll     = "all"
@@ -48,7 +53,7 @@ func main() {
 	flag.StringVar(&tickersCSV, "tickers", "", "tickers a calcular (CSV); vacío = todos los active con precio")
 	flag.Float64Var(&growth, "g", pipeline.DefaultGrowth, "tasa de crecimiento g para PEG (porcentaje)")
 	flag.BoolVar(&dryRun, "dry-run", false, "calcula e imprime sin persistir en BD")
-	flag.StringVar(&job, "job", jobMetrics, "job a ejecutar: metrics | scores | all")
+	flag.StringVar(&job, "job", jobMetrics, "job a ejecutar: growth | metrics | scores | all")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -66,9 +71,9 @@ func main() {
 	}
 
 	switch job {
-	case jobMetrics, jobScores, jobAll:
+	case jobGrowth, jobMetrics, jobScores, jobAll:
 	default:
-		slog.Error("job desconocido", "job", job, "esperado", "metrics|scores|all")
+		slog.Error("job desconocido", "job", job, "esperado", "growth|metrics|scores|all")
 		os.Exit(2)
 	}
 

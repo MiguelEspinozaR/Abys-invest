@@ -44,6 +44,33 @@ ON CONFLICT (security_id, date) DO UPDATE SET
 	return nil
 }
 
+// UpdateQuoteClose upserts the bar (security_id, date) of a market quote,
+// updating ONLY `close` when the row already exists and inserting a synthetic bar
+// (adjusted_close = close, source = 'yahoo_quote') when it does not.
+//
+// This is the price-consistency fix of SPEC §22: `close` is the REGULAR close
+// (valuation_price: what a share is worth today, no dividend/split adjustment)
+// while `adjusted_close` is the HISTORICAL series (adjusted_close: the base of
+// every return, SMA and momentum). A quote must never overwrite the adjusted
+// close or the OHLC/volume of an existing bar: it is a different measure of the
+// same day, and mixing them corrupts the last bar of the series (open IS NULL,
+// adjusted_close = raw quote). Returns the persisted row, so the caller sees the
+// real adjusted_close.
+func UpdateQuoteClose(ctx context.Context, q DBTX, securityID int64, date time.Time, close float64) (*DailyPrice, error) {
+	row := q.QueryRow(ctx, `
+INSERT INTO daily_prices (security_id, date, close, adjusted_close, source)
+VALUES ($1, $2, $3, $3, 'yahoo_quote')
+ON CONFLICT (security_id, date) DO UPDATE SET close = EXCLUDED.close
+RETURNING `+dailyPriceColumns,
+		securityID, date, close)
+	p := &DailyPrice{}
+	if err := scanDailyPrice(row, p); err != nil {
+		return nil, fmt.Errorf("storage: update quote close for security %d @%s: %w",
+			securityID, date.Format("2006-01-02"), err)
+	}
+	return p, nil
+}
+
 // GetDailyPricesBySecurity returns prices within [from, to]; nil/zero bounds
 // are open-ended. Ordered by date ascending.
 func GetDailyPricesBySecurity(ctx context.Context, q DBTX, securityID int64, from, to time.Time) ([]DailyPrice, error) {

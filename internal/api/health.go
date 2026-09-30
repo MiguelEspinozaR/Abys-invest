@@ -35,16 +35,19 @@ type HealthResponse struct {
 	LatencyMS       *float64           `json:"latency_ms,omitempty"`       // puntero: 0.00 debe salir
 	PostgresVersion string             `json:"postgres_version,omitempty"` // "18.6"
 	DBSize          string             `json:"db_size,omitempty"`          // "21 MB"
-	Tables          []HealthTableCount `json:"tables,omitempty"`           // 9 entradas
+	Tables          []HealthTableCount `json:"tables,omitempty"`           // 11 entradas
 }
 
-// healthTableNames: esquema público de main_tables (SPEC §6 M5.2). Fuente única
-// de verdad en Go: alimenta el SQL de conteos y el test de integración que lo
-// compara con information_schema (anti-deriva, riesgo R2). Verificado
-// 2026-09-27: exactamente estas 9 tablas, sin más.
+// healthTableNames: esquema público de main_tables (SPEC §6 M5.2 + M6a).
+// Fuente única de verdad en Go: alimenta el SQL de conteos y el test de
+// integración que lo compara con information_schema (anti-deriva, riesgo R2).
+// Las dos tablas de M6a (growth_metrics, wacc_metrics) entran en la lista: si
+// faltaran, /health seguiría respondiendo ok mientras dos etapas del pipeline
+// escriben en tablas que nadie vigila.
 var healthTableNames = []string{
 	"securities", "daily_prices", "fundamentals", "derived_metrics",
-	"scores", "watchlist", "macro_series", "edgar_staging", "xbrl_concept_map",
+	"scores", "growth_metrics", "wacc_metrics",
+	"watchlist", "macro_series", "edgar_staging", "xbrl_concept_map",
 }
 
 // healthTimeout es el presupuesto de tiempo de TODO el handler (ping + las 2
@@ -56,7 +59,7 @@ const healthTimeout = 3 * time.Second
 // buildCountQuery construye la query de conteos EXACTOS: UNA sola sentencia
 // UNION ALL con una rama count(*) por tabla (decisión D1) → 1 round-trip,
 // snapshot consistente entre ramas y orden determinista. Medido: ~18 ms para
-// las 9 tablas.
+// las 11 tablas.
 //
 // Los nombres provienen de constantes internas (healthTableNames), nunca de la
 // petición, así que no hay entrada de usuario en el SQL; aun así se filtran

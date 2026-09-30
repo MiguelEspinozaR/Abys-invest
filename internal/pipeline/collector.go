@@ -144,9 +144,13 @@ func RunPricesJob(ctx context.Context, pool *pgxpool.Pool, tickers string) (int,
 	return succeeded, nil
 }
 
-// RunSectorJob enriches sector/industry of the selected tickers (Yahoo
-// quoteSummary primary, Finviz fallback; job sector de M3). Returns the number
-// of updated securities.
+// RunSectorJob enriches the reference data of the selected tickers (Yahoo
+// quoteSummary primary for sector/industry AND beta, Finviz fallback for
+// sector/industry only; job sector de M3 + beta de M6a, plan D17). It is the
+// ONLY path with network access that touches the catalog, and it is also where
+// the observed beta is refreshed: adding the module to the existing
+// quoteSummary call costs no extra request. Returns the number of updated
+// securities.
 func RunSectorJob(ctx context.Context, pool *pgxpool.Pool, tickers string) (int, error) {
 	securities, err := resolveSecurities(ctx, pool, tickers)
 	if err != nil {
@@ -160,7 +164,7 @@ func RunSectorJob(ctx context.Context, pool *pgxpool.Pool, tickers string) (int,
 	for _, s := range securities {
 		ts = append(ts, s.Ticker)
 	}
-	updated, err := yahoo.EnrichSectors(ctx, pool, ts)
+	updated, err := yahoo.EnrichReferenceData(ctx, pool, ts)
 	if err != nil {
 		return 0, fmt.Errorf("enriquecimiento de sector falló: %w", err)
 	}

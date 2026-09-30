@@ -16,6 +16,15 @@ type Security struct {
 	Industry  *string   `json:"industry,omitempty" db:"industry"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+	// Beta is the OBSERVED beta from Yahoo defaultKeyStatistics (migrations/011,
+	// plan D17): reference data of the security, not a calculation result, for the
+	// same reason sector/industry live here. nil = never observed (foreign/ADR
+	// with a null beta, or a sector job that has not run yet) and it degrades the
+	// WACC to configured_fallback instead of assuming a value.
+	Beta *float64 `json:"beta,omitempty" db:"beta"`
+	// BetaUpdatedAt dates the observation: it distinguishes "never arrived" from
+	// "arrived and stopped arriving" (risk R4 of the M6a plan).
+	BetaUpdatedAt *time.Time `json:"beta_updated_at,omitempty" db:"beta_updated_at"`
 }
 
 // Fundamental is a normalized XBRL fact mapped to the canonical dictionary.
@@ -145,4 +154,66 @@ type Score struct {
 	InputsSnapshot []byte    `json:"inputs_snapshot,omitempty" db:"inputs_snapshot"`
 	ModelVersion   string    `json:"model_version" db:"model_version"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+}
+
+// GrowthMetric is one row of growth_metrics (migrations/012, SPEC v2 §5, plan
+// M6a): the Growth Engine result for (security, as_of, model_version). A nil
+// NormalizedGrowthRate is NOT a zero: it means "insufficient data" and comes
+// with Confidence = low and Source = insufficient_data (§5).
+type GrowthMetric struct {
+	ID          int64      `json:"id" db:"id"`
+	SecurityID  int64      `json:"security_id" db:"security_id"`
+	AsOf        time.Time  `json:"as_of" db:"as_of"`
+	AvailableAt *time.Time `json:"available_at,omitempty" db:"available_at"`
+	// FundamentalsAsOf is the period_end of the last annual fiscal year used
+	// (traceability §4: which books the growth was measured on).
+	FundamentalsAsOf     *time.Time `json:"fundamentals_as_of,omitempty" db:"fundamentals_as_of"`
+	RevenueCAGR3y        *float64   `json:"revenue_cagr_3y,omitempty" db:"revenue_cagr_3y"`
+	RevenueCAGR5y        *float64   `json:"revenue_cagr_5y,omitempty" db:"revenue_cagr_5y"`
+	EPSCAGR3y            *float64   `json:"eps_cagr_3y,omitempty" db:"eps_cagr_3y"`
+	EPSCAGR5y            *float64   `json:"eps_cagr_5y,omitempty" db:"eps_cagr_5y"`
+	FCFCAGR3y            *float64   `json:"fcf_cagr_3y,omitempty" db:"fcf_cagr_3y"`
+	FCFCAGR5y            *float64   `json:"fcf_cagr_5y,omitempty" db:"fcf_cagr_5y"`
+	NormalizedGrowthRate *float64   `json:"normalized_growth_rate,omitempty" db:"normalized_growth_rate"`
+	Confidence           string     `json:"growth_confidence" db:"growth_confidence"`
+	Source               string     `json:"growth_source" db:"growth_source"`
+	Clamped              bool       `json:"growth_clamped" db:"growth_clamped"`
+	RevenueDiscrepancy   bool       `json:"revenue_discrepancy" db:"revenue_discrepancy"`
+	InputsSnapshot       []byte     `json:"inputs_snapshot,omitempty" db:"inputs_snapshot"`
+	ModelVersion         string     `json:"model_version" db:"model_version"`
+	CalculationTimestamp time.Time  `json:"calculation_timestamp" db:"calculation_timestamp"`
+	CreatedAt            time.Time  `json:"created_at" db:"created_at"`
+}
+
+// WaccMetric is one row of wacc_metrics (migrations/013, SPEC v2 §7, plan M6a).
+// Source/Confidence follow the same strict shape: capm_individual/high,
+// capm_hybrid/medium or configured_fallback/low. A nil Wacc means the engine
+// refused to invent one (WACC_FALLBACK <= 0 without observed inputs).
+type WaccMetric struct {
+	ID           int64      `json:"id" db:"id"`
+	SecurityID   int64      `json:"security_id" db:"security_id"`
+	AsOf         time.Time  `json:"as_of" db:"as_of"`
+	AvailableAt  *time.Time `json:"available_at,omitempty" db:"available_at"`
+	EquityValue  *float64   `json:"equity_value,omitempty" db:"equity_value"`
+	DebtValue    *float64   `json:"debt_value,omitempty" db:"debt_value"`
+	Beta         *float64   `json:"beta,omitempty" db:"beta"`
+	BetaObserved bool       `json:"beta_observed" db:"beta_observed"`
+	// BetaUpdatedAt is copied from securities.beta_updated_at: the row shows
+	// WHICH observation of the beta produced this WACC (risk R4).
+	BetaUpdatedAt        *time.Time `json:"beta_updated_at,omitempty" db:"beta_updated_at"`
+	CostOfEquity         *float64   `json:"cost_of_equity,omitempty" db:"cost_of_equity"`
+	CostOfDebtPreTax     *float64   `json:"cost_of_debt_pretax,omitempty" db:"cost_of_debt_pretax"`
+	CostOfDebtAfterTax   *float64   `json:"cost_of_debt_after_tax,omitempty" db:"cost_of_debt_after_tax"`
+	TaxRate              *float64   `json:"tax_rate,omitempty" db:"tax_rate"`
+	RiskFreeRate         *float64   `json:"risk_free_rate,omitempty" db:"risk_free_rate"`
+	EquityRiskPremium    *float64   `json:"equity_risk_premium,omitempty" db:"equity_risk_premium"`
+	Wacc                 *float64   `json:"wacc,omitempty" db:"wacc"`
+	WeightEquity         *float64   `json:"weight_equity,omitempty" db:"weight_equity"`
+	WeightDebt           *float64   `json:"weight_debt,omitempty" db:"weight_debt"`
+	Source               string     `json:"wacc_source" db:"wacc_source"`
+	Confidence           string     `json:"wacc_confidence" db:"wacc_confidence"`
+	InputsSnapshot       []byte     `json:"inputs_snapshot,omitempty" db:"inputs_snapshot"`
+	ModelVersion         string     `json:"model_version" db:"model_version"`
+	CalculationTimestamp time.Time  `json:"calculation_timestamp" db:"calculation_timestamp"`
+	CreatedAt            time.Time  `json:"created_at" db:"created_at"`
 }

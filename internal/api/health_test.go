@@ -7,16 +7,17 @@ import (
 	"testing"
 )
 
-// TestHealthCountQueryListsMainTables (M5.2, decisión D1): el SQL de conteos es
-// UNA query UNION ALL con una rama count(*) por tabla del esquema público, en el
-// orden de healthTableNames y con exactamente 8 uniones (9 ramas). Fijar la
-// sentencia completa evita deriva accidental (tabla duplicada, orden cambiado o
-// `public.` olvidado, que rompería con un search_path distinto).
+// TestHealthCountQueryListsMainTables (M5.2 decisión D1; M6a adds growth_metrics
+// y wacc_metrics): el SQL de conteos es UNA query UNION ALL con una rama
+// count(*) por tabla del esquema público, en el orden de healthTableNames y con
+// exactamente len-1 uniones. Fijar la sentencia completa evita deriva
+// accidental (tabla duplicada, orden cambiado o `public.` olvidado, que rompería
+// con un search_path distinto).
 func TestHealthCountQueryListsMainTables(t *testing.T) {
 	sql := buildCountQuery(healthTableNames)
 
-	if got := strings.Count(sql, "UNION ALL"); got != 8 {
-		t.Fatalf("se esperaban 8 UNION ALL, got %d: %s", got, sql)
+	if got := strings.Count(sql, "UNION ALL"); got != len(healthTableNames)-1 {
+		t.Fatalf("se esperaban %d UNION ALL, got %d: %s", len(healthTableNames)-1, got, sql)
 	}
 	if got := strings.Count(sql, "count(*)"); got != len(healthTableNames) {
 		t.Fatalf("se esperaban %d count(*), got %d: %s", len(healthTableNames), got, sql)

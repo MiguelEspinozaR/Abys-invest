@@ -1,0 +1,354 @@
+{
+  "task_id": "abys-m6a-growth-wacc",
+  "stage": "TEST",
+  "date": "2026-09-29T20:19:21-04:00",
+  "tested_at_utc": "2026-09-30T00:19:21Z",
+  "tester": "Tester (verificación independiente; sin commit, sin git, sin deploy, sin modificar código de producto; único archivo escrito: este)",
+  "verdict": "PASS_WITH_FINDINGS",
+  "verdict_detail": "M6a reproduce exactamente lo afirmado por Builder y Reviewer: gofmt vacío, go build y go vet (con y sin -tags=integration) limpios, UNIT 252/0/0, INTEGRACIÓN 388/0/1 con el único SKIP preexistente TestForceRefreshLoopbackSkips (M4c), npm run build OK (tsc estricto + vite, hashes de assets idénticos a M5.2 porque el diff de web/ es solo de tipos), y smoke de contrato API con los dos bloques nuevos Growth/WACC serializados correctamente (nil omitido, omitempty respetado, contrato value/price/currency de M3 intacto, 404 en envelope). Se registra 1 hallazgo NUEVO y de severidad mayor, que es una caracterización más precisa de la deuda F3 ya documentada: la invocación que el propio plan M6a prescribe en H.3 (`export TEST_DATABASE_URL=… && go test ./… -tags=integration`, sin pasar por make) NO ejecuta los tests de BD — se salta 39 tests en silencio y devuelve 152/0/39 con exit 0. Los conteos de integración de esta evidencia (388/0/1) se obtuvieron exportando además DATABASE_URL, que es la variable que realmente leen los tests. El resto de hallazgos son preexistentes o informativos.",
+
+  "summary": {
+    "unit": { "pass": 252, "fail": 0, "skip": 0, "exit": 0, "packages_ok": 14, "packages_no_test_files": 2 },
+    "integration": { "pass": 388, "fail": 0, "skip": 1, "exit": 0, "packages_ok": 16, "packages_no_test_files": 2, "integration_runs": 2, "integration_reproducible": true },
+    "gofmt": { "clean": true, "exit": 0 },
+    "go_build": { "ok": true, "exit": 0 },
+    "go_vet": { "ok": true, "exit": 0, "variants": ["./...", "./... -tags=integration"] },
+    "npm_build": { "ok": true, "exit": 0, "js": "index-BeqNKrtA.js", "css": "index-CD-PyuE9.css" },
+    "api_smoke": { "endpoints_checked": 4, "endpoints_ok": 4, "unexpected": 0 },
+    "secrets_in_tree": 0,
+    "git_mutated": false,
+    "data_loss": false,
+    "findings": 4,
+    "findings_by_severity": { "major": 1, "minor": 1, "info": 2 },
+    "findings_blocking_m6a": 0,
+    "delta_vs_m52_evidence": {
+      "unit": "165/0/0 -> 252/0/0 (+87 PASS, 0 FAIL, 0 SKIP nuevos)",
+      "integration": "276/0/1 -> 388/0/1 (+112 PASS, 0 FAIL, mismo único SKIP de M4c)"
+    }
+  },
+
+  "suites": [
+    {
+      "id": "format",
+      "name": "Formato y estáticos de compilación",
+      "commands": [
+        { "cmd": "gofmt -l cmd internal", "exit": 0, "stdout": "", "expected": "vacío", "ok": true },
+        { "cmd": "go build ./...", "exit": 0, "ok": true },
+        { "cmd": "go vet ./...", "exit": 0, "stdout": "", "ok": true },
+        { "cmd": "go vet -tags=integration ./...", "exit": 0, "stdout": "", "ok": true, "note": "H.3 del plan pide además el vet con el tag de integración; el Builder no lo reportó y se ejecutó limpio." }
+      ]
+    },
+    {
+      "id": "unit",
+      "name": "Suite de unidad (sin tag de integración, sin BD, sin red)",
+      "command": "env -u DATABASE_URL -u TEST_DATABASE_URL go test ./... -count=1 -v -p 1",
+      "log": "/tmp/opencode/m6a-tester-unit.log",
+      "exit": 0,
+      "counts": { "pass": 252, "fail": 0, "skip": 0, "top_level_pass": 176, "subtest_pass": 76 },
+      "count_method": "conteo independiente del Tester sobre el log -v (líneas '--- PASS'/'--- FAIL'/'--- SKIP' a nivel superior y con indentación de subtest). No se reutilizó el dato del Reviewer.",
+      "reviewer_claim": "252/0/0",
+      "reviewer_claim_verified": true,
+      "builder_claim": "unit en verde (~252 pass)",
+      "builder_claim_verified": true,
+      "packages_ok": 14,
+      "packages_no_test_files": 2,
+      "packages_no_test_files_list": ["cmd/analytics", "cmd/collector"],
+      "packages": {
+        "cmd/api": "0.009s",
+        "internal/api": "0.044s",
+        "internal/backtest": "0.007s",
+        "internal/collect/edgar": "1.662s",
+        "internal/collect/finviz": "0.010s",
+        "internal/collect/macro": "5.019s",
+        "internal/collect/yahoo": "6.902s",
+        "internal/compare": "0.012s",
+        "internal/growth": "0.012s",
+        "internal/metrics": "0.041s",
+        "internal/pipeline": "0.313s",
+        "internal/score": "0.011s",
+        "internal/valuation": "0.006s",
+        "internal/wacc": "0.006s"
+      },
+      "new_packages_vs_m52": ["internal/growth", "internal/wacc"],
+      "no_db_dependency": "verificado: la suite corre con DATABASE_URL y TEST_DATABASE_URL sin definir en el entorno y no emite ningún mensaje de skip por BD."
+    },
+    {
+      "id": "integration",
+      "name": "Suite de integración completa contra la BD de pruebas abys_test",
+      "command": "export TEST_DATABASE_URL='postgres://abys:abys@localhost:55432/abys_test?sslmode=disable'; export DATABASE_URL=\"$TEST_DATABASE_URL\"; go test ./... -tags=integration -count=1 -p 1 -v",
+      "equivalent_make_target_verified": "export TEST_DATABASE_URL='…abys_test…' && make integration  -> 388/0/1 exit 0 (idéntico, verificado por el Tester)",
+      "log": "/tmp/opencode/m6a-tester-int2.log",
+      "exit": 0,
+      "counts": { "pass": 388, "fail": 0, "skip": 1, "top_level_pass": 251, "subtest_pass": 137 },
+      "count_method": "conteo independiente del Tester sobre el log -v. El conteo por paquete se hizo asignando bloques contiguos de líneas '--- PASS/SKIP/FAIL' al paquete cuyo resultado ('ok'/'?') los cierra; la suma por paquete cuadra exactamente en 388.",
+      "reviewer_claim": "388 PASS / 0 FAIL / 1 SKIP",
+      "reviewer_claim_verified": true,
+      "builder_claim": "integración en verde (16/16 paquetes)",
+      "builder_claim_verified": true,
+      "verified_db": {
+        "name": "abys_test",
+        "host_port": "localhost:55432",
+        "user": "abys",
+        "method": "`select current_database()` -> abys_test, comprobado ANTES de ejecutar. NUNCA la BD de datos 'abys'.",
+        "note": "El DSN por defecto del Makefile (postgres://abys:abys@localhost:55432/abys_test?sslmode=disable) autentica correctamente. /tmp/opencode/abys-secrets.env se leyó solo para la URL (su DATABASE_URL apunta a la BD de datos 'abys' y no se usó para la suite)."
+      },
+      "packages_ok": 16,
+      "packages_no_test_files": 2,
+      "pass_by_package": {
+        "cmd/analytics": 3,
+        "cmd/collector": 108,
+        "internal/api": 5,
+        "internal/backtest": 33,
+        "internal/collect/edgar": 4,
+        "internal/collect/finviz": 13,
+        "internal/collect/macro": 51,
+        "internal/collect/yahoo": 6,
+        "internal/compare": 40,
+        "internal/growth": 16,
+        "internal/metrics": 16,
+        "internal/pipeline": 18,
+        "internal/score": 1,
+        "internal/score/fixtures": 33,
+        "internal/storage": 15,
+        "internal/valuation": 26,
+        "internal/wacc": 3,
+        "total": 388
+      },
+      "pass_by_package_note": "cmd/collector y internal/valuation incluyen subtests; el resto son únicamente tests de nivel superior.",
+      "skip_detail": {
+        "count": 1,
+        "test": "TestForceRefreshLoopbackSkips",
+        "reason": "t.Skip preexistente de M4c: requiere acceso a SEC/EDGAR + Yahoo desde el entorno de test",
+        "verdict": "SKIP preexistente y esperado. Idéntico al único SKIP registrado en la evidencia de M5.1 y de M5.2. NO es una regresión de M6a.",
+        "new_skips_vs_m52": 0
+      },
+      "m6a_new_tests_observed_passing": [
+        "internal/api: TestValuationExponeGrowthYWacc, TestValuationOmiteGrowthYWaccSinFilas, TestValuationGrowthFallbackVisible (3 PASS) — el último fija justamente el caso 'sin filas -> bloques ausentes' que se verificó también en vivo.",
+        "internal/api: TestRefreshMetricsAndScoresIncluyeGrowth (PASS).",
+        "internal/collect/yahoo: TestEnrichReferenceDataPersisteBeta, TestKeyStatsForBeta, TestBetaFloatDecodificacionTolerante (3 PASS).",
+        "internal/growth: TestGrowthEngineSobreSerieAnualReal, TestGrowthSinSerieAnualNoInventaTasa, TestGrowthTrimestresNoCuentan, TestGrowthRateDefault (4 PASS de integración; el resto de internal/growth son unitarios y cuentan en la suite de unidad).",
+        "internal/wacc: TestGrowthAndWaccMetricsIdempotenciaYVersionado, TestWaccMetricsCHECKCoherenciaTaxonomia (2 PASS de integración).",
+        "internal/storage: TestUpdateSecurityReferenceBeta, TestSecuritiesBetaCHECKRechazaValores (2 PASS).",
+        "internal/pipeline: TestRunAnalyticsJobGrowth, TestForceRefreshReportaPasoGrowth, TestWatchlistRefreshIncluyeGrowth, TestGrowthStageDegradaSinBeta (4 PASS).",
+        "internal/wacc (unitarios, ejecutados en AMBAS suites): TestWACCCAPMIndividualTodoObservado, TestWACCCAPMHybridConBetaObservada, TestWACCBetaNoObservadaCaeAFallback, TestWACCFallbackSinDeuda, TestWACCAllEquity, TestWACCRecortaTaxRate, TestWACCEntradasInvalidas, TestWACCEsDeterminista, TestWACCConfigFromEnv, TestWACCAllEquityNoDegrada, TestWACCSinDeudaUsaFallback, TestWACCBetaNulaEnCatalogoDegrada, TestWACCCAPMHybridConBetaObservadaPersistida — cubren los 3 niveles de la taxonomía (capm_individual/high alcanzable solo por inyección, capm_hybrid/medium, configured_fallback/low)."
+      ]
+    }
+  ],
+
+  "api_smoke": {
+    "setup": {
+      "binary": "/tmp/opencode/m6a-tester-api (go build -o, fuera del repo; el producto NO se modificó)",
+      "listen": "127.0.0.1:18082 (puerto libre)",
+      "database": "abys (localhost:55432) — BD de DATOS, solo lecturas GET; el proceso de la suite ya había restaurado abys_test",
+      "isolation": "no se tocó :8080 ni :8082; ambos siguen escuchando tras el smoke (verificado con ss -ltn)",
+      "teardown": "proceso detenido; :18082 sin listener al terminar",
+      "migrations_state": "migraciones 011-013 YA aplicadas en la BD de datos (growth_metrics y wacc_metrics existen) y 1 fila de cada una para AAPL, sembradas por el Builder/reviewer en la corrida del 2026-09-29 01:33."
+    },
+    "checks": [
+      {
+        "id": "health",
+        "request": "GET http://127.0.0.1:18082/health",
+        "status": 200,
+        "ok": true,
+        "assertions": [
+          "status == 'ok' y database == 'connected'",
+          "tables == 11 entradas EXACTAMENTE (anti-deriva de M5.2, ahora incluye growth_metrics y wacc_metrics)",
+          "claves de nivel superior: database, db_size, latency_ms, postgres_version, status, tables, version (7; sin laptops)",
+          "postgres_version == '18.6'"
+        ],
+        "tables": [
+          "securities=10428", "daily_prices=54642", "fundamentals=39931", "derived_metrics=400",
+          "scores=50", "growth_metrics=1", "wacc_metrics=1", "watchlist=44",
+          "macro_series=67", "edgar_staging=44", "xbrl_concept_map=20"
+        ]
+      },
+      {
+        "id": "valuation_aapl",
+        "request": "GET http://127.0.0.1:18082/valuation/AAPL",
+        "status": 200,
+        "ok": true,
+        "assertions": [
+          "ticker='AAPL', price=341.07, currency='USD' — el contrato de M3 (price/currency pointers con omitempty) INTACTO",
+          "value conserva exactamente sus 5 claves de M3: graham, dcf, consensus, inputs, model_version ('1.1.0'); M6a no lo tocó",
+          "value.inputs sigue usando los defaults de M3: growth_rate=7, dcf_discount_rate=10, terminal_growth=2.5 (coherente con D12 del plan: los bloques growth/wacc son informativos hasta M6b)",
+          "growth.source == 'eps_fcf_3y' y growth.confidence == 'high' — EXACTAMENTE lo esperado",
+          "growth expone los 6 CAGR: revenue_cagr_3y=1.8125, revenue_cagr_5y=8.6774, eps_cagr_3y=6.8807, eps_cagr_5y=17.8618, fcf_cagr_3y=-3.9451, fcf_cagr_5y=6.1267 (fcf_3y NEGATIVO, no recortado a 0: el nil-vs-cero está bien)",
+          "growth.normalized_growth_rate == 1.4678 (valor real, no el fallback 7)",
+          "growth.clamped == false, growth.revenue_discrepancy == false",
+          "growth.as_of == '2026-09-28' y growth.model_version == '1.0.0' (trazabilidad presente)",
+          "wacc.source == 'configured_fallback' y wacc.confidence == 'low' — esperado, porque securities.beta es NULL en la BD (ver nota operativa)",
+          "wacc.beta == 1 (BetaAssumed) con wacc.beta_observed == false: la beta asumida se declara explícitamente, no se disfraza de observada",
+          "wacc == 9, cost_of_equity == 10, cost_of_debt_after_tax == 4.74, risk_free_rate == 4.5, equity_risk_premium == 5.5 (coherentes con .env.example: Kd 6 x (1-0.21) = 4.74; Ke = 4.5 + 1x5.5 = 10)",
+          "wacc.as_of == '2026-09-28', wacc.model_version == '1.0.0'"
+        ],
+        "growth_keys": ["normalized_growth_rate", "source", "confidence", "revenue_cagr_3y", "revenue_cagr_5y", "eps_cagr_3y", "eps_cagr_5y", "fcf_cagr_3y", "fcf_cagr_5y", "clamped", "revenue_discrepancy", "as_of", "model_version"],
+        "wacc_keys": ["wacc", "cost_of_equity", "cost_of_debt_after_tax", "risk_free_rate", "equity_risk_premium", "beta", "beta_observed", "source", "confidence", "as_of", "model_version"]
+      },
+      {
+        "id": "omitempty_bloque_completo",
+        "request": "GET http://127.0.0.1:18082/valuation/MSFT (ticker sin filas en growth_metrics/wacc_metrics)",
+        "status": 200,
+        "ok": true,
+        "assertions": [
+          "las claves 'growth' y 'wacc' NO aparecen en el body (verificado sobre el JSON crudo, no solo sobre las claves parseadas)",
+          "las 8 claves restantes del contrato de M3 siguen intactas: as_of, computed_at, currency, metrics, price, ticker, upside_pct, value",
+          "value conserva graham/dcf/consensus/inputs/model_version",
+          "VEREDICTO: omitempty respetado a nivel de bloque (puntero nil -> clave ausente, nunca null ni 0)"
+        ]
+      },
+      {
+        "id": "nil_no_serializado_como_cero",
+        "request": "Verificación en dos niveles",
+        "status": 200,
+        "ok": true,
+        "assertions": [
+          "nivel de bloque: demostrado en vivo con MSFT (arriba).",
+          "nivel de campo: los tipos de api.GrowthDetail / api.WaccDetail son *float64 + `json:\"…omitempty\"` para todos los rates (loader.go:96-126), de modo que un NULL de BD se omite y NO se emite 0. Cubierto además por internal/api/m6_integration_test.go (TestValuationExponeGrowthYWacc afirma explícitamente `if _, present := g[\"revenue_cagr_3y\"]; present { t.Fatal }`), que pasó en la suite.",
+          "coherencia de tipos frontend: web/src/api/types.ts declara TODOS los rates como opcionales (`normalized_growth_rate?: number`, `wacc?: number`, …) y los enteros no opcionales (clamped, revenue_discrepancy, beta_observed, source, confidence, as_of, model_version) coinciden con los `bool`/`string` sin omitempty de Go. `npm run build` (tsc estricto) valida esa correspondencia."
+        ]
+      },
+      {
+        "id": "404_ticker_inexistente",
+        "request": "GET http://127.0.0.1:18082/valuation/ZZZZNOTREAL",
+        "status": 404,
+        "ok": true,
+        "assertions": [
+          "sigue en envelope de error: {\"error\":{\"code\":\"not_found\",\"message\":\"security \\\"ZZZZNOTREAL\\\" no encontrada o sin datos de valoración\"}}",
+          "NO se filtra información de la BD ni cambia la forma del error al añadir los bloques M6a"
+        ],
+        "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"security \\\"ZZZZNOTREAL\\\" no encontrada o sin datos de valoración\"}}"
+      },
+      {
+        "id": "404_ticker_inexistente_otro_endpoint",
+        "request": "GET http://127.0.0.1:18082/securities/ZZZZNOTREAL",
+        "status": 404,
+        "ok": true,
+        "assertions": ["envelope de error de M1/M5 conservado: {\"error\":{\"code\":\"not_found\",\"message\":\"security \\\"ZZZZNOTREAL\\\" no encontrada\"}}"],
+        "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"security \\\"ZZZZNOTREAL\\\" no encontrada\"}}"
+      }
+    ],
+    "result": "5/5 checks OK. Ningún 5xx, ningún panic, ningún campo en 0 que deba ser nil."
+  },
+
+  "frontend": {
+    "command": "cd web && npm run build",
+    "exit": 0,
+    "ok": true,
+    "detail": "tsc (modo estricto) + vite build. 46 módulos, dist/index.html 0.40 kB, dist/assets/index-CD-PyuE9.css 20.09 kB (gzip 4.34), dist/assets/index-BeqNKrtA.js 204.52 kB (gzip 63.33), construido en 5.21s.",
+    "asset_hashes_unchanged_vs_m52": "index-BeqNKrtA.js e index-CD-PyuE9.css son los MISMOS hashes registrados en la evidencia de M5.2. Es lo correcto: el único cambio en web/ es web/src/api/types.ts, que añade SOLO interfaces TypeScript (43 líneas, +0/-0 en runtime), y los tipos se borran al compilar. El bundle no cambia, luego no hay riesgo de regresión de UI, pero TAMPOCO hay UI nueva en M6a: los bloques growth/wacc se exponen por API y aún no se pintan (coherente con D12: 'son informativos hasta M6b').",
+    "ui_scope_note": "informativo: M6a no incluye cambios de dashboard. Si algún criterio de aceptación de la SPEC exigiera mostrar G/WACC en la UI, eso NO está cubierto por esta milestone; verificar contra .ai/specs/abys-value-v2.md antes de cerrar."
+  },
+
+  "coverage": {
+    "command": "DATABASE_URL=<abys_test> go test ./... -tags=integration -count=1 -p 1 -cover",
+    "exit": 0,
+    "note": "Se REPORTA la cobertura medida; NO se aplica ni se inventa ningún umbral. El proyecto no define un gate de cobertura en el Makefile (no existe target de coverage ni `-coverprofile` en CI).",
+    "by_package": {
+      "cmd/api": 2.9,
+      "internal/api": 75.4,
+      "internal/backtest": 59.0,
+      "internal/collect/edgar": 81.0,
+      "internal/collect/finviz": 79.1,
+      "internal/collect/macro": 76.0,
+      "internal/collect/yahoo": 76.1,
+      "internal/compare": 53.8,
+      "internal/growth": 87.4,
+      "internal/metrics": 98.7,
+      "internal/pipeline": 45.2,
+      "internal/score": 88.8,
+      "internal/storage": 59.2,
+      "internal/valuation": 96.2,
+      "internal/wacc": 95.7
+    },
+    "m6a_packages": "internal/growth 87.4% y internal/wacc 95.7% — los dos paquetes nuevos están bien cubiertos.",
+    "watch": "internal/pipeline 45.2% es el más bajo de los paquetes tocados por M6a (crece con growthwacc.go). cmd/api 2.9% y internal/storage 59.2% ya eran bajos por diseño (thin main / SQL)."
+  },
+
+  "findings": [
+    {
+      "id": "F1",
+      "severity": "major",
+      "status": "preexistente (deuda F3) — CARACTERIZADO con precisión nueva; NO introducido por M6a, NO bloqueante",
+      "title": "La invocación que el propio plan M6a prescribe (H.3) da un FALSO VERDE: 39 tests de BD se saltan en silencio y el comando sale con exit 0",
+      "detail": "Los tests de integración leen la variable de entorno DATABASE_URL, NO TEST_DATABASE_URL. Con solo `export TEST_DATABASE_URL=<dsn>` y sin pasar por make, el Tester obtuvo 152 PASS / 0 FAIL / 39 SKIP con exit 0: los 39 tests de BD se saltaron (mensaje 'DATABASE_URL no configurado o BD no alcanzable; saltando tests de integración…'). El caso es idéntico al de `make integration` sin nada exportado, por la misma causa raíz: en la recipe `TEST_DATABASE_URL=$$TEST_DATABASE_URL $(MAKE) integration-run`, `$$…` se expande en la shell a la variable de ENTORNO (vacía si no está exportada) y esa variable vacía queda DEFINIDA, así que el `?=` del Makefile ya no aplica y la sub-invocación recibe `DATABASE_URL=` vacío. El log lo delata literalmente: el guard imprime '==> integración contra BD de test: postgres://abys:abys@localhost:55432/abys_test?sslmode=disable' (validando el default de make, que es correcto) y justo después ejecuta 'DATABASE_URL= go test -p 1 ./… -tags=integration'. Esto es MÁS PELIGROSO que la descripción original de F3 ('0 tests en verde'): aquí el guard anuncia una BD de test válida, 152 tests pasan y 39 desaparecen sin que nada lo delate salvo contar los SKIPs.",
+      "reproduction": [
+        { "cmd": "env -u TEST_DATABASE_URL -u DATABASE_URL make integration", "result": "152/0/39, exit 0", "guard_output": "==> integración contra BD de test: postgres://…/abys_test (engañoso)", "recipe": "DATABASE_URL= go test …" },
+        { "cmd": "export TEST_DATABASE_URL='…abys_test…' && go test ./... -tags=integration -count=1 -p 1", "result": "152/0/39, exit 0", "note": "esto es exactamente el paso H.3 del plan si se omite el `make`" },
+        { "cmd": "export TEST_DATABASE_URL='…abys_test…' && make integration", "result": "388/0/1, exit 0", "note": "ESTA sí es la vía correcta: make expande $(TEST_DATABASE_URL) con el valor exportado y lo propaga a la sub-make" },
+        { "cmd": "export DATABASE_URL='…abys_test…' && go test ./... -tags=integration -count=1 -p 1", "result": "388/0/1, exit 0", "note": "vía directa correcta (la que se usó para esta evidencia)" }
+      ],
+      "impact": "Cualquier agente u operador que 'verifique' integración con `make integration` sin exportar la variable, o exportando solo TEST_DATABASE_URL y llamando a go test directo, declarará la suite en verde sin haber ejecutado un solo test contra la BD. La evidencia de esta tarea (388/0/1) SÍ es genuina porque se obtuvo con DATABASE_URL exportada y se contrastó con la ejecución vía make (388/0/1 idéntico).",
+      "suggested_fix": "no es ámbito de M6a; anotar como deuda de tooling. Cambio de una línea: en la recipe de `integration`, sustituir `TEST_DATABASE_URL=$$TEST_DATABASE_URL` por `TEST_DATABASE_URL=$(TEST_DATABASE_URL)` (variable de make, ya validada por el guard), o bien hacer que el guard verifique el valor que realmente se exportará. Complementario: que los tests que se saltan por BD no configurable se marquen como FALLO cuando corre el tag `integration` bajo `make integration`, en vez de saltarse.",
+      "affects_m6a": false
+    },
+    {
+      "id": "F2",
+      "severity": "minor",
+      "status": "preexistente de M5.2 — CONFIRMADO que M6a NO lo introdujo",
+      "title": "tooling: la suite de integración no es autoverificable (solo se puede verificar contando SKIPs a mano)",
+      "detail": "Consecuencia directa de F1. No hay ninguna señal en el exit code que distinga 'todo corrió' de '39 tests se saltaron'. Mientras siga así, cada agente que reporte una suite de integración debe contar los SKIPs explícitamente (como se hizo aquí) o puede publicar un verde falso.",
+      "affects_m6a": false
+    },
+    {
+      "id": "F3",
+      "severity": "info",
+      "status": "esperado por diseño — NO es defecto",
+      "title": "OPERATIVO: securities.beta está a NULL en las 10428 filas de la BD, así que /valuation expone wacc=configured_fallback/low hasta re-ejecutar run-sector",
+      "detail": "Verificado en la BD de datos: `select count(*) filter (where beta is null), count(beta), count(*) from securities` -> 10428 / 0 / 10428. AAPL tampoco tiene beta. El motor NO degrada a cero ni inventa una beta observada: persistió beta=1 (= WACC_BETA_ASSUMED) con beta_observed=false, source=configured_fallback, confidence=low, wacc=9, que es exactamente el contrato de D7 para 'sin beta'. Basta con `make run-sector` (que ahora consulta assetProfile + defaultKeyStatistics) y luego `make run-growth` para que las securities con beta observada pasen a capm_hybrid/medium sin ningún cambio de código.",
+      "note": "Es el comportamiento esperado y está cubierto por tests (TestGrowthStageDegradaSinBeta, TestWACCBetaNulaEnCatalogoDegrada).",
+      "affects_m6a": false
+    },
+    {
+      "id": "F4",
+      "severity": "info",
+      "status": "observación de alcance — no bloqueante",
+      "title": "Los bloques growth/wacc son puramente informativos: ninguna fórmula los consume todavía",
+      "detail": "En vivo, /valuation/AAPL devuelve value.inputs.growth_rate=7 (GROWTH_RATE_DEFAULT de M3) y dcf_discount_rate=10, pese a que growth.normalized_growth_rate=1.4678 y wacc.wacc=9. Esto es lo decidido en D12 del plan y está documentado en .env.example y en el README ('las fórmulas de valoración aún siguen con los defaults de M3' / 'cablearlo aquí es de M6b'), por lo que es correcto para M6a. Se registra para que nadie interprete el bloque wacc como el WACC realmente usado por el DCF.",
+      "affects_m6a": false
+    }
+  ],
+
+  "secret_scan": {
+    "scope": "git diff completo (24 archivos modificados) + los 20 archivos no versionados de M6a, incluidos migrations/011-013, internal/growth/, internal/wacc/, internal/pipeline/growthwacc.go y docs/algorithms.md",
+    "patterns": ["api_key/apikey", "password", "secret", "bearer <token>", "postgres://user:pass@", "AKIA…", "BEGIN … PRIVATE KEY"],
+    "hits": 0,
+    "scanner_sanity_check": "el mismo regex se validó contra un archivo sintético con una credencial falsa: DETECTÓ ambas (postgres://…:PASS@ y api_key). El 0 de hits es por tanto un resultado real, no un escáner roto.",
+    "verdict": "no hay secretos en el árbol. .env.example solo añade nombres de variable con defaults numéricos seguros. Las migraciones son DDL con ADD COLUMN IF NOT EXISTS; securities.beta es dato público de mercado. Coincide con test-results/security/abys-m6a-growth-wacc.json (0 findings, 0 hard blocks)."
+  },
+
+  "git_scope_check": {
+    "git_mutated_by_tester": false,
+    "commits": 0,
+    "tags": 0,
+    "pushes": 0,
+    "branch": "sin cambios de rama",
+    "modified_tracked": 24,
+    "untracked": 20,
+    "product_files_touched_by_tester": 0,
+    "files_written_by_tester": ["test-results/tests/abys-m6a-growth-wacc.json"],
+    "infrastructure_leak_check": "OK: no hay .ai/, .opencode/, prompts de IA ni ficheros de registro de agente entre los modificados/no versionados. test-results/security/abys-m6a-growth-wacc.json (del Security Scanner) es evidencia de producto de la milestone, no infraestructura de IA.",
+    "scope_assessment": "El diff es coherente con M6a y con el plan .ai/plans/abys-m6a-growth-wacc.md: migraciones 011-013, internal/growth, internal/wacc, internal/pipeline/growthwacc.go, internal/storage/{growth,wacc}.go, beta en internal/collect/yahoo/{quote,update_sector}.go, los dos bloques en internal/api/loader.go, el conteo de 11 tablas en internal/api/health.go, el paso growth en internal/pipeline/pipeline.go y refresh.go, el target `run-growth` y el orden de run-all-data en el Makefile, los defaults GROWTH_*/WACC_* en .env.example, los tipos GrowthDetail/WaccDetail en web/src/api/types.ts, README actualizado (fila M6a, §13 env, §make, §esquema, sección nueva 'Growth Engine y WACC') y docs/algorithms.md. No se detectan cambios fuera del alcance de M6a.",
+    "readme_updated": true,
+    "readme_note": "a diferencia del hallazgo de M5.2, aquí el README SÍ se actualizó (fila M6a completada, 15 variables de entorno nuevas documentadas, 2 tablas nuevas, sección técnica nueva). No se repite el hallazgo de documentación de M5.2."
+  },
+
+  "reproducibility": {
+    "integration_runs": 2,
+    "integration_results": "388/0/1 en ambas (una vía `go test` directo con DATABASE_URL, otra vía `export TEST_DATABASE_URL=… && make integration`). No fue un acierto afortunado.",
+    "unit_runs": 1,
+    "unit_result": "252/0/0",
+    "smoke_against": "BD de datos 'abys' con las migraciones 011-013 aplicadas y 1 fila de growth_metrics/wacc_metrics para AAPL (sembradas antes de esta verificación)."
+  },
+
+  "operational_notes": [
+    "Órdenes verificadas por el Tester, de la más a la menos fiable para levantar la suite de integración: (1) `export DATABASE_URL='postgres://abys:abys@localhost:55432/abys_test?sslmode=disable' && go test ./... -tags=integration -count=1 -p 1`; (2) `export TEST_DATABASE_URL='…' && make integration`; (3) NUNCA `make integration` sin exportar, ni `export TEST_DATABASE_URL` + `go test` directo (ver F1).",
+    "El DSN por defecto del Makefile (abys:abys@localhost:55432/abys_test) autentica bien; /tmp/opencode/abys-secrets.env no hizo falta (y su DATABASE_URL apunta a la BD de datos, no a la de test).",
+    "Los tests de integración comparten la BD abys_test y la truncan (de ahí el -p 1). La suite restaura el estado al terminar; el smoke de API se hizo contra 'abys' en solo lectura.",
+    "Betas a 0 filas en BD (F3) → se resuelve con `make run-sector && make run-growth`; hasta entonces /valuation expone wacc=9 con source=configured_fallback y beta_observed=false, que es el contrato correcto, no un defecto.",
+    "Puertos: el smoke usó :18082 y lo liberó. :8080 y :8082 nunca se tocaron y siguen con sus procesos originales.",
+    "Migraciones 011-013 ya aplicadas en la BD de datos; en un entorno nuevo hay que correr `make migrate` antes de `make run-growth`.",
+    "`go vet -tags=integration ./...` (pide el plan H.3, no lo había reportado el Builder) también sale limpio."
+  ],
+
+  "verdict_reasoning": "PASS con hallazgos. Todos los conteos afirmados por Builder y Reviewer se reprodujeron de forma independiente (unit 252/0/0; integración 388/0/1 con el único SKIP preexistente de M4c; gofmt/build/vet limpios; build web OK; contrato API correcto con omitempty y nil≠0; 404 en envelope; sin secretos; diff acotado a M6a). Ningún fallo, ningún SKIP nuevo, ninguna regresión respecto a M5.2. El único hallazgo mayor (F1) es una dangerously-pasiva-agreement sobre la deuda F3 preexistente del Makefile: no es código de M6a, no altera el comportamiento de la milestone y no bloquea el avance, pero condiciona la fiabilidad de cualquier verificación futura de integración y conviene dejarla registrada como deuda de tooling con el remedio de una línea sugerido."
+}

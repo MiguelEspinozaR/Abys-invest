@@ -60,8 +60,16 @@ func TestHealthAmpliado(t *testing.T) {
 	if !ok {
 		t.Fatalf("tables debe ser array, got %T: %s", body["tables"], rec.Body.String())
 	}
-	if len(tables) != 9 {
-		t.Fatalf("se esperaban 9 tablas, got %d", len(tables))
+	// 11 desde M6a (las 9 de M5.2 + growth_metrics + wacc_metrics). La lista
+	// esperada se declara aquí a propósito: si se reutilizara la constante
+	// interna de producción el test sería tautológico.
+	wantTables := []string{
+		"securities", "daily_prices", "fundamentals", "derived_metrics", "scores",
+		"growth_metrics", "wacc_metrics", "watchlist", "macro_series",
+		"edgar_staging", "xbrl_concept_map",
+	}
+	if len(tables) != len(wantTables) {
+		t.Fatalf("se esperaban %d tablas, got %d", len(wantTables), len(tables))
 	}
 	rows := map[string]int64{}
 	var sum int64
@@ -80,6 +88,11 @@ func TestHealthAmpliado(t *testing.T) {
 		}
 		rows[name] = int64(n)
 		sum += int64(n)
+	}
+	for _, want := range wantTables {
+		if _, ok := rows[want]; !ok {
+			t.Errorf("tabla %q ausente en /health", want)
+		}
 	}
 	if rows["securities"] <= 0 {
 		t.Fatalf("securities.rows debe ser > 0, got %d", rows["securities"])
