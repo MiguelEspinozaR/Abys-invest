@@ -2,54 +2,47 @@ package score
 
 import "math"
 
-// scoreValuation scores the price against the intrinsic values (Graham and
-// DCF) with the user margin of safety (plan D5):
-//   - price < intrinsic × (1 − margin/100) → 100
-//   - linear decay to 0 as price approaches intrinsic
-//   - price >= intrinsic → 0
+// scoreIntrinsic scores a price against ONE intrinsic value with the user
+// margin of safety (§11/§12, the rule M4b already implemented):
 //
-// When both Graham and DCF are available the dimension scores the price
-// against their AVERAGE (decision 2026-09-23: average consensus, previously
-// a 60% Graham / 40% DCF blend); with one, that one; with none, 50 (neutral,
-// sin datos).
-func scoreValuation(price float64, graham, dcf *float64, marginOfSafety float64) float64 {
-	single := func(intrinsic *float64) *float64 {
-		if intrinsic == nil || *intrinsic <= 0 || price <= 0 {
-			return nil
-		}
-		floor := *intrinsic * (1 - marginOfSafety/100)
-		if price <= floor {
-			out := 100.0
-			return &out
-		}
-		if price >= *intrinsic {
-			out := 0.0
-			return &out
-		}
-		// Decaimiento lineal: floor→100, intrinsic→0.
-		out := 100 * (*intrinsic - price) / (*intrinsic - floor)
-		out = clamp(out, 0, 100)
+//	price <= intrinsic × (1 − margin/100) → 100
+//	price >= intrinsic                   → 0
+//	linear in between
+//
+// It returns nil (INVALID dimension) when the intrinsic value is missing or not
+// positive, or when the price is not positive. The M4b `return 50` neutral is
+// GONE: §18 renormalises by active_weight_sum, and a fabricated 50 for a
+// company without EPS or FCF would be a score about data the system does not
+// have.
+func scoreIntrinsic(price float64, intrinsic *float64, marginOfSafety float64) *float64 {
+	if intrinsic == nil || *intrinsic <= 0 || price <= 0 {
+		return nil
+	}
+	floor := *intrinsic * (1 - marginOfSafety/100)
+	if price <= floor {
+		out := 100.0
 		return &out
 	}
-
-	g := single(graham)
-	d := single(dcf)
-	switch {
-	case g != nil && d != nil:
-		// Ambos intrínsecos válidos: promediar los VALORES y puntuar el
-		// precio contra ese promedio (decisión 2026-09-23).
-		avg := (*graham + *dcf) / 2
-		if v := single(&avg); v != nil {
-			return *v
-		}
-		return 50
-	case g != nil:
-		return *g
-	case d != nil:
-		return *d
-	default:
-		return 50
+	if price >= *intrinsic {
+		out := 0.0
+		return &out
 	}
+	// Decaimiento lineal: floor→100, intrinsic→0.
+	out := 100 * (*intrinsic - price) / (*intrinsic - floor)
+	out = clamp(out, 0, 100)
+	return &out
+}
+
+// scoreGraham is the §12 dimension over graham_base and scoreDCF the one over
+// dcf_base: the SAME rule applied to two DIFFERENT numbers, never averaged
+// together (ADR D16 — the average was what hid the disagreement between the
+// methods, and §9 wants that disagreement visible).
+func scoreGraham(price float64, grahamBase *float64, marginOfSafety float64) *float64 {
+	return scoreIntrinsic(price, grahamBase, marginOfSafety)
+}
+
+func scoreDCF(price float64, dcfBase *float64, marginOfSafety float64) *float64 {
+	return scoreIntrinsic(price, dcfBase, marginOfSafety)
 }
 
 // percentileToBand convierte un valor a banda según umbrales crecientes donde

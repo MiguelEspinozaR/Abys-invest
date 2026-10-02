@@ -73,24 +73,32 @@ func seedPipelineAAPL(t *testing.T) {
 
 	// Fundamentales FY2025 (misma forma que el fixture M3 de la API).
 	periodEnd := time.Date(2025, 9, 28, 0, 0, 0, 0, time.UTC)
+	filingDate := periodEnd
 	fy := "FY"
 	src := "test"
 	u := "USD"
-	val := func(concept string, v float64) storage.Fundamental {
+	val := func(concept string, v float64, instant bool) storage.Fundamental {
 		vv := v
-		return storage.Fundamental{
+		f := storage.Fundamental{
 			SecurityID: sec.ID, Concept: concept, Value: &vv, Unit: &u,
-			PeriodType: "P", PeriodStart: &periodEnd, PeriodEnd: periodEnd,
-			FiscalYear: int16p(2025), FiscalPeriod: &fy, FilingDate: &periodEnd,
+			PeriodType: "P", PeriodEnd: periodEnd,
+			FiscalYear: int16p(2025), FiscalPeriod: &fy, FilingDate: &filingDate,
 			Source: src,
 		}
+		if instant {
+			f.PeriodType = "instant"
+			f.PeriodStart = nil // instant facts: period_start IS NULL (EDGAR real)
+		} else {
+			f.PeriodStart = &periodEnd
+		}
+		return f
 	}
 	funds := []storage.Fundamental{
-		val("net_earnings", 112000), val("shares_outstanding", 15400),
-		val("shareholders_equity", 62000), val("total_liabilities", 302000),
-		val("free_cash_flow", 98500), val("long_term_debt", 98959),
-		val("short_term_debt", 19987), val("cash_and_equivalents", 29943),
-		val("operating_cash_flow", 118254), val("capex", 19749),
+		val("net_earnings", 112000, false), val("shares_outstanding", 15400, true),
+		val("shareholders_equity", 62000, true), val("total_liabilities", 302000, true),
+		val("free_cash_flow", 98500, false), val("long_term_debt", 98959, true),
+		val("short_term_debt", 19987, true), val("cash_and_equivalents", 29943, true),
+		val("operating_cash_flow", 118254, false), val("capex", 19749, false),
 	}
 	tx, err := integPool.Begin(ctx)
 	if err != nil {

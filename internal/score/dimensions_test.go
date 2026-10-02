@@ -76,23 +76,14 @@ func TestScoreFundamentalsNilMetrics(t *testing.T) {
 
 func TestJustificationContainsKeyParts(t *testing.T) {
 	input := ScoreInput{
-		Ticker: "AAPL", Price: 230, GrahamIntrinsic: fp(144.45),
+		Ticker: "AAPL", Price: 230, GrahamBase: fp(144.45), DCFBase: fp(121.16),
 		Metrics: aaplMetrics(), SectorCount: 2,
 		SMA50: fp(250), SMA200: fp(200), MarginOfSafety: 30,
 	}
 	res := CalculateScore(input)
-	for _, want := range []string{"AAPL", "score", "Valoración", "Métricas", "Comparables", "Tendencia", "VENDER"} {
+	for _, want := range []string{"AAPL", "score", "Graham", "DCF", "Métricas", "Comparables", "Tendencia", "VENDER"} {
 		if !containsStr(res.Justification, want) {
 			t.Fatalf("justificación sin %q: %q", want, res.Justification)
 		}
 	}
-}
-
-func containsStr(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

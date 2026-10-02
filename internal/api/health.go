@@ -35,18 +35,19 @@ type HealthResponse struct {
 	LatencyMS       *float64           `json:"latency_ms,omitempty"`       // puntero: 0.00 debe salir
 	PostgresVersion string             `json:"postgres_version,omitempty"` // "18.6"
 	DBSize          string             `json:"db_size,omitempty"`          // "21 MB"
-	Tables          []HealthTableCount `json:"tables,omitempty"`           // 11 entradas
+	Tables          []HealthTableCount `json:"tables,omitempty"`           // 12 entradas
 }
 
-// healthTableNames: esquema público de main_tables (SPEC §6 M5.2 + M6a).
+// healthTableNames: esquema público de main_tables (SPEC §6 M5.2 + M6a + M6b).
 // Fuente única de verdad en Go: alimenta el SQL de conteos y el test de
 // integración que lo compara con information_schema (anti-deriva, riesgo R2).
-// Las dos tablas de M6a (growth_metrics, wacc_metrics) entran en la lista: si
-// faltaran, /health seguiría respondiendo ok mientras dos etapas del pipeline
-// escriben en tablas que nadie vigila.
+// Las tablas de M6a (growth_metrics, wacc_metrics) y la de M6b
+// (valuation_results) entran en la lista: si faltaran, /health seguiría
+// respondiendo ok mientras etapas del pipeline escriben en tablas que nadie
+// vigila, y el conteo de la respuesta mentiría sobre la base real.
 var healthTableNames = []string{
 	"securities", "daily_prices", "fundamentals", "derived_metrics",
-	"scores", "growth_metrics", "wacc_metrics",
+	"scores", "growth_metrics", "wacc_metrics", "valuation_results",
 	"watchlist", "macro_series", "edgar_staging", "xbrl_concept_map",
 }
 

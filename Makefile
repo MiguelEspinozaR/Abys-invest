@@ -25,7 +25,7 @@ MARGIN_SAFETY    ?= 30
 DCF_DISCOUNT     ?= 10
 COMP_MIN_SEC     ?= 5
 
-.PHONY: build build-web build-all deploy-local test lint vet docker-up docker-down migrate air-install dev-api run-api run-collector run-prices run-macro run-sector run-growth run-analytics run-scores run-all-data integration integration-run clean
+.PHONY: build build-web build-all deploy-local test lint vet docker-up docker-down migrate air-install dev-api run-api run-collector run-prices run-macro run-sector run-growth run-valuation run-analytics run-scores run-all-data integration integration-run clean
 
 ## build: compila api, collector y analytics en bin/
 build:
@@ -107,6 +107,11 @@ run-macro:
 run-growth:
 	DATABASE_URL=$(DATABASE_URL) go run ./cmd/analytics -job growth -tickers $(TICKERS)
 
+## run-valuation: motor de valoración 2.0.0 (M6b) → valuation_results.
+## Consume el growth/wacc ya persistido y los FY as-of del último precio.
+run-valuation:
+	DATABASE_URL=$(DATABASE_URL) go run ./cmd/analytics -job valuation -tickers $(TICKERS)
+
 ## run-analytics: cálculo de métricas derivadas (8 métricas §13)
 run-analytics:
 	DATABASE_URL=$(DATABASE_URL) GROWTH_RATE_DEFAULT=$(G) go run ./cmd/analytics -tickers $(TICKERS)
@@ -121,10 +126,11 @@ run-scores:
 		DCF_DISCOUNT_RATE=$(DCF_DISCOUNT) COMPARABLES_MIN_SECURITIES=$(COMP_MIN_SEC) \
 		go run ./cmd/analytics -job scores -tickers $(TICKERS)
 
-## run-all-data: pipeline E2E M3 + M6a (migrate → ingesta → sector → growth/wacc →
-## métricas → score). growth va antes de métricas: ese es el orden del pipeline.
+## run-all-data: pipeline E2E M3 + M6a + M6b (migrate → ingesta → sector →
+## growth/wacc → valuation → métricas → score). El orden NO es cosmético:
+## cada etapa consume la fila persistida por la anterior (M6b C2).
 run-all-data:
-	$(MAKE) migrate run-collector run-prices run-macro run-sector run-growth run-analytics run-scores
+	$(MAKE) migrate run-collector run-prices run-macro run-sector run-growth run-valuation run-analytics run-scores
 
 ## integration: tests de integración end-to-end (requiere BD de pruebas).
 ## Se usan -p 1 (secuencial): los paquetes comparten la misma BD de tests y
@@ -134,7 +140,7 @@ run-all-data:
 ## (p. ej. /abys o /5432/abys) se aborta para no truncar datos reales.
 integration:
 	@sh -c 'case "$(TEST_DATABASE_URL)" in */*_test?*) echo "==> integración contra BD de test: $(TEST_DATABASE_URL)";; *) echo "ERROR: TEST_DATABASE_URL debe apuntar a una BD *_test (no a la de producción): $(TEST_DATABASE_URL)" 1>&2; exit 1;; esac'
-	TEST_DATABASE_URL=$$TEST_DATABASE_URL $(MAKE) integration-run
+	TEST_DATABASE_URL='$(TEST_DATABASE_URL)' $(MAKE) integration-run
 
 integration-run:
 	DATABASE_URL=$(TEST_DATABASE_URL) go test -p 1 ./... -count=1 -tags=integration

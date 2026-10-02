@@ -2,7 +2,7 @@
 
 **Value investing analysis engine** — SEC EDGAR fundamentals → score 0-100 with buy/hold/sell signal, Graham/DCF intrinsic value, comparables & SMA backtest.
 
-> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M6. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**. **M4d ✔ (Air live-reload dev + deploy opcional) completed**. **M5 ✔ (buscador + watchlist) completed.** **M5.1 ✔ (watchlist integración: pipeline asíncrono, GET /pipeline/status, ingesta automática en 2º plano, Mi watchlist en dashboard) completed.** **M5.2 ✔ (página Health: GET /health ampliado + sidebar con secciones Finanzas/Sistema) completed** (2026-09-27; suite 276/0/1). **M6a ✔ (Growth Engine + WACC/CAPM con beta de Yahoo) completed** (growth_metrics, wacc_metrics, bloques `growth`/`wacc` en `/valuation`, etapa de pipeline `growth`, /health con 11 tablas; las fórmulas de valoración aún siguen con los defaults de M3). Suite unit 252/0/0 + integración 388/0/1.
+> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M6. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**. **M4d ✔ (Air live-reload dev + deploy opcional) completed**. **M5 ✔ (buscador + watchlist) completed.** **M5.1 ✔ (watchlist integración: pipeline asíncrono, GET /pipeline/status, ingesta automática en 2º plano, Mi watchlist en dashboard) completed.** **M5.2 ✔ (página Health: GET /health ampliado + sidebar con secciones Finanzas/Sistema) completed** (2026-09-27; suite 276/0/1). **M6a ✔ (Growth Engine + WACC/CAPM con beta de Yahoo) completed** (growth_metrics, wacc_metrics, bloques `growth`/`wacc` en `/valuation`, etapa de pipeline `growth`, /health con 11 tablas; las fórmulas de valoración aún siguen con los defaults de M3). Suite unit 252/0/0 + integración 388/0/1. **M6b ✔ (motor de valoración 2.0.0) completed** (escenarios Bear/Base/Bull en Graham y DCF con el growth normalizado y el WACC individual de M6a, margin of safety por método, valuation uncertainty/confidence con `reasons`, sin `consensus_intrinsic` ni `upside_pct`, tabla `valuation_results` (migración 014), etapa de pipeline `valuation`, `/valuation` 2.0.0 y score 2.0.0 con 5 dimensiones, /health con 12 tablas). Suite unit 344/0/0 + integración 480/0/1.
 
 ---
 
@@ -18,10 +18,11 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 | M2 — Prices & Metrics | ✅ Done | Yahoo Finance v8 chart adapter, BLS CPI macro, engine de métricas (EPS, P/E, P/B, P/FCF, PEG, ROE, D/E, FCF Yield) |
 | M3 — Valuation & Score | ✅ Done | Graham `(2×g)+8.5` × EPS último FY, DCF simplificado (WACC 10%, 5a, g_term 2.5%), margin of safety, score 0-100 (pesos 35/30/20/15, umbrales ≥70/40-69/<40), comparables sectoriales, backtest SMA 50/200, API REST completa (11 endpoints). Calibración 2026-09-23 con pares sectoriales reales; hotfix M3 (aislamiento security_id + guardado de métricas NULL). |
 | M6a — Growth & WACC | ✅ Done | Motor de crecimiento (CAGR 3y/5y sobre series FY anuales, blend EPS/FCF) + WACC CAPM con beta observada de Yahoo y fallback configurado, persistidos por security y expuestos en `/valuation`. |
+| M6b — Valuation engine 2.0.0 | ✅ Done | `internal/valuation` puro (`Calculate(Inputs,Config)` + `ConfigFromEnv`, `model_version` 2.0.0): Graham y DCF como métodos **independientes** con tres escenarios (Bear/Base/Bull), growth inicial con transición a normalizado (cap 5 pp) y WACC individual, margin of safety por método (target `MARGIN_OF_SAFETY`=30), Valuation Uncertainty expuesta cruda, Valuation Confidence `high/medium/low` **solo por cobertura de inputs** con `reasons`, política No Valuation por método, PEG y P/FCF aditivos sobre el growth individual; reversión total del consenso de M4b (ya no hay `consensus_intrinsic` ni `upside_pct`). Persistencia en `valuation_results` (migración 014, 1 fila por `security_id`+`as_of`+`model_version`), etapa de pipeline `valuation` entre `growth` y `metrics`, `/valuation` 2.0.0 (`value` anidado + `valuation_source`) y score 2.0.0 con 5 dimensiones. |
 | M4 — UI & Deploy | ✅ Done | Dashboard React + Vite + Tailwind en `web/`, estáticos servidos por API Go (FileServer + SPA fallback), deploy systemd. Alertas (CA M4-2) diferidas a M6 por decisión usuario 2026-09-23. |
 | M5 — Buscador + Watchlist | ✅ Done | `GET /securities/search?q=&limit=`, `GET /watchlist` (content negotiation: text/html→SPA, application/json→JSON, `Vary: Accept`), `PUT/DELETE /watchlist/{ticker}` (loopback-only, 403 fuera de localhost, idempotentes, 404 ticker no catalogado); página `/watchlist` con buscador (debounce 300ms, min 2 chars). Watchlist permite delistados. Suite 248/0/1. |
 | M5.1 — Watchlist integración | ✅ Done | `POST /force-refresh` ahora **asíncrono** (202 Accepted + estado inicial; job en 2º plano con `context.Background()` + timeout 30 min, NO el contexto del HTTP request); nuevo `GET /pipeline/status` (8 claves: `status` idle\|running\|done\|error, `kind` watchlist\|force, `tickers`, `steps` {edgar,prices,sector,metrics,scores}, `started_at`, `finished_at`, `error`, `pending`); `PUT /watchlist/{ticker}` dispara ingesta en 2º plano (prices→sector→metrics→scores, SIN EDGAR), cola FIFO con dedup por ticker si hay job corriendo; `GET /watchlist` ampliado con `score` (number\|null) y `signal` (string\|null) del último score por LEFT JOIN LATERAL; dashboard con sección "Mi watchlist" (tarjetas ticker/nombre/score/signal, enlace /ticker/{ticker}, "procesando…" mientras job corre). El SPA hace polling de `GET /pipeline/status` (intervalo 1.5s). Navegar/recargar YA NO aborta el pipeline (era el bug "failed to fetch"). Suite 269/0/1; bundle `index-BDERmpRv.js`. |
-| M5.2 — Página Health | ✅ Done | `GET /health` ampliado **aditivamente** (4 campos nuevos sin tocar el contrato M1): response 200 (BD conectada) `{status, database, version, latency_ms (ms ping), postgres_version (e.g. "18.6"), db_size (e.g. "21 MB"), tables: [{name, rows}...]}` con 9 tablas en M5.2 (**11 desde M6a**: + `growth_metrics`, `wacc_metrics`): securities, daily_prices, fundamentals, derived_metrics, scores, watchlist, macro_series, edgar_staging, xbrl_concept_map. 503 sin BD: SOLO `{status:degraded, database:disconnected, version}` (3 claves; los campos ampliados van omitted). Timeout de contexto 3s; status HTTP depende solo del Ping; si metadata/conteos fallan → 200 con campos presentes + `slog.Warn`. Frontend: nuevo sidebar/layout (`web/src/components/Layout.tsx`) con secciones "Finanzas" (Dashboard, Watchlist) y "Sistema" (Health); nueva página `/health` (HealthPage.tsx) con 4 tarjetas (Conexión, Latencia, Versión PostgreSQL, Tamaño) + tabla de tablas con conteos + botón Refrescar con spinner + "Última comprobación" localizada es-BO. Bundle nuevo: `index-BeqNKrtA.js` (CSS `index-CD-PyuE9.css`). Suite 276/0/1 (165 unit/0/0 + integración). F5 en `/health` muestra JSON crudo (aceptado por diseño). |
+| M5.2 — Página Health | ✅ Done | `GET /health` ampliado **aditivamente** (4 campos nuevos sin tocar el contrato M1): response 200 (BD conectada) `{status, database, version, latency_ms (ms ping), postgres_version (e.g. "18.6"), db_size (e.g. "21 MB"), tables: [{name, rows}...]}` con 9 tablas en M5.2 (**12 desde M6b**: 11 de M6a + `valuation_results`): securities, daily_prices, fundamentals, derived_metrics, scores, watchlist, macro_series, edgar_staging, xbrl_concept_map, growth_metrics, wacc_metrics, valuation_results. 503 sin BD: SOLO `{status:degraded, database:disconnected, version}` (3 claves; los campos ampliados van omitted). Timeout de contexto 3s; status HTTP depende solo del Ping; si metadata/conteos fallan → 200 con campos presentes + `slog.Warn`. Frontend: nuevo sidebar/layout (`web/src/components/Layout.tsx`) con secciones "Finanzas" (Dashboard, Watchlist) y "Sistema" (Health); nueva página `/health` (HealthPage.tsx) con 4 tarjetas (Conexión, Latencia, Versión PostgreSQL, Tamaño) + tabla de tablas con conteos + botón Refrescar con spinner + "Última comprobación" localizada es-BO. Bundle nuevo: `index-BeqNKrtA.js` (CSS `index-CD-PyuE9.css`). Suite 276/0/1 (165 unit/0/0 + integración). F5 en `/health` muestra JSON crudo (aceptado por diseño). |
 | M4b — Consenso promedio + señal textual | ✅ Done | Señal en UI como palabra `comprar\|mantener\|vender` (sin duplicar el score); columnas Graham y DCF por ticker; consenso = promedio `(graham+dcf)/2`; `model_version` 1.1.0. Decisión usuario 2026-09-23. |
 | M4c — Refresh de datos + fix mapeo XBRL | ✅ Done | Botones "Recalcular métricas" (`POST /refresh`) y "Pipeline completo" (`POST /force-refresh`) en el dashboard; fix del diccionario XBRL con 6 variantes GAAP nuevas; DCF operativo para NVDA (65.72), QCOM (188.9), ADBE (394.3), CRM (245.5), CSCO (46.9), IBM (162.2). Suite 195/0/0. |
 
@@ -42,7 +43,8 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 │  ┌──────────┐    └──────────┘  │  internal/pipeline   │ │      │
 │  │  cmd/    │                  │  (jobs: edgar,       │ │      │
 │  │  analytics│  (M2+M3)         │  prices, sector,     │ │      │
-│  │  jobs    │                  │  metrics, scores)    │ │      │
+│  │  jobs    │                  │  growth, valuation,  │ │      │
+│  │           │                  │  metrics, scores)    │ │      │
 │  └──────────┘                  │  internal/storage  │ │      │
 │                                  │  - securities        │ │      │
 │  ┌──────────┐                  │  - fundamentals      │ │      │
@@ -51,6 +53,9 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 │                                  │  - macro_series        │ │      │
 │                                  │  - derived_metrics     │ │      │
 │                                  │  - scores (M3)         │ │      │
+│                                  │  - growth_metrics      │ │      │
+│                                  │  - wacc_metrics (M6a)  │ │      │
+│                                  │  - valuation_results   │ │      │
 │                                  │  - migrations/         │ │      │
 │                                  │  - xbrl_concept_map    │ │      │
 │                                  │  - hypertables (TSDB)  │ │      │
@@ -63,12 +68,53 @@ Abys-Invest is a personal value investing application. It fetches financial stat
 │  internal/metrics/        # Motor de métricas derivadas (ADR-0004)  │
 │    formulas.go            # EPS, P/E, P/B, P/FCF, PEG, ROE, D/E   │
 │    engine.go              # CalculateMetrics, BuildDerivedMetrics  │
-│  internal/valuation/      # Graham (2×g+8.5)×EPS + DCF simplificado│
-│    valuation.go           # CalcIntrinsicValue, Graham, DCF        │
-│    graham.go              # Graham intrinsic value                 │
-│    dcf.go                 # Simplified DCF (WACC, horizon, term)   │
-│  internal/score/          # Score 0-100 con señal buy/hold/sell    │
-│    score.go               # CalculateScore, pesos 35/30/20/15      │
+│  internal/valuation/      # Motor de valoración 2.0.0 (M6b)         │
+│    valuation.go           # Calculate(Inputs,Config), Result, Method │
+│    graham.go              # Graham por escenarios (2g+8.5 × EPS)   │
+│    dcf.go                 # DCF por escenarios (WACC, transición)   │
+│    mos.go                 # Margin of safety por método             │
+│    uncertainty.go         # Uncertainty (mean/std/dispersion)        │
+│    confidence.go          # Confidence high|medium|low + reasons    │
+│    peg.go                 # PEG y P/FCF aditivos (§15)              │
+│    config.go              # Config, DefaultConfig, ConfigFromEnv   │
+│  internal/score/          # Score 0-100 con señal buy/hold/sell     │
+│    score.go               # CalculateScore, pesos 15/20/30/20/15   │
+│    dimensions.go          # graham/dcf/fundamentals/comps/trend    │
+│    justification.go       # Plantillas de justificación textual     │
+│  internal/compare/        # Comparables sectoriales + riesgo       │
+│    compare.go             # ComputeComparables, CompareAssets      │
+│    normalize.go           # Base-100, vol anualizada, maxDD, Sharpe│
+│  internal/backtest/       # Backtest SMA 50/200 sin lookahead      │
+│    backtest.go            # RunSMABacktest, golden-rule crossover  │
+│  internal/api/            # HTTP REST M3: 11 endpoints + errores   │
+│    router.go              # ServeMux: /securities, /prices, etc.   │
+│    handlers.go            # Handlers por ruta                      │
+│    loader.go              # Proyección de /valuation y /score       │
+│    errors.go              # JSON error envelope {error:{code,msg}} │
+│    middleware.go          # Logging, panic recovery, /health        │
+│  cmd/analytics/           # CLI wrapper (jobs)                      │
+│  cmd/collector/           # CLI wrapper (ingesta)                   │
+│  internal/pipeline/       # Jobs de pipeline                       │
+└─────────────────────────────────────────────────────────────────┘
+│                                                                    │
+│  internal/collect/        # adaptadores por proveedor (ADR-0003)   │
+│    edgar/                 # SEC EDGAR client + XBRL parser         │
+│    yahoo/                 # Yahoo Finance v8 chart + quoteSummary  │
+│    macro/                 # BLS Public API v2 adapter (CPI)        │
+│  internal/metrics/        # Motor de métricas derivadas (ADR-0004)  │
+│    formulas.go            # EPS, P/E, P/B, P/FCF, PEG, ROE, D/E   │
+│    engine.go              # CalculateMetrics, BuildDerivedMetrics  │
+│  internal/valuation/      # Motor de valoración 2.0.0 (Graham + DCF)     │
+│    valuation.go           # Calculate(Inputs,Config), Result, Methods     │
+│    graham.go              # Graham por escenarios (2g+8.5 × EPS)          │
+│    dcf.go                 # DCF por escenarios (WACC, transición, term)   │
+│    mos.go                 # Margin of safety por método                   │
+│    uncertainty.go         # Valuation uncertainty (mean/std/dispersion)    │
+│    confidence.go          # Valuation confidence high|medium|low + reasons │
+│    peg.go                 # PEG y P/FCF aditivos (§15, growth individual) │
+│    config.go              # Config, DefaultConfig, ConfigFromEnv          │
+│  internal/score/          # Score 0-100 con señal buy/hold/sell            │
+│    score.go               # CalculateScore, pesos 15/20/30/20/15 (2.0.0)   │
 │    dimensions.go          # valuation/fundamentals/comparables/trend│
 │    justification.go       # Plantillas de justificación textual     │
 │  internal/compare/        # Comparables sectoriales + riesgo       │
@@ -92,17 +138,22 @@ Flujo de datos:
   Yahoo v8  → yahoo/adapter → daily_prices (hypertable si TSDB)
   BLS CPI   → macro/adapter → macro_series  (hypertable si TSDB)
   daily_prices + fundamentals → metrics/engine → derived_metrics
-  derived_metrics + fundamentals + prices → valuation → intrinsic value
-  derived_metrics + sector peers → score/engine → score 0-100 + señal
+  fundamentals + prices + growth_metrics + wacc_metrics → valuation/engine
+    → valuation_results (6 escenarios, MOS, uncertainty, confidence)
+  valuation_results + derived_metrics + sector peers → score/engine → score 0-100 + señal
   daily_prices → backtest/sma → backtest results (SMA 50/200)
   daily_prices → compare → base-100, vol, maxDD, Sharpe
   daily_prices → yahoo/quoteSummary → sector/industry enrichment + securities.beta
   fundamentals + daily_prices → growth/engine + wacc/engine → growth_metrics + wacc_metrics
 ```
 
-**Orden de etapas del pipeline (M6a):** edgar → prices → sector → **growth** (growth + wacc, siempre
-antes de metrics/scores) → metrics → scores. El stage `growth` es **BD-local** (no red), igual que
-`metrics`/`scores`, así que `POST /refresh` (y la ingesta de watchlist) también lo ejecutan sin red.
+**Orden de etapas del pipeline (M6a + M6b):** edgar → prices → sector → **growth** (growth + wacc)
+→ **valuation** (motor 2.0.0) → metrics → scores. El orden **no es cosmético**: `valuation` consume
+las filas de `growth_metrics`/`wacc_metrics` que escribe `growth`, y `scores` consume las de
+`valuation_results`; sin esa fila el score se renormaliza sin las dimensiones Graham/DCF. Los stages
+`growth`, `valuation`, `metrics` y `scores` son **BD-local** (sin red), así que `POST /refresh` (y la
+ingesta de watchlist) también los ejecutan sin red. `valuation` es además una etapa **observable**
+(`steps.valuation` en `/pipeline/status` y en la respuesta de `POST /refresh`).
 
 **Módulos implementados (M1+M2+M3+M4+M5+M6a):**
 
@@ -110,24 +161,24 @@ antes de metrics/scores) → metrics → scores. El stage `growth` es **BD-local
 |--------|------|-----------|
 | `cmd/api` | `cmd/api/main.go` | Servidor HTTP con 11 endpoints REST + `GET /health` ampliado (M5.2: `status`, `database`, `version`, `latency_ms`, `postgres_version`, `db_size`, `tables`) |
 | `cmd/collector` | `cmd/collector/main.go` | CLI wrapper: worker de ingesta (SEC EDGAR, Yahoo prices, BLS macro, **sector/industry enrichment + beta**) (`-job edgar\|prices\|macro\|sector\|all`) |
-| `cmd/analytics` | `cmd/analytics/main.go` | CLI wrapper: cálculo batch de métricas derivadas (`-tickers`, `-g`, `-dry-run`) y jobs **growth** (M6a) y scores (`-job growth\|metrics\|scores\|all`) |
-| `internal/pipeline` | `internal/pipeline/` | Jobs de pipeline: edgar, prices, sector, **growth (M6a)**, metrics, scores (wrappers CLI sobre `cmd/collector`/`cmd/analytics`); contratos de invocación intactos |
+| `cmd/analytics` | `cmd/analytics/main.go` | CLI wrapper: cálculo batch de métricas derivadas (`-tickers`, `-g`, `-dry-run`) y jobs **growth** (M6a), **valuation** (M6b) y scores (`-job growth\|valuation\|metrics\|scores\|all`) |
+| `internal/pipeline` | `internal/pipeline/` | Jobs de pipeline: edgar, prices, sector, **growth (M6a)**, **valuation (M6b)**, metrics, scores (wrappers CLI sobre `cmd/collector`/`cmd/analytics`); contratos de invocación intactos |
 | `internal/collect/edgar` | `internal/collect/edgar/` | Cliente SEC EDGAR, parser XBRL companyfacts, mapeo canónico |
 | `internal/collect/yahoo` | `internal/collect/yahoo/` | Adaptador Yahoo Finance v8 chart + **quoteSummary** (sector/industry) |
 | `internal/collect/macro` | `internal/collect/macro/` | Adaptador BLS Public API v2 (serie CPI-U CUSR0000SA0) |
 | `internal/metrics` | `internal/metrics/` | Motor de métricas: 8 fórmulas Anexo §13 (EPS, P/E, P/B, P/FCF, PEG, ROE, D/E, FCF Yield) |
-| `internal/valuation` | `internal/valuation/` | **Valoración intrínseca**: Graham `(2×g)+8.5` × EPS último FY; DCF simplificado WACC 10%, 5 años, g_terminal 2.5% |
+| `internal/valuation` | `internal/valuation/` | **Motor de valoración 2.0.0 (M6b)**: `Calculate(Inputs,Config)` puro + `ConfigFromEnv`; Graham `(2×g)+8.5` × EPS y DCF como métodos independientes con escenarios **bear/base/bull**, growth normalizado de M6a (con transición y cap de 5 pp), WACC individual con precedencia de 4 niveles, margin of safety por método, uncertainty y confidence con `reasons`, No Valuation por método, PEG y P/FCF aditivos; `model_version` 2.0.0 sin `consensus_intrinsic` ni `upside_pct` |
 | `internal/growth` | `internal/growth/` | **Growth Engine (M6a)**: CAGR 3a/5a de revenue/EPS/FCF sobre series FY anuales, blend EPS/FCF renormalizado, `normalized_growth_rate` clampado a [-10, 25] con `confidence` y `source`; `Calculate` puro + `ConfigFromEnv` |
 | `internal/wacc` | `internal/wacc/` | **WACC CAPM (M6a)**: `Ke = Rf + β×ERP` con β observada, `E = close × shares_outstanding`, `D = total_debt`, `Kd·(1−t)`, pesos E/D y taxonomía de 3 niveles de `source`; degradación explícita a `configured_fallback` |
-| `internal/score` | `internal/score/` | **Score 0-100**: 4 dimensiones ponderadas (35/30/20/15), señal comprar/mantener/vender, justificación por plantillas |
+| `internal/score` | `internal/score/` | **Score 0-100**: `model_version` 2.0.0 con **5 dimensiones** ponderadas (graham 0.15 / dcf 0.20 / fundamentals 0.30 / comparables 0.20 / trend 0.15) + `weight_used`, señal comprar/mantener/vender, justificación por plantillas |
 | `internal/compare` | `internal/compare/` | **Comparables sectoriales** (peer set, medianas) + **comparativa de activos** (base 100, vol anualizada, maxDD, Sharpe) |
 | `internal/backtest` | `internal/backtest/` | **Backtest SMA 50/200** sin lookahead, golden-rule crossover |
 | `internal/api` | `internal/api/` | **HTTP REST M3**: 11 endpoints + error envelope estructurado |
 | `internal/storage` | `internal/storage/` | Capa de persistencia (pgx/v5): queries, pool, modelos, migraciones |
-| `migrations/` | `migrations/*.sql` | 13 migraciones SQL: extensiones, schema, staging, concept map, daily_prices, macro_series, derived_metrics, scores (009), watchlist (010), **securities.beta (011)**, **growth_metrics (012)**, **wacc_metrics (013)** |
+| `migrations/` | `migrations/*.sql` | 14 migraciones SQL: extensiones, schema, staging, concept map, daily_prices, macro_series, derived_metrics, scores (009), watchlist (010), **securities.beta (011)**, **growth_metrics (012)**, **wacc_metrics (013)**, **valuation_results (014)** |
 | `docker-compose.yml` | — | PostgreSQL 16 + TimescaleDB para desarrollo local |
 | `web/` | `web/src/`, `web/dist/` | Dashboard React 18 + TS + Vite + Tailwind + react-router; consumen la API M3; build estático servido por Go FileServer (SPA fallback) |
-| `Makefile` | — | Build, test, migrate, run targets (precios, macro, analytics, scores, sector, **growth**, API, **build-web**, **build-all**, **deploy-local**) |
+| `Makefile` | — | Build, test, migrate, run targets (precios, macro, analytics, scores, sector, **growth**, **valuation**, API, **build-web**, **build-all**, **deploy-local**) |
 
 **Módulos implementados en M4:** `web/` (React 18 + TS + Vite + Tailwind + react-router), `cmd/api` sirve estáticos de `web/dist` (FileServer + SPA fallback).
 
@@ -226,6 +277,26 @@ M5.1 completa la experiencia de watchlist con integración asíncrona y dashboar
 - **Suite**: **269/0/1** (248 baseline M5 + 21 nuevos). Build web determinista, bundle `index-BDERmpRv.js`.
 - **Infra (mismos commits M5.1, F4 del reviewer)**: `make integration` / guard `EnsureTestDatabase` ahora corren contra **`abys_test`** (`TEST_DATABASE_URL`, sufijo `_test`) — los tests **ya NO truncan la BD de despliegue**. Puerto por defecto de BD en `.env.example`/Makefile/deploy/setup.sh: **55432** (reportar deuda en `docker-compose.yml` que sigue en 5432).
 
+**9. Nota de entrega (M6b, 2026-09-30) — motor de valoración 2.0.0**
+
+M6b cablea los motores de M6a en las fórmulas y **revierte el consenso de M4b**:
+
+- **Motor puro** (`internal/valuation`): `Calculate(Inputs, Config) Result` es determinista y sin red, sin BD y sin `time.Now()` (`AsOf` viaja en `Inputs`); `ConfigFromEnv()` es la **única** lectura del entorno del paquete y un valor ausente o no parseable cae al default con `slog.Warn` (nunca rompe el pipeline). `model_version` = **2.0.0**.
+- **Graham y DCF como métodos independientes**, cada uno con escenarios **bear / base / bull** (`(2×g)+8.5` × EPS en Graham; DCF con el WACC individual, horizonte y crecimiento terminal). La divergencia entre ambos es información: se **eliminan** `consensus_intrinsic` y `upside_pct` (reversión total de M4b).
+- **Growth inicial → growth normalizado → growth terminal** con cap de 5 pp sobre el terminal (`VALUATION_GROWTH_TRANSITION`=1), y **WACC individual** con precedencia de 4 niveles (`wacc_metrics.wacc` → `cost_of_equity` → `WACC_FALLBACK` → `DCF_DISCOUNT_RATE`); la procedencia real queda en `inputs.wacc_used`, `inputs.discount_source`, `inputs.discount_reason` e `inputs.discount_level`.
+- **Margin of safety por método** (`graham_base`, `dcf_bear`, `dcf_base`, `dcf_bull`) contra `target_margin_of_safety` = `MARGIN_OF_SAFETY` (30 %): el MOS nunca cambia el valor intrínseo, solo el score.
+- **Valuation Uncertainty** con `mean`, `std_dev`, `dispersion` (std/mean) y `components` (0-4), expuesta **cruda**: en M6b **no** degrada la confianza (los umbrales son de M6c).
+- **Valuation Confidence** `high|medium|low` decidida **solo por cobertura/calidad de inputs** (métodos válidos, source del growth y del discount rate, beta no observada, net debt desconocido) y acompañada de `reasons` estables; el SPA muestra el literal `LOW CONFIDENCE` cuando es `low`. **No Valuation** es **por método**: solo si ninguno de los dos métodos produce un valor; un escenario no calculable se **omite** (`nil`), nunca `0`.
+- **PEG y P/FCF aditivos** calculados con el growth **individual** (`p_e / growth%` y `market cap / FCF`); no puntúan todavía (dimensión de comparables = M6c).
+- **Persistencia** (`migración 014`, `valuation_results`): una fila por **`security_id` + `as_of` + `model_version`** (`UNIQUE`), con los 6 escenarios, los 4 MOS, `target_mos`, uncertainty, confianza, `reasons`, `sensitivity` (grid WACC × growth, JSONB) e `inputs_snapshot` (inputs + **Config** completa, para poder reproducir el cálculo). CHECK `ck_valuation_results_has_value`: una fila sin ningún escenario no es una fila posible. **Idempotente**: re-ejecutar `make run-valuation` actualiza la misma fila (verificado con dos ejecuciones consecutivas: `inserted=1`, siempre 1 fila).
+- **Pipeline**: nuevo job `valuation` con orden fijo **growth → valuation → metrics → scores** (`make run-all-data` y `POST /force-refresh` ya lo respetan; `steps.valuation` en `/pipeline/status` y en `POST /refresh`). Ejecución aislada: `make run-valuation` (o `go run ./cmd/analytics -job valuation -tickers AAPL`) recalcula solo `valuation_results`, útil tras un cambio de `VALUATION_*` sin tocar métricas ni scores.
+- **Score 2.0.0**: la dimensión `valuation` (35 %) se parte en `graham` (0.15) y `dcf` (0.20), con `fundamentals` 0.30 / `comparables` 0.20 / `trend` 0.15, y `weight_used` (suma de los pesos de las dimensiones realmente calculables) para que un score renormalizado sea explicable.
+- **API**: `/valuation/{ticker}` pasa a `model_version` 2.0.0 servido desde la fila persistida (`valuation_source: persisted`) y los scores 1.1.0 siguen siendo legibles sin `dimensions` (gate por versión).
+- **Deuda M6a cerrada**: F1 (`GetLatestFYFundamentalsAsOf` con corte `filing_date <= as_of` y filtro anual), F2 (ventanas canónicas), F3 (anotaciones `AdjustedClose` = serie histórica), F4 (tipo `confidence` del SPA), F5 (`ReferenceEnricher` eliminado), F6 (comentario `securities` COALESCE/CASE) y T1 (`make integration` propaga `TEST_DATABASE_URL` → `DATABASE_URL`).
+- **Suite**: **unit 344/0/0** (192 top-level + 152 subtests) e **integración 480/0/1** (267 top-level + 213 subtests; el único skip sigue siendo `TestForceRefreshLoopbackSkips` de M4c). `gofmt`/`go build`/`go vet` (con y sin `-tags=integration`) limpios, `npm run build` OK. Evidencia: `test-results/tests/abys-m6b-valuation.json` y `test-results/security/abys-m6b-valuation.json` (verdict `pass`).
+- **Nota operativa (tester)**: el binario API lee **`API_PORT`**, no `PORT`; sin `API_PORT` cae al default **8080**. Para un smoke aislado hay que exportarlo explícitamente (el tester usó un puerto temporal), y `make run-api` deja procesos vivos en 8080/8082 si no se limpian: un `curl` a un puerto ocupado puede devolver el binario viejo y confundir el smoke.
+- **Vía soportada de integración**: `make integration` (con `TEST_DATABASE_URL` apuntando a una BD `*_test`). La vía directa `export TEST_DATABASE_URL && go test -tags=integration` **sigue en falso verde** porque los tests leen `DATABASE_URL` (hallazgo F1 del tester): ver la tabla de deuda.
+
 ---
 
 ## Requirements
@@ -237,11 +308,12 @@ M5.1 completa la experiencia de watchlist con integración asíncrona y dashboar
 - `SEC_EDGAR_USER_AGENT` — requerido por SEC EDGAR fair-access policy; necesario en el entorno del servicio para `force-refresh` (M4c)
 - `DATABASE_URL` — PostgreSQL connection string
 - `BLS_API_KEY` — opcional; BLS permite 25 queries/día sin key (suficiente para CPI batch)
-- `GROWTH_RATE_DEFAULT` — tasa `g` por defecto para PEG, Graham y DCF (default: `7`); desde M6a es el **fallback legacy** mientras las fórmulas no consuman el Growth Engine (M6b)
+- `GROWTH_RATE_DEFAULT` — tasa `g` por defecto para PEG, Graham y DCF (default: `7`); desde M6a es el **fallback legacy**. **En M6b sigue en uso, pero solo como último recurso**: si el Growth Engine no tiene fila por security, el motor de valoración 2.0.0 conserva el comportamiento de M3/M6a con ese 7 % (sin marcar), en lugar de fallar
 - `GROWTH_*` — motor de crecimiento por security (M6a): ventanas del CAGR, filtro de año fiscal, pesos del blend, umbral de discrepancia y clamp de la tasa. Tabla completa en [Configuration](#environment-variables)
 - `WACC_*` — WACC CAPM por security (M6a): `Rf`, `ERP`, `Kd`, impuesto, beta asumida y WACC de fallback. Tabla completa en [Configuration](#environment-variables)
-- `MARGIN_OF_SAFETY` — margen de seguridad para score de valoración (default: `30`)
-- `DCF_DISCOUNT_RATE` — tasa WACC del DCF (default: `10`); desde M6a es el **fallback legacy** mientras el DCF no consuma el WACC individual (M6b)
+- `VALUATION_*` — motor de valoración 2.0.0 (M6b): deltas de escenarios bear/bull (growth, WACC, crecimiento terminal), transición de growth con su cap, pasos por eje del grid de sensibilidad y `target_margin_of_safety`. Tabla completa en [Configuration](#environment-variables)
+- `MARGIN_OF_SAFETY` — margen de seguridad objetivo del §11 y del score de valoración (default: `30`)
+- `DCF_DISCOUNT_RATE` — tasa WACC del DCF (default: `10`); desde M6a es el **fallback legacy** y en M6b pasa a ser el **último nivel** de la precedencia del discount rate (`WACC_FALLBACK` → `DCF_DISCOUNT_RATE`), solo cuando no hay WACC individual ni `cost_of_equity`
 - `DCF_HORIZON_YEARS` — años de proyección para DCF (default: `5`)
 - `DCF_TERMINAL_GROWTH` — tasa de crecimiento terminal para DCF (default: `2.5`)
 - `COMPARABLES_MIN_SECURITIES` — mínimo de pares de sector para comparables (default: `5`)
@@ -277,7 +349,7 @@ O use una instancia PostgreSQL local en puerto 55432 (el entorno de test usa est
 make migrate
 ```
 
-Esto ejecuta las 13 migraciones SQL en `migrations/` contra la DB configurada por `DATABASE_URL`. Las migraciones 006-007 crean hypertables TimescaleDB si la extensión está disponible; si no, crean tablas normales (sin compresión) — funcionalidad completa sin degradación de datos.
+Esto ejecuta las 14 migraciones SQL en `migrations/` contra la DB configurada por `DATABASE_URL`. Las migraciones 006-007 crean hypertables TimescaleDB si la extensión está disponible; si no, crean tablas normales (sin compresión) — funcionalidad completa sin degradación de datos.
 
 ### 4. Run collector (ingest SEC EDGAR fundamentals)
 
@@ -375,7 +447,31 @@ Debe ejecutarse **antes** de `make run-analytics` / `make run-scores`; el pipeli
 ese orden. `make run-all-data` ya lo incluye. Con datos insuficientes persiste
 `normalized_growth_rate = NULL` y `source = 'insufficient_data'`, y loguea un warning: nunca inventa un 0.
 
-### 10. Calculate valuation & score (M3)
+### 10. Valuation engine 2.0.0 (M6b)
+
+```bash
+make run-valuation
+# O con tickers / parámetros de escenarios:
+make run-valuation TICKERS=AAPL,MSFT VALUATION_BEAR_GROWTH_DELTA=-4
+```
+
+El job `valuation` (`go run ./cmd/analytics -job valuation -tickers ...`), **BD-local, sin red**:
+
+1. Por cada security con precio: lee las filas **ya persistidas** de `growth_metrics` y `wacc_metrics` (M6a) y los hechos FY canónicos cortados a `filing_date <= as_of` — el motor nunca recalcula growth ni WACC, los consume
+2. Graham: `(2×g)+8.5` × EPS del FY, con escenarios bear/base/bull aplicando `VALUATION_BEAR_GROWTH_DELTA` (-4 pp) y `VALUATION_BULL_GROWTH_DELTA` (+3 pp)
+3. DCF: WACC individual (precedencia `wacc_metrics.wacc` → `cost_of_equity` → `WACC_FALLBACK` → `DCF_DISCOUNT_RATE`), horizonte `DCF_HORIZON_YEARS`, crecimiento terminal `DCF_TERMINAL_GROWTH`, transición growth inicial → normalizado → terminal con cap de `VALUATION_GROWTH_TRANSITION_CAP` (5 pp); deltas bear/bull de WACC (`+1.5`/`-1.0`) y de crecimiento terminal (`-0.5`/`+0.5`)
+4. Margin of safety por método contra `target_margin_of_safety` (`MARGIN_OF_SAFETY`, 30 %)
+5. Valuation uncertainty (media, desviación típica poblacional, dispersión) y confidence `high|medium|low` con `reasons`
+6. Grid de sensibilidad WACC × growth de `VALUATION_SENSITIVITY_STEPS` (3) puntos por eje
+7. PEG y P/FCF aditivos sobre el growth individual
+8. Persiste **una fila** en `valuation_results` por `security_id` + `as_of` + `model_version` (idempotente) con `sensitivity` e `inputs_snapshot` (inputs + config completa)
+9. `-dry-run` imprime sin persistir
+
+Debe ejecutarse **después** de `make run-growth` y **antes** de `make run-scores`: los scores leen
+`valuation_results`. `make run-all-data` ya lo incluye en ese orden. Tras un cambio de `VALUATION_*`
+basta con re-ejecutar este job (no toca `derived_metrics` ni `scores`).
+
+### 11. Calculate valuation & score
 
 ```bash
 make run-scores
@@ -384,20 +480,20 @@ make run-scores TICKERS=AAPL,MSFT MARGIN_OF_SAFETY=30 DCF_DISCOUNT_RATE=10
 ```
 
 El job `scores`:
-1. Para cada ticker: calcula valoración intrínseca (Graham + DCF) y score 0-100
-2. Graham: `(2×g)+8.5` × EPS último FY
-3. DCF simplificado: WACC configurable (`DCF_DISCOUNT_RATE`, default 10%), horizonte 5a (`DCF_HORIZON_YEARS`), g_terminal 2.5% (`DCF_TERMINAL_GROWTH`)
-4. Score 0-100 con 4 dimensiones: valuation (35%), fundamentals (30%), comparables (20%), trend (15%)
+1. Para cada ticker: lee la valoración persistida en `valuation_results` (Graham base y DCF base, motor 2.0.0) y calcula el score 0-100
+2. Graham y DCF: los valores de la fila `valuation_results` (`model_version` 2.0.0, sin consenso de M4b)
+3. DCF: discounted con el WACC que usó el motor (individual de M6a, con fallback `WACC_FALLBACK` → `DCF_DISCOUNT_RATE`), horizonte `DCF_HORIZON_YEARS`, g_terminal `DCF_TERMINAL_GROWTH`
+4. Score 0-100 con **5 dimensiones** (`model_version` 2.0.0): graham (15%), dcf (20%), fundamentals (30%), comparables (20%), trend (15%); `weight_used` expone la suma de los pesos realmente calculables (§18)
 5. Señal: ≥70 comprar / 40-69 mantener / <40 vender
 6. Persiste en `scores` (idempotente por security_id + as_of + model_version)
 7. Env vars: `MARGIN_OF_SAFETY` (30), `DCF_DISCOUNT_RATE` (10), `DCF_HORIZON_YEARS` (5), `DCF_TERMINAL_GROWTH` (2.5), `COMPARABLES_MIN_SECURITIES` (5), `COMPARABLES_HISTORY_YEARS` (5)
 8. `-dry-run` imprime sin persistir
 
-> **M6a no cambia estas fórmulas:** Graham, DCF, PEG y el score siguen usando `GROWTH_RATE_DEFAULT` (7)
-> y `DCF_DISCOUNT_RATE` (10). Los bloques `growth`/`wacc` de `/valuation` son informativos; cablearlos
-> en las fórmulas es trabajo de **M6b** (subida coordinada de `model_version` a `2.0.0`).
+> **M6b cambió estas fórmulas:** la valoración ya no se calcula on-the-fly en el job, se **lee** de
+> `valuation_results`; y el score 2.0.0 separa Graham (15 %) y DCF (20 %) en dos dimensiones. Los
+> `scores` 1.1.0 ya persistidos siguen siendo legibles (`/score` no devuelve `dimensions` para ellos).
 
-### 11. Run the API
+### 12. Run the API
 
 ```bash
 make run-api
@@ -668,12 +764,21 @@ Ver arriba en la sección §14. Resumen:
 | `WACC_TAX_RATE` | No | `21` | Tasa impositiva corporativa usada en Kd·(1−t) (%) |
 | `WACC_BETA_ASSUMED` | No | `1.0` | Beta asumida cuando no hay beta observada (degrada a `configured_fallback`) |
 | `WACC_FALLBACK` | No | `9` | WACC usado cuando no hay beta observada o la estructura E/D no es válida (%) |
+| `VALUATION_BEAR_GROWTH_DELTA` | No | `-4.0` | Delta (pp) sobre growth para el escenario bear |
+| `VALUATION_BULL_GROWTH_DELTA` | No | `3.0` | Delta (pp) sobre growth para el escenario bull |
+| `VALUATION_BEAR_WACC_DELTA` | No | `1.5` | Delta (pp) sobre WACC para bear (descuento mayor) |
+| `VALUATION_BULL_WACC_DELTA` | No | `-1.0` | Delta (pp) sobre WACC para bull |
+| `VALUATION_BEAR_TERMINAL_DELTA` | No | `-0.5` | Delta (pp) sobre crecimiento terminal en bear |
+| `VALUATION_BULL_TERMINAL_DELTA` | No | `0.5` | Delta (pp) sobre crecimiento terminal en bull |
+| `VALUATION_GROWTH_TRANSITION` | No | `1` | Habilita transición growth inicial→normalizado→terminal (0=flat) |
+| `VALUATION_GROWTH_TRANSITION_CAP` | No | `5.0` | Cap (pp) del anchor sobre el terminal |
+| `VALUATION_SENSITIVITY_STEPS` | No | `3` | Puntos por eje del grid WACC × growth (≥1) |
 | `API_PORT` | No | `8080` | Puerto para el servidor HTTP API |
 | `POSTGRES_USER` | No (docker-compose) | `abys` | DB user para docker-compose |
 | `POSTGRES_PASSWORD` | No (docker-compose) | `abys` | DB password para docker-compose |
 | `POSTGRES_DB` | No (docker-compose) | `abys` | DB name para docker-compose |
-| `MARGIN_OF_SAFETY` | No | `30` | Margen de seguridad para score de valoración (%) |
-| `DCF_DISCOUNT_RATE` | No | `10` | Tasa WACC del DCF (%). **Fallback legacy desde M6a**: el DCF sigue usando este WACC global hasta que M6b cablee `wacc.wacc` (el individual ya se persiste en `wacc_metrics`) |
+| `MARGIN_OF_SAFETY` | No | `30` | Margen de seguridad objetivo (MOS) usado por el motor 2.0.0 (§11) y por el score (%) |
+| `DCF_DISCOUNT_RATE` | No | `10` | Tasa WACC del DCF (%). **Fallback legacy desde M6a**; en M6b es el nivel 4 de la precedencia (después de `WACC_FALLBACK`) |
 | `DCF_HORIZON_YEARS` | No | `5` | Años de proyección para DCF |
 | `DCF_TERMINAL_GROWTH` | No | `2.5` | Tasa de crecimiento terminal para DCF (%) |
 | `COMPARABLES_MIN_SECURITIES` | No | `5` | Mínimo de pares de sector para comparables |
@@ -736,6 +841,7 @@ Ver arriba en la sección §14. Resumen:
 | `scores` | Score 0-100 + señal + justificación + inputs_snapshot JSONB (M3, migración 009) |
 | `growth_metrics` | Growth Engine por security: CAGR revenue/EPS/FCF 3y y 5y, tasa normalizada, confianza, source y snapshot de entradas (M6a, migración 012) |
 | `wacc_metrics` | WACC/CAPM por security: E, D, beta observada, Ke, Kd·(1−t), pesos, source y confianza (M6a, migración 013) |
+| `valuation_results` | Resultados de valoración 2.0.0 por security: 6 escenarios (Graham/DCF × bear/base/bull), 4 MOS, uncertainty, confidence y `reasons`, `sensitivity` (JSONB 3×3) e `inputs_snapshot` (JSONB) (M6b, migración 014) |
 
 Derived concepts computed at normalization time (M1): `total_debt`, `net_debt`, `ebitda`, `free_cash_flow`.
 
@@ -809,6 +915,16 @@ make run-all-data # incluye run-growth entre sector y analytics
 
 ---
 
+## Entrega M6b (2026-09-30)
+
+- **Motor de valoración 2.0.0**: `internal/valuation` puro (`Calculate(Inputs,Config)`, `model_version` 2.0.0) con escenarios Bear/Base/Bull en Graham y DCF, growth normalizado con transición y WACC individual (precedencia de 4 niveles), margin of safety por método, uncertainty cruda, confidence por cobertura de inputs con `reasons` y política No Valuation por método. PEG y P/FCF aditivos; reversión total del consenso de M4b (sin `consensus_intrinsic` ni `upside_pct`).
+- **Persistencia**: `valuation_results` (migración 014), 1 fila por `security_id`+`as_of`+`model_version`, `sensitivity` JSONB 3×3, `inputs_snapshot` con inputs + Config completa.
+- **Pipeline**: etapa `valuation` tras `growth` y antes de `metrics`/`scores` (`make run-valuation`, `run-all-data`, `POST /force-refresh` incluye `steps.valuation`).
+- **API/Score**: `/valuation/{ticker}` 2.0.0 con `valuation_source` (`persisted|computed`) y `value` anidado; `/score` 2.0.0 con 5 dimensiones (graham 0.15/dcf 0.20/fundamentals 0.30/comparables 0.20/trend 0.15) y `weight_used`. Coexistencia con scores 1.1.0 (sin `dimensions`).
+- **Idempotencia**: dos ejecuciones consecutivas de `run-valuation` producen `inserted=1` y 1 fila (UNIQUE `security_id,as_of,model_version`).
+- **Operativa**: el API lee `API_PORT` (no `PORT`), sin él usa `8080`. `make integration` es la vía soportada para la suite de integración (requiere `TEST_DATABASE_URL` apuntando a `*_test`); la vía directa con solo `TEST_DATABASE_URL` puede dar falso verde (hallazgo F1 del tester).
+- **Suites**: unit 344/0/0, integración 480/0/1 (único skip preexistente M4c). Build go/npm limpios.
+
 ## Roadmap
 
 - **M1 ✔** — Foundation: DB schema, migrations, SEC EDGAR adapter, collector, API health check. 55/55 tests.
@@ -822,8 +938,8 @@ make run-all-data # incluye run-growth entre sector y analytics
 - **M5.1 ✔** — Watchlist integración (2026-09-26): `POST /force-refresh` asíncrono (202 + job en 2º plano, timeout 30 min); nuevo `GET /pipeline/status` (8 claves JSON puro); `PUT /watchlist/{ticker}` dispara ingesta en 2º plano (prices→sector→metrics→scores, SIN EDGAR) con cola FIFO dedup; `GET /watchlist` ampliado con `score`/`signal` (LEFT JOIN LATERAL); dashboard con sección "Mi watchlist" (tarjetas + polling); build `index-BDERmpRv.js`. Suite 269/0/1. Infra: suite contra `abys_test` (guard `EnsureTestDatabase`), puerto BD 55432.
 - **M5.2 ✔** — Página Health (2026-09-27): `GET /health` ampliado aditivamente con `latency_ms` (ms del Ping), `postgres_version` (e.g. "18.6"), `db_size` (e.g. "21 MB") y `tables` (9 entradas en M5.2; **11 desde M6a**: + `growth_metrics`, `wacc_metrics`). 503 sin BD: solo 3 claves (`status`,`database`,`version`). Contexto con timeout 3s; status HTTP depende solo del Ping; best-effort de metadata con `slog.Warn`. Nuevo sidebar/layout con secciones "Finanzas" (Dashboard, Watchlist) y "Sistema" (Health); página `/health` con 4 tarjetas + tabla de conteos + Refrescar con spinner + "Última comprobación" es-BO. Bundle `index-BeqNKrtA.js`. Suite 276/0/1 (165/0/0 unit + integración). F5 en `/health` muestra JSON crudo (aceptado por diseño).
 - **M6a ✔** — Growth Engine + WACC/CAPM (2026-09-29): `internal/growth` (CAGR 3a/5a de revenue/EPS/FCF sobre series FY anuales, blend EPS/FCF, `normalized_growth_rate` clampado a [-10, 25] con `confidence` + `source`, `insufficient_data` en vez de 0) e `internal/wacc` (`Ke = Rf + β×ERP`, `E = close × shares_outstanding`, `D = total_debt`, `Kd·(1−t)`, taxonomía `capm_individual`/`capm_hybrid`/`configured_fallback`); beta observada de Yahoo (`defaultKeyStatistics`) en `securities` (migración 011) y tablas `growth_metrics`/`wacc_metrics` (migraciones 012/013); etapa de pipeline `growth` siempre antes de metrics/scores y BD-local (`POST /refresh` también la ejecuta); bloques aditivos `growth`/`wacc` en `GET /valuation/{ticker}`; fix §22 de consistencia de precio (`IngestQuote` ya no pisa `adjusted_close`/OHLC) y corrección del concepto `revenues`; `/health` con 11 tablas. **Las fórmulas de valoración siguen con `GROWTH_RATE_DEFAULT`/`DCF_DISCOUNT_RATE`**: cablear los motores es M6b. Suite unit 252/0/0, integración 388/0/1.
-- **M6b 🔲** — Cableado del motor: `normalized_growth_rate` y el WACC individual entran en Graham/DCF/PEG/score (eliminado el promedio `consensus` (Graham+DCF)/2, ADR D3), escenarios Bear/Base/Bull con margin of safety explícito, render de los bloques `growth`/`wacc` en el SPA, subida coordinada de `model_version` a `2.0.0` y cierre de la deuda M6a (asimetría §4 del E/D, etiqueta `growth_source`, anotación `historical_price`/`valuation_price`, tipo `WaccDetail.confidence` en `web/src/api/types.ts`, `ReferenceEnricher` muerto).
-- **M6c 🔲** — `ModelConfig` + Parameter Sets (§24/§25) unificando los cuatro helpers de env (`api`, `pipeline`, `growth`, `wacc`); dimensiones Quality/ROIC/FCF-growth/deuda, Relative Valuation y Market Context con pesos 15/20/35/15/5; proveedor de `Rf`/`ERP` y conceptos EDGAR de impuestos/intereses para individualizar `Kd` y `tax_rate`; proveedor de beta con histórico y política de caducidad; `filing_date` real del fact EDGAR (deuda M1/M3) y normalización de EPS por splits.
+- **M6b ✔** — Cableado del motor 2.0.0: `normalized_growth_rate` y el WACC individual entran en Graham/DCF (métodos independientes) con escenarios Bear/Base/Bull, margin of safety por método, Valuation Uncertainty expuesta cruda, Valuation Confidence por cobertura de inputs + `reasons`, PEG/P/FCF aditivos, eliminación total del consenso de M4b (`consensus_intrinsic`, `upside_pct`), tabla `valuation_results` (014), etapa `valuation` en pipeline, `/valuation` 2.0.0 (`valuation_source`), score 2.0.0 con 5 dimensiones (graham 0.15/dcf 0.20/fundamentals 0.30/comparables 0.20/trend 0.15) y cierre de deuda M6a (F1-F6, T1).
+- **M6c 🔲** — Calidad de datos + parametrización avanzada: validación de límites de envs (`envFloat`/`envInt`), hardening de integración (silenciar DSN en logs, unificar lectura de TEST_DATABASE_URL/DATABASE_URL para la vía directa), dimensiones Quality/ROIC/FCF-growth/deuda y Relative Valuation/Market Context con pesos 15/20/35/15/5, proveedor de `Rf`/`ERP` y conceptos EDGAR de impuestos/intereses para individualizar `Kd` y `tax_rate`; proveedor de beta con histórico y política de caducidad; `filing_date` real del fact EDGAR (deuda M1/M3), normalización de EPS por splits y escalado de límites de `reasons` (M6b-H1/H2/H3).
 - **M6 🔲** — Alertas: `cmd/alerts/`, `internal/alerts/`, endpoint `/alerts` (prefijo reservado). Diferido a M6 por decisión del usuario (SPEC §7).
 
 ---
@@ -847,6 +963,17 @@ make run-all-data # incluye run-growth entre sector y analytics
 | **R10** | `latency_ms` es latencia del PING a PostgreSQL, no del request HTTP | `latency_ms` es la latencia del PING a PostgreSQL, no del request HTTP. | Nota documentada |
 | **Divulgación** | /health expone versión PostgreSQL, tamaño de BD y conteos por tabla en probe público sin auth | /health expone versión PostgreSQL, tamaño de BD y conteos por tabla en un probe público sin auth — aceptado por diseño (así lo acordaron scanner/reviewer), junto a la nota de que todo el API es anónimo ya. | Aceptado por diseño |
 
+
+### Deuda técnica introducida por M6b (NO bloqueante)
+
+Hallazgos levantados durante la verificación independiente (tester) que no bloquean la entrega; se trasladan a M6c para su corrección.
+
+| ID | Severidad | Limitación | Detalle | Estado |
+|----|-----------|-----------|---------|--------|
+| **M6b-H1** | info | `reasons` / arrays JSON sin límite explícito | El campo `reasons` (TEXT[]) en `valuation_results` y los `reasons` del modelo 2.0.0 no tienen un tope. El motor los construye con un pequeño set cerrado de literales, por lo que hoy no hay crecimiento ilimitado; conviene validar (trim + límite máximo). | Pendiente (M6c) |
+| **M6b-H2** | info | `envFloat`/`envInt` aceptan `NaN`/`+Inf`/-Inf | `strconv.ParseFloat` acepta valores no finitos (`NaN`, `Inf`, `-Inf`) y `ConfigFromEnv` los devolvería como tales; conviene rechazar valores no finitos y caer al default con `slog.Warn`. | Pendiente (M6c) |
+| **M6b-H3** | info | `make integration` imprime el DSN completo en el log | El guard de la receta `integration` imprime el DSN completo en el log. En CI es preferible no loguear el DSN completo (sólo que apunta a `*_test`). | Pendiente (M6c) |
+| **M6b-F2** | minor | Escenarios no calculables se omiten (`omitempty`), nunca `0` | Los campos `bear`/`base`/`bull` son punteros con `omitempty`. Cuando un escenario no es calculable, la clave **no aparece** (intencional: `nil != 0`); está señalado con `reasons` (`incomplete_scenarios`). El consumidor debe tratarlos como opcionales. | Pendiente (M6c) |
 ### Deuda introducida por M6a (no bloqueante; task `abys-m6a-growth-wacc`)
 
 Ninguno de estos hallazgos bloquea M6a: la suite quedó verde (unit 252/0/0, integración 388/0/1) y
@@ -854,18 +981,18 @@ ningún criterio de aceptación incumplido. Se registran aquí para no perderlos
 
 | ID | Limitación | Detalle | Estado |
 |----|-----------|---------|--------|
-| **M6a-F1** | Asimetría §4 en el E/D del WACC: los hechos de `shares_outstanding`/`total_debt` no se cortan por fecha | El Growth Engine sí usa la serie anual con `filing_date <= as_of` y filtro de duración, pero el WACC llama a `storage.GetLatestFYFundamentals` (`internal/pipeline/growthwacc.go:98`), que es `DISTINCT ON (concept) … ORDER BY period_end DESC` **sin corte de `filing_date` ni filtro anual**: puede tomar un hecho quarterly o presentado después de `as_of` (look-ahead). Además el `available_at` de la fila `wacc_metrics` se deriva de la serie de growth (`availableAtFrom(gin.Series, asOf)`), no de los hechos de E/D. Impacto: `E`/`D` pueden no ser reproducibles a la fecha declarada. **Fix en M6b**: query con `filing_date <= as_of` + duración anual, y `available_at` propio. | Pendiente (M6b) |
-| **M6a-F2** | La etiqueta `growth_source` puede mentir si `GROWTH_WINDOW_FALLBACK_YEARS ≠ 5` | `singleSource` decide el sufijo `5y` comparando la ventana con la constante `fallbackWindowName = 5` (`internal/growth/growth.go:241-260`), y en el camino principal las etiquetas son constantes (`SourceEPSFCF5y`, `SourceRevenue5y`). Con `GROWTH_WINDOW_FALLBACK_YEARS=7` se persiste `eps_5y`/`eps_fcf_5y` para un CAGR de 7 años. Con los defaults (5) es correcto. **Fix en M6b**: validar el env contra la constante o derivar la etiqueta de `cfg.WindowFallbackYears`. | Pendiente (M6b) |
-| **M6a-F3** | Consumidores sin anotación `historical_price` / `valuation_price` (documentación §22) | `internal/pipeline/analytics.go:349` (SMA 50/200 y momentum, función desde `:341`), `internal/backtest/backtest.go:113` e `internal/compare/compare.go:134` consumen `AdjustedClose` sin decir inline que es la serie *histórica* y no el `valuation_price`; el comentario de `analytics.go:340` dice "sobre cierres ajustados (documentado: Close)" y el de `backtest.go:202` sí lo hace. **El comportamiento es correcto** (SMA, momentum y retornos deben usar la serie ajustada): falta la nota. **Fix en M6b**: comentario inline. | Pendiente (M6b) |
-| **M6a-F4** | `web/src/api/types.ts`: `WaccDetail.confidence` excluye `'low'` | El tipo declara `confidence: 'high' \| 'medium'` (`web/src/api/types.ts:191`) pero la API sí sirve `'low'`: es el valor real de `configured_fallback` mientras no haya beta observada (y de `insufficient_data` en growth). Un consumidor que confíe en el tipo no contempla el caso real. **Fix en M6b**: añadir `'low'` y revisar `GrowthDetail.confidence`. | Pendiente (M6b) |
-| **M6a-F5** | `ReferenceEnricher` es código muerto | La interfaz `ReferenceEnricher` (`internal/collect/yahoo/update_sector.go:16-18`) no tiene implementaciones ni referencias fuera de su propia declaración. **Fix en M6b**: eliminarla o adoptarla como contrato del job `sector`. | Pendiente (M6b) |
-| **M6a-F6** | Comentario inexacto en `internal/storage/securities.go:135-146` | El comentario dice que la beta "usa COALESCE en `beta` **y** `beta_updated_at`", pero el SQL solo usa `COALESCE` para `beta`; `beta_updated_at` se resuelve con un `CASE WHEN`. Además "una beta fuera de (0,10] … se almacena como NULL" es inexacto: una beta inválida se vuelve NULL **antes** del UPDATE y `COALESCE(NULL, securities.beta)` **conserva la beta previa** (no la borra). El código es correcto; el comentario confunde. **Fix en M6b**: reescribir el comentario. | Pendiente (M6b) |
+| **M6a-F1** | Asimetría §4 en el E/D del WACC (cerrada en M6b): los hechos de `shares_outstanding`/`total_debt` no se cortan por fecha | El Growth Engine sí usa la serie anual con `filing_date <= as_of` y filtro de duración, pero el WACC llama a `storage.GetLatestFYFundamentals` (`internal/pipeline/growthwacc.go:98`), que es `DISTINCT ON (concept) … ORDER BY period_end DESC` **sin corte de `filing_date` ni filtro anual**: puede tomar un hecho quarterly o presentado después de `as_of` (look-ahead). Además el `available_at` de la fila `wacc_metrics` se deriva de la serie de growth (`availableAtFrom(gin.Series, asOf)`), no de los hechos de E/D. Impacto: `E`/`D` pueden no ser reproducibles a la fecha declarada. **Fix en M6b**: query con `filing_date <= as_of` + duración anual, y `available_at` propio. | Cerrado (M6b) |
+| **M6a-F2** | Etiqueta `growth_source` con sufijo `5y` fijo (cerrada en M6b) | `singleSource` decide el sufijo `5y` comparando la ventana con la constante `fallbackWindowName = 5` (`internal/growth/growth.go:241-260`), y en el camino principal las etiquetas son constantes (`SourceEPSFCF5y`, `SourceRevenue5y`). Con `GROWTH_WINDOW_FALLBACK_YEARS=7` se persiste `eps_5y`/`eps_fcf_5y` para un CAGR de 7 años. Con los defaults (5) es correcto. **Fix en M6b**: validar el env contra la constante o derivar la etiqueta de `cfg.WindowFallbackYears`. | Cerrado (M6b) |
+| **M6a-F3** | Anotaciones `historical_price`/`valuation_price` (cerrada en M6b) | `internal/pipeline/analytics.go:349` (SMA 50/200 y momentum, función desde `:341`), `internal/backtest/backtest.go:113` e `internal/compare/compare.go:134` consumen `AdjustedClose` sin decir inline que es la serie *histórica* y no el `valuation_price`; el comentario de `analytics.go:340` dice "sobre cierres ajustados (documentado: Close)" y el de `backtest.go:202` sí lo hace. **El comportamiento es correcto** (SMA, momentum y retornos deben usar la serie ajustada): falta la nota. **Fix en M6b**: comentario inline. | Cerrado (M6b) |
+| **M6a-F4** | `WaccDetail.confidence` incluía solo `high|medium` (cerrada en M6b) | El tipo declara `confidence: 'high' \| 'medium'` (`web/src/api/types.ts:191`) pero la API sí sirve `'low'`: es el valor real de `configured_fallback` mientras no haya beta observada (y de `insufficient_data` en growth). Un consumidor que confíe en el tipo no contempla el caso real. **Fix en M6b**: añadir `'low'` y revisar `GrowthDetail.confidence`. | Cerrado (M6b) |
+| **M6a-F5** | `ReferenceEnricher` eliminado (cerrado en M6b) | La interfaz `ReferenceEnricher` (`internal/collect/yahoo/update_sector.go:16-18`) no tiene implementaciones ni referencias fuera de su propia declaración. **Fix en M6b**: eliminarla o adoptarla como contrato del job `sector`. | Cerrado (M6b) |
+| **M6a-F6** | Comentario COALESCE/CASE corregido (cerrado en M6b) | El comentario dice que la beta "usa COALESCE en `beta` **y** `beta_updated_at`", pero el SQL solo usa `COALESCE` para `beta`; `beta_updated_at` se resuelve con un `CASE WHEN`. Además "una beta fuera de (0,10] … se almacena como NULL" es inexacto: una beta inválida se vuelve NULL **antes** del UPDATE y `COALESCE(NULL, securities.beta)` **conserva la beta previa** (no la borra). El código es correcto; el comentario confunde. **Fix en M6b**: reescribir el comentario. | Cerrado (M6b) |
 | **M6a-F7** | `docs/algorithms.md` quedó fuera del commit de M6a | El documento existe en el árbol de trabajo pero no está versionado (`docs/` figura como untracked). Decisión pendiente del usuario: commit separado o descarte. Hasta entonces **no** forma parte de la documentación entregada. | Pendiente de decisión del usuario |
 | **M6a-F8** | Evidencia de tests de M6a | Cerrado: evidencia de Builder, Reviewer y Tester en `test-results/tests/abys-m6a-growth-wacc.json` y `test-results/security/abys-m6a-growth-wacc.json` (unit 252/0/0, integración 388/0/1, `gofmt`/`go build`/`go vet` limpios, `npm run build` OK, smoke del contrato de los bloques `growth`/`wacc`). | Cerrado |
 | **M6a-F9** | (ops) Un proceso huérfano de `go run` del 22-sep ocupa el puerto **:8080** | Un `go run` anterior a M6a sigue sirviendo en `:8080`, mientras el binario de M6a se probó en **:8082**. Un `curl` a `:8080` puede devolver un `/valuation` sin los bloques `growth`/`wacc` y confundir el smoke. Limpiar el proceso y reiniciar el servicio es **acción humana de deploy** (el agente no lo hace). | Pendiente (deploy) |
-| **M6a-T1** | `make integration` sigue dando falso verde aunque se exporte `TEST_DATABASE_URL` (refinamiento de mayor de F3) | Los tests de integración leen `DATABASE_URL`, no `TEST_DATABASE_URL`. La recipe `integration` propaga `TEST_DATABASE_URL=$$TEST_DATABASE_URL` (Makefile:137), que el shell expande a la variable de **entorno** (vacía si no está exportada) y, al quedar definida, anula el `?=`; `integration-run` acaba con `DATABASE_URL=` vacío y los TestMain hacen `os.Exit(0)`. Con solo `export TEST_DATABASE_URL=<abys_test>` el TEST de M6a obtuvo **152 pass / 0 fail / 39 skip con exit 0**. Para una corrida genuina hay que exportar **las dos** variables contra `abys_test` (§12). Fix de una línea: `$(TEST_DATABASE_URL)` en la recipe de `integration-run`; pendiente de decisión, no aplicado en M6a porque toca el guard de protección de datos. | Confirmado (mayor; fix pendiente de decisión) |
-| **M6a-D1** | `filing_date` de varios FY se estampa con la última fecha de recolección → `available_at` optimista (deuda heredada de M1/M3) | El collector guarda como `filing_date` la fecha en que recolectó, no el `filed` real del fact EDGAR, así que el corte look-ahead es más permisivo de lo que debería. Las filas M6a heredan ese valor. **Fix en M6c**: usar el `filed` real del fact. | Pendiente (M6c) |
-| **M6a-R1** | (riesgo operativo) `securities.beta` está a NULL en las 10 428 filas de la BD | Medido en la BD de datos durante M6a: `count(*) filter (where beta is null)` = 10428 y `count(beta)` = 0. Mientras no se corran `make run-sector` (que ahora pide `assetProfile` + `defaultKeyStatistics`) y después `make run-growth`, `/valuation` expone `wacc` = `configured_fallback`/`low` (9%) para todo el universo: es el comportamiento correcto y explícito, pero **no** es un WACC individual (cobertura de beta = riesgo R4 del plan). Cobertura tras el refresh: pendiente de medir. | Monitorear (R4 del plan) |
+| **M6a-T1** | `make integration` propaga `TEST_DATABASE_URL` → `DATABASE_URL` (cerrada en M6b) | Los tests de integración leen `DATABASE_URL`, no `TEST_DATABASE_URL`. La recipe `integration` propaga `TEST_DATABASE_URL=$$TEST_DATABASE_URL` (Makefile:137), que el shell expande a la variable de **entorno** (vacía si no está exportada) y, al quedar definida, anula el `?=`; `integration-run` acaba con `DATABASE_URL=` vacío y los TestMain hacen `os.Exit(0)`. Con solo `export TEST_DATABASE_URL=<abys_test>` el TEST de M6a obtuvo **152 pass / 0 fail / 39 skip con exit 0**. Para una corrida genuina hay que exportar **las dos** variables contra `abys_test` (§12). Fix de una línea: `$(TEST_DATABASE_URL)` en la recipe de `integration-run`; pendiente de decisión, no aplicado en M6a porque toca el guard de protección de datos. | Confirmado (mayor; fix pendiente de decisión) |
+| **M6a-D1** | `filing_date` real del fact EDGAR | El collector estampa `filing_date` con la fecha de recolección, no el `filed` real del fact EDGAR, así que el corte `filing_date <= as_of` es más permisivo de lo que debería. Las filas M6a/M6b heredan ese valor. **Fix en M6c**: usar el `filed` real del fact. | Pendiente (M6c) |
+| **M6a-R1** | Cobertura de beta | `securities.beta` puede ser NULL para gran parte del universo mientras no se ejecute `make run-sector` (comportamiento correcto con degradación explícita `configured_fallback`/`low`, nunca silenciosa). Cobertura tras refresh es variable. | Monitorear (R4 del plan) |
 
 **Riesgos aceptados en M6a (decididos, no deuda abierta):** `eps_cagr` usa la serie de EPS declarada
 as-reported, así que un split sin reexpresión rompe el CAGR (R7 → M6c, con proveedor de corporate

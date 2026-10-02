@@ -1,14 +1,18 @@
 // Tipos TypeScript para las respuestas de la API M3 (contrato §6 de la SPEC).
 // Los nombres de campo son fieles al wire format real:
 //   - internal/storage/models.go (Security, DailyPrice, DerivedMetric, Score)
-//   - internal/api/loader.go (ValuationDetail, IntrinsicValue/Inputs)
+//   - internal/api/loader.go (ValuationDetail) + internal/valuation
+//     (Inputs, Method, Result) — contrato de valoración 2.0.0
 //   - internal/backtest/backtest.go (BacktestResult, Trade)
 //   - internal/compare/normalize.go (DataPoint, RiskMetrics) y compare.go
 // Verificado T2/T3 (2026-09-23) contra la API real con la BD poblada:
 //   - /score/{ticker} y /scores?ticker= emiten `dimensions` siempre que hay
 //     inputs_snapshot (los 11 tickers con datos lo tienen) → REQUERIDO aquí.
-//   - /valuation/{ticker}: price, value.{graham,dcf,consensus,inputs},
-//     upside_pct y metrics[metric|null] (coinciden con este archivo).
+//   - /valuation/{ticker}: price, valuation_source, value.{status,graham,dcf,
+//     margin_of_safety,uncertainty,confidence,reasons,sensitivity,inputs,
+//     peg,p_fcf,model_version} y metrics[metric|null] (coinciden con este
+//     archivo). El 1.x `consensus`/`upside_pct` ya NO existen (M6b): no hay
+//     consenso ni precio objetivo en este sistema.
 //   - /compare/comparables?ticker=: peers[].metrics[].value puede faltar
 //     (claves omitidas, `json:"value,omitempty"`) → tipado como opcional.
 
@@ -131,24 +135,106 @@ export interface DerivedMetric {
 /** GET /metrics/{ticker} → array de DerivedMetric (el más reciente por as_of). */
 export type MetricsResponse = DerivedMetric[];
 
-/** Inputs de la valoración (valuation.IntrinsicInputs). */
-export interface IntrinsicInputs {
-  growth_rate: number;
+/**
+ * Inputs de la valoración 2.0.0 (valuation.Inputs).
+ *
+ * OJO con los `null`: `eps`, `free_cash_flow`, `net_debt`, `wacc` o
+ * `normalized_growth_rate` AUSENTES significan "dato insuficiente" y la API los
+ * OMITE (nunca 0). Un campo ausente no es un 0 que la UI pueda formatear como
+ * si fuera un dato real.
+ *
+ * `wacc_used` + `discount_source` + `discount_reason` documentan la tasa que el
+ * motor REALMENTE usó (D9): el discount rate nunca es invisible.
+ */
+export interface ValuationInputs {
+  ticker?: string;
+  as_of?: string;
+  price?: number;
   eps?: number;
   free_cash_flow?: number;
-  dcf_discount_rate: number;
-  dcf_horizon_years: number;
-  terminal_growth: number;
   shares_outstanding?: number;
-  net_debt?: number;
+  net_debt?: number; // total debt − cash; ausente = desconocido
+  normalized_growth_rate?: number; // % persistido por M6a
+  growth_confidence?: ValuationConfidence;
+  growth_source?: string;
+  growth_model_version?: string;
+  wacc?: number; // % persistido por M6a
+  cost_of_equity?: number;
+  wacc_source?: string;
+  wacc_confidence?: ValuationConfidence;
+  wacc_model_version?: string;
+  beta_observed?: boolean;
+  wacc_used?: number; // % realmente aplicado en el DCF
+  discount_source?: string; // wacc_metrics | cost_of_equity | wacc_fallback | dcf_discount_rate
+  discount_reason?: string; // vacío en nivel 1 (sin degradación)
+  discount_level?: number; // 1..4 (D9)
+  growth_fallback_used?: boolean; // A1: se usó el 7% legacy
 }
 
-/** Resultado de valoración (valuation.IntrinsicValue). */
-export interface IntrinsicValue {
-  graham?: number; // nil si inputs insuficientes (conservador)
-  dcf?: number;
-  consensus?: number; // promedio de Graham y DCF, o el único disponible
-  inputs: IntrinsicInputs;
+/** Estado de un método de valoración (available | unavailable). */
+export type ValuationStatus = 'available' | 'unavailable';
+
+/** Confianza de la valoración (§20): high | medium | low. */
+export type ValuationConfidence = 'high' | 'medium' | 'low';
+
+/**
+ * Un método de valoración con sus TRES escenarios (2.0.0 §10).
+ * `status: 'unavailable'` ⇒ todos los escenarios AUSENTES y `reasons` explica
+ * por qué. Graham y DCF son independientes: uno puede estar disponible y el
+ * otro no.
+ */
+export interface ValuationMethod {
+  status: ValuationStatus;
+  bear?: number;
+  base?: number;
+  bull?: number;
+  confidence?: ValuationConfidence;
+  reasons?: string[];
+}
+
+/** Margen de seguridad §11 (%). `reason` viene cuando no se pudo calcular. */
+export interface MarginOfSafety {
+  graham_base?: number;
+  dcf_bear?: number;
+  dcf_base?: number;
+  dcf_bull?: number;
+  target_margin_of_safety: number;
+  reason?: string;
+}
+
+/** Incertidumbre §19: media, desviación típica POBLACIONAL y dispersión. */
+export interface ValuationUncertainty {
+  dispersion?: number; // std/mean, adimensional
+  mean?: number;
+  std_dev?: number;
+  components: number; // 0..4 (valores componentes disponibles)
+}
+
+/** Una celda del grid de sensibilidad §8 (WACC × growth). */
+export interface SensitivityPoint {
+  growth: number; // %
+  wacc: number; // %
+  dcf_base: number; // 0 cuando la celda no es computable
+}
+
+/**
+ * Bloque `value` de /valuation/{ticker} (valuation.Result, 2.0.0).
+ * `confidence` es a NIVEL DE VALUACIÓN; cada método trae la suya.
+ */
+export interface ValuationValue {
+  ticker?: string;
+  as_of?: string;
+  status: ValuationStatus;
+  graham: ValuationMethod;
+  dcf: ValuationMethod;
+  margin_of_safety: MarginOfSafety;
+  uncertainty: ValuationUncertainty;
+  confidence: ValuationConfidence;
+  reasons?: string[];
+  sensitivity?: SensitivityPoint[];
+  peg?: number; // aditivo §15: growth/PE. Ausente = no computable
+  p_fcf?: number; // aditivo §15: precio / FCF por acción
+  inputs: ValuationInputs;
   model_version: string;
 }
 
@@ -188,18 +274,26 @@ export interface WaccDetail {
   beta?: number;
   beta_observed: boolean;
   source: 'capm_individual' | 'capm_hybrid' | 'configured_fallback';
-  confidence: 'high' | 'medium';
+  confidence: 'high' | 'medium' | 'low';
   as_of: string;
   model_version: string;
 }
 
-/** GET /valuation/{ticker} (api.ValuationDetail). */
+/**
+ * GET /valuation/{ticker} (api.ValuationDetail, 2.0.0).
+ *
+ * `valuation_source` declara qué camino produjo `value`: `persisted` (fila de
+ * valuation_results, la del pipeline diario) o `computed` (la API recalculó
+ * porque el pipeline aún no corrió para esa security). `value` es OPCIONAL: una
+ * security sin precio ni datos no tiene bloque de valoración, y la UI lo pinta
+ * como "—" en lugar de inventar un valor.
+ */
 export interface ValuationResponse {
   ticker: string;
   price?: number;
   currency?: string;
-  value: IntrinsicValue;
-  upside_pct?: number; // downside/upside vs. consenso
+  valuation_source?: 'persisted' | 'computed';
+  value?: ValuationValue;
   growth?: GrowthDetail; // M6a, aditivo y opcional
   wacc?: WaccDetail; // M6a, aditivo y opcional
   metrics?: Record<string, number | null>; // metric → valor (null si no calculable)
@@ -208,10 +302,22 @@ export interface ValuationResponse {
 }
 
 /** Una dimensión del score (score.DimensionScore) — ver TODO en ScoreResponse. */
+/**
+ * Una dimensión del score 2.0.0 (score.DimensionScore).
+ *
+ * `score` es OPCIONAL: ausente = dimensión inválida (pesos renormalizados,
+ * §18). `weight` es el peso CONFIGURADO de la dimensión (graham=0.15, dcf=0.20,
+ * fundamentals=0.30, comparables=0.20, trend=0.15). La suma de los pesos de las
+ * dimensiones válidas se expone en `ScoreResponse.weight_used` (active_weight_sum
+ * de §18), de modo que un cliente puede explicar por qué el score se renormalizó.
+ */
 export interface ScoreDimension {
-  name: string; // valuation | fundamentals | comparables | trend
-  score: number; // 0-100
-  weight: number; // 0.35 / 0.30 / 0.20 / 0.15
+  name: string; // graham | dcf | fundamentals | comparables | trend
+  score?: number; // 0-100 (ausente = inválida)
+  valid: boolean;
+  weight: number; // 0.15 / 0.20 / 0.30 / 0.20 / 0.15
+  weight_used?: number;
+  reason?: string;
 }
 
 /** Señal del score tal como la sirve la API (es-ES, minúsculas). */
@@ -239,6 +345,11 @@ export interface ScoreRow {
  */
 export interface ScoreResponse extends ScoreRow {
   dimensions: ScoreDimension[];
+  // §18: sumas de pesos (aditivos; ausentes si no hay dimensiones, p. ej. fila
+  // de otra versión del modelo). weight_used < weight_configured ⇒ el score se
+  // renormalizó sobre menos dimensiones.
+  weight_configured?: number;
+  weight_used?: number;
 }
 
 /** GET /scores?ticker= → historial de filas (orden as_of DESC); cada ítem

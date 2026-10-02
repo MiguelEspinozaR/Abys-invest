@@ -254,10 +254,11 @@ func singleSource(epsAvailable bool, years int) string {
 }
 
 // fallbackWindowName is the window whose persisted source label carries the
-// "5y" suffix (Config.WindowFallbackYears, 5 by default). The labels are part
-// of the growth_metrics contract, so they are tied to the window, not to the
-// order of evaluation.
-const fallbackWindowName = 5
+// "5y" suffix (Config.WindowFallbackYears). The labels are part of the
+// growth_metrics contract, so they are tied to the window, not to the order of
+// evaluation: Config.canonicalWindows guarantees the configured window IS this
+// one (deuda M6b F2), so the label can never describe a different slice.
+const fallbackWindowName = DefaultWindowFallbackYears
 
 // degrade drops one confidence level, with low as the floor.
 func degrade(c string) string {

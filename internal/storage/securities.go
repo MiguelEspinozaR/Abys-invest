@@ -137,11 +137,12 @@ func escapeLike(s string) string {
 // plan D17). Returns pgx.ErrNoRows when the ticker is not cataloged.
 //
 // Sector/industry are overwritten when provided (the enricher runs on demand).
-// The beta uses COALESCE on both beta and beta_updated_at: a response without
-// defaultKeyStatistics (or with a rejected beta) must NOT erase a beta that is
-// already known, otherwise a temporary Yahoo gap would silently push every
-// company to WACC configured_fallback. A beta outside (0, 10] is not a beta:
-// it is stored as NULL so the engine degrades explicitly.
+// The beta uses COALESCE on beta: a response without defaultKeyStatistics (or
+// with a rejected beta) must NOT erase a beta that is already known, otherwise
+// a temporary Yahoo gap would silently push every company to WACC
+// configured_fallback. beta_updated_at uses a CASE: it only updates when a new
+// valid beta is provided. A beta outside (0, 10] is not a beta: it is stored as
+// NULL so the engine degrades explicitly.
 func UpdateSecurityReference(ctx context.Context, q DBTX, ticker string, sector, industry *string, beta *float64) error {
 	var storedBeta any
 	if beta != nil && *beta > 0 && *beta <= 10 {

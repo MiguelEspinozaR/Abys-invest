@@ -36,6 +36,8 @@ const tradingDaysPerYear = 252.0
 // NormalizePerformance turns a close series into a base-100 index. The first
 // (oldest) bar is exactly 100.0; later bars are price/firstPrice*100.
 // Series with fewer than 2 bars are not comparable and return nil.
+// AdjustedClose is the trading series (split/dividend-adjusted close), not the
+// raw close — this matches the backtest engine and the risk helpers.
 func NormalizePerformance(prices []storage.DailyPrice) []DataPoint {
 	if len(prices) < 2 {
 		return nil
@@ -51,7 +53,8 @@ func NormalizePerformance(prices []storage.DailyPrice) []DataPoint {
 	return out
 }
 
-// logReturns computes the inter-day log returns of the adjusted closes.
+// logReturns computes the inter-day log returns of the adjusted closes
+// (AdjustedClose is the trading series, split/dividend-adjusted).
 // Series with fewer than 2 bars yield an empty slice.
 func logReturns(prices []storage.DailyPrice) []float64 {
 	if len(prices) < 2 {
@@ -104,6 +107,7 @@ func AnnualizedVolatility(prices []storage.DailyPrice) float64 {
 
 // MaxDrawdown returns the maximum peak-to-trough decline of the series as a
 // negative decimal (e.g. -0.18). A flat or degenerate series yields 0.
+// Uses AdjustedClose (the trading series, split/dividend-adjusted).
 func MaxDrawdown(prices []storage.DailyPrice) float64 {
 	peak := 0.0
 	maxDD := 0.0
@@ -128,6 +132,7 @@ func MaxDrawdown(prices []storage.DailyPrice) float64 {
 // SharpeRatio computes the annualized Sharpe ratio of the daily log returns
 // over the series using the given annual risk-free rate (decimal; default 0).
 // A series without variance yields 0.
+// Uses AdjustedClose (the trading series, split/dividend-adjusted) via logReturns.
 func SharpeRatio(prices []storage.DailyPrice, riskFreeRate float64) float64 {
 	rets := logReturns(prices)
 	if len(rets) < 2 {

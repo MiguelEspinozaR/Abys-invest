@@ -45,14 +45,14 @@ func TestAAPLGoldenscore(t *testing.T) {
 	if got.Justification == "" {
 		t.Error("golden: justificación vacía")
 	}
-	if len(got.Dimensions) != 4 {
-		t.Fatalf("golden: se esperaban 4 dimensiones, got %d", len(got.Dimensions))
+	if len(got.Dimensions) != 5 {
+		t.Fatalf("golden: se esperaban 5 dimensiones, got %d", len(got.Dimensions))
 	}
 	var totalWeight float64
 	for _, d := range got.Dimensions {
 		totalWeight += d.Weight
-		if d.Score < 0 || d.Score > 100 {
-			t.Errorf("golden: dimensión %s fuera de rango: %v", d.Name, d.Score)
+		if d.Score != nil && (*d.Score < 0 || *d.Score > 100) {
+			t.Errorf("golden: dimensión %s fuera de rango: %v", d.Name, *d.Score)
 		}
 	}
 	if totalWeight < 0.99 || totalWeight > 1.01 {

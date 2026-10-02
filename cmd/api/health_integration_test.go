@@ -90,14 +90,14 @@ func TestHealthConnectedAfterMigrations(t *testing.T) {
 		t.Fatalf("falta db_size en /health: %s", rec.Body.String())
 	}
 
-	// Conteos: 11 tablas del esquema público desde M6a (las 9 de M5.2 más
-	// growth_metrics y wacc_metrics), nombres no vacíos, filas >= 0 y securities
-	// poblada (la migración 002 inserta el catálogo). Las dos tablas nuevas deben
-	// estar: si faltaran, /health seguiría ok mientras dos etapas del pipeline
+	// Conteos: 12 tablas del esquema público desde M6b (las 11 de M6a más
+	// valuation_results), nombres no vacíos, filas >= 0 y securities
+	// poblada (la migración 002 inserta el catálogo). Las tablas nuevas deben
+	// estar: si faltaran, /health seguiría ok mientras etapas del pipeline
 	// escriben en tablas que nadie vigila.
 	wantTables := []string{
 		"securities", "daily_prices", "fundamentals", "derived_metrics", "scores",
-		"growth_metrics", "wacc_metrics", "watchlist", "macro_series",
+		"growth_metrics", "wacc_metrics", "valuation_results", "watchlist", "macro_series",
 		"edgar_staging", "xbrl_concept_map",
 	}
 	if len(body.Tables) != len(wantTables) {

@@ -1,9 +1,10 @@
 {
+  "_comment": "Fixture determinista del score 2.0.0 (SPEC §12/§18, plan M6b D1). Los valores de entrada son los del fixture 1.1.0 para que el cambio de contrato se vea en el diff, pero las claves son las nuevas: graham_base/dcf_base (base de valuation_results 2.0.0). Con estos datos la dimensión Graham es inválida (sin fila de valoración legible para graham_base) y el score se renormaliza por active_weight_sum = 0.85.",
   "input": {
     "ticker": "AAPL",
     "price": 230,
-    "graham_intrinsic": 144.45,
-    "dcf_intrinsic": 121.16,
+    "graham_base": 144.45,
+    "dcf_base": 121.16,
     "metrics": {
       "pe_ratio": 26.2,
       "pb_ratio": 43.0,
@@ -21,6 +22,15 @@
   "expect": {
     "score": 36,
     "signal": "vender",
-    "model_version": "1.1.0"
+    "weight_configured": 1,
+    "weight_used": 1,
+    "model_version": "2.0.0",
+    "dimensions": [
+      { "name": "graham", "weight": 0.15, "valid": true },
+      { "name": "dcf", "weight": 0.2, "valid": true },
+      { "name": "fundamentals", "weight": 0.3, "valid": true },
+      { "name": "comparables", "weight": 0.2, "valid": true },
+      { "name": "trend", "weight": 0.15, "valid": true }
+    ]
   }
 }

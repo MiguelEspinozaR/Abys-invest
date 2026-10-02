@@ -35,7 +35,7 @@ func scoreFP(v float64) *float64 { return &v }
 func t4bInput() (score.ScoreInput, score.ScoreResult) {
 	input := score.ScoreInput{
 		Ticker: t4bTick, Price: 230,
-		GrahamIntrinsic: scoreFP(144.45), DCFIntrinsic: scoreFP(121.16),
+		GrahamBase: scoreFP(144.45), DCFBase: scoreFP(121.16),
 		Metrics: map[string]*float64{
 			"pe_ratio": scoreFP(26.2), "pb_ratio": scoreFP(43.0), "fcf_yield": scoreFP(4.1),
 			"roe": scoreFP(1.61), "de_ratio": scoreFP(4.7),
@@ -100,11 +100,11 @@ func seedScoreFixture(t *testing.T) {
 func assertDimensions(t *testing.T, body map[string]any) {
 	t.Helper()
 	raw, _ := body["dimensions"].([]any)
-	wantNames := []string{score.DimValuation, score.DimFundamentals, score.DimComparables, score.DimTrend}
+	wantNames := []string{score.DimGraham, score.DimDCF, score.DimFundamentals, score.DimComparables, score.DimTrend}
 	if len(raw) != len(wantNames) {
 		t.Fatalf("dimensiones esperadas %v, got %+v (body: %v)", wantNames, raw, body["dimensions"])
 	}
-	wantWeights := []float64{score.WeightValuation, score.WeightFundaments, score.WeightComparables, score.WeightTrend}
+	wantWeights := []float64{score.WeightGraham, score.WeightDCF, score.WeightFundaments, score.WeightComparables, score.WeightTrend}
 	for i, name := range wantNames {
 		it, _ := raw[i].(map[string]any)
 		gotName, _ := it["name"].(string)

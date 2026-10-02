@@ -1,5 +1,6 @@
 # Binaries
 /bin/
+/analytics
 
 # Local environment / secrets (values never committed)
 .env

@@ -1,6 +1,7 @@
 package growth
 
 import (
+	"log/slog"
 	"os"
 	"strconv"
 )
@@ -47,8 +48,8 @@ func DefaultConfig() Config {
 // bad env var must not break the pipeline). It is the only function of the
 // package that touches the environment; Calculate stays pure (§27).
 //
-//	GROWTH_WINDOW_PRIMARY_YEARS  3      ventana preferida del CAGR
-//	GROWTH_WINDOW_FALLBACK_YEARS 5      ventana de reserva
+//	GROWTH_WINDOW_PRIMARY_YEARS  3      ventana preferida del CAGR (fija, ver abajo)
+//	GROWTH_WINDOW_FALLBACK_YEARS 5      ventana de reserva (fija, ver abajo)
 //	GROWTH_ANNUAL_MIN_DAYS       330    duración mínima de un hecho FY anual
 //	GROWTH_ANNUAL_MAX_DAYS       400    duración máxima de un hecho FY anual
 //	GROWTH_EPS_WEIGHT            0.5    peso de EPS en el blend
@@ -67,7 +68,7 @@ func ConfigFromEnv() Config {
 	cfg.DiscrepancyPP = envFloat("GROWTH_DISCREPANCY_PP", cfg.DiscrepancyPP)
 	cfg.MinRate = envFloat("GROWTH_MIN_RATE", cfg.MinRate)
 	cfg.MaxRate = envFloat("GROWTH_MAX_RATE", cfg.MaxRate)
-	return cfg
+	return cfg.canonicalWindows()
 }
 
 func envFloat(key string, def float64) float64 {
@@ -86,4 +87,33 @@ func envInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+// canonicalWindows enforces the ONLY two windows the persisted contract can
+// represent (deuda M6b F2).
+//
+// growth_metrics has exactly four window columns — eps_cagr_3y, eps_cagr_5y,
+// fcf_cagr_3y, fcf_cagr_5y (and revenue_cagr_3y/5y) — and the `source` labels
+// carry the same suffix (`eps_fcf_3y`, `fcf_5y`, ...). So a 4-year fallback is
+// not a slower version of the same thing: measuring four years and writing it
+// into `eps_cagr_5y` makes a COLUMN lie about its own window, and every
+// consumer (API included) would repeat the lie. There is no `_4y` column and no
+// window dimension in the contract.
+//
+// A non-canonical window is therefore REFUSED here — with a warning, because a
+// silently ignored env var is worse than a refused one — and the canonical
+// window is used instead. Supporting other windows is a schema change
+// (columns + labels + consumers), not a config tweak.
+func (c Config) canonicalWindows() Config {
+	if c.WindowPrimaryYears != DefaultWindowPrimaryYears {
+		slog.Warn("GROWTH_WINDOW_PRIMARY_YEARS ignorado: el contrato persistido solo admite la ventana de 3 años (columnas *_3y y etiquetas *_3y); medir con otra ventana escribiría datos de una ventana en columnas de otra",
+			"valor", c.WindowPrimaryYears, "usado", DefaultWindowPrimaryYears)
+		c.WindowPrimaryYears = DefaultWindowPrimaryYears
+	}
+	if c.WindowFallbackYears != DefaultWindowFallbackYears {
+		slog.Warn("GROWTH_WINDOW_FALLBACK_YEARS ignorado: el contrato persistido solo admite la ventana de 5 años (columnas *_5y y etiquetas *_5y); medir con otra ventana escribiría datos de una ventana en columnas de otra",
+			"valor", c.WindowFallbackYears, "usado", DefaultWindowFallbackYears)
+		c.WindowFallbackYears = DefaultWindowFallbackYears
+	}
+	return c
 }

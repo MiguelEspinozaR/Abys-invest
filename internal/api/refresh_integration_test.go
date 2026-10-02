@@ -43,28 +43,36 @@ func seedRefreshFixture(t *testing.T) {
 	}
 
 	periodEnd := time.Date(2025, 9, 28, 0, 0, 0, 0, time.UTC)
+	filingDate := periodEnd
 	fy := "FY"
 	src := "test"
 	u := "USD"
-	fundVal := func(concept string, v float64) storage.Fundamental {
+	fundVal := func(concept string, v float64, instant bool) storage.Fundamental {
 		vv := v
-		return storage.Fundamental{
+		f := storage.Fundamental{
 			SecurityID: sec.ID, Concept: concept, Value: &vv, Unit: &u,
-			PeriodType: "P", PeriodStart: &periodEnd, PeriodEnd: periodEnd,
-			FiscalYear: int16Ptr(2025), FiscalPeriod: &fy, FilingDate: &periodEnd,
+			PeriodType: "P", PeriodEnd: periodEnd,
+			FiscalYear: int16Ptr(2025), FiscalPeriod: &fy, FilingDate: &filingDate,
 			Source: src,
 		}
+		if instant {
+			f.PeriodType = "instant"
+			f.PeriodStart = nil // instant facts: period_start IS NULL (EDGAR real)
+		} else {
+			f.PeriodStart = &periodEnd
+		}
+		return f
 	}
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
 	funds := []storage.Fundamental{
-		fundVal("net_earnings", 112000), fundVal("shares_outstanding", 15400),
-		fundVal("shareholders_equity", 62000), fundVal("total_liabilities", 302000),
-		fundVal("free_cash_flow", 98500), fundVal("long_term_debt", 98959),
-		fundVal("short_term_debt", 19987), fundVal("cash_and_equivalents", 29943),
-		fundVal("operating_cash_flow", 118254), fundVal("capex", -9445),
+		fundVal("net_earnings", 112000, false), fundVal("shares_outstanding", 15400, true),
+		fundVal("shareholders_equity", 62000, true), fundVal("total_liabilities", 302000, true),
+		fundVal("free_cash_flow", 98500, false), fundVal("long_term_debt", 98959, true),
+		fundVal("short_term_debt", 19987, true), fundVal("cash_and_equivalents", 29943, true),
+		fundVal("operating_cash_flow", 118254, false), fundVal("capex", -9445, false),
 	}
 	if err := storage.UpsertFundamentals(ctx, tx, funds); err != nil {
 		t.Fatalf("upsert fundamentals: %v", err)

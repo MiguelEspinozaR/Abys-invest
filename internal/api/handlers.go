@@ -308,10 +308,13 @@ func handleScore(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, tic
 	// inputs_snapshot persistido. Campos previos intactos (scoreResponse
 	// embebe storage.Score); las dimensiones son exactas porque el motor es
 	// determinista y el score persistido se generó con ese snapshot.
-	writeJSON(w, http.StatusOK, scoreResponse{
+	resp := scoreResponse{
 		Score:      *score,
-		Dimensions: dimensionsFromSnapshot(score.InputsSnapshot),
-	})
+		Dimensions: dimensionsFromSnapshot(score.InputsSnapshot, score.ModelVersion),
+	}
+	c, u := weightSums(resp.Dimensions)
+	resp.WeightConfigured, resp.WeightUsed = c, u
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleListScores: GET /scores?ticker=&from=&to=&limit=
@@ -350,10 +353,7 @@ func handleListScores(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool
 	// scoreResponse embebe storage.Score → contrato previo intacto.
 	items := make([]scoreResponse, 0, len(scores))
 	for i := range scores {
-		items = append(items, scoreResponse{
-			Score:      scores[i],
-			Dimensions: dimensionsFromSnapshot(scores[i].InputsSnapshot),
-		})
+		items = append(items, newScoreResponse(scores[i]))
 	}
 	writeJSON(w, http.StatusOK, items)
 }

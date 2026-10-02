@@ -95,7 +95,8 @@ func runGrowthWaccOne(ctx context.Context, pool *pgxpool.Pool, sec storage.Secur
 	}
 
 	// (3) Estructura de capital: E = close (valuation_price, §22) x shares.
-	funds, err := storage.GetLatestFYFundamentals(ctx, pool, sec.ID, waccConcepts)
+	// M6a-F1: corte temporal filing_date <= as_of para evitar look-ahead.
+	funds, _, err := storage.GetLatestFYFundamentalsAsOf(ctx, pool, sec.ID, waccConcepts, asOf)
 	if err != nil {
 		return false, false, err
 	}

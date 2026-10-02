@@ -350,13 +350,9 @@ func TestEffectiveRateUsaFallback(t *testing.T) {
 }
 
 func TestConfigFromEnv(t *testing.T) {
-	t.Setenv("GROWTH_WINDOW_PRIMARY_YEARS", "2")
 	t.Setenv("GROWTH_MAX_RATE", "30")
 	t.Setenv("GROWTH_EPS_WEIGHT", "no-numero")
 	cfg := ConfigFromEnv()
-	if cfg.WindowPrimaryYears != 2 {
-		t.Fatalf("GROWTH_WINDOW_PRIMARY_YEARS override: %d", cfg.WindowPrimaryYears)
-	}
 	if cfg.MaxRate != 30 {
 		t.Fatalf("GROWTH_MAX_RATE override: %v", cfg.MaxRate)
 	}
@@ -365,5 +361,38 @@ func TestConfigFromEnv(t *testing.T) {
 	}
 	if cfg.WindowFallbackYears != DefaultConfig().WindowFallbackYears {
 		t.Fatalf("sin env debe usar el default: %d", cfg.WindowFallbackYears)
+	}
+}
+
+// TestConfigFromEnvRechazaVentanasNoCanonicas cubre la deuda M6b F2: las
+// ventanas NO son un parámetro libre, porque growth_metrics solo tiene columnas
+// *_3y y *_5y y las etiquetas `source` llevan el mismo sufijo. Aceptar un 4 (o
+// un 2) escribiría datos de una ventana en columnas de otra, y el endpoint
+// repetiría la mentira. Se ignora la variable — con warning — y se usa la
+// ventana canónica.
+func TestConfigFromEnvRechazaVentanasNoCanonicas(t *testing.T) {
+	t.Setenv("GROWTH_WINDOW_PRIMARY_YEARS", "2")
+	t.Setenv("GROWTH_WINDOW_FALLBACK_YEARS", "4")
+	cfg := ConfigFromEnv()
+	if cfg.WindowPrimaryYears != DefaultWindowPrimaryYears {
+		t.Fatalf("ventana primaria no canónica debe caer a %d, got %d", DefaultWindowPrimaryYears, cfg.WindowPrimaryYears)
+	}
+	if cfg.WindowFallbackYears != DefaultWindowFallbackYears {
+		t.Fatalf("ventana de reserva no canónica debe caer a %d, got %d", DefaultWindowFallbackYears, cfg.WindowFallbackYears)
+	}
+
+	// Las canónicas (3/5) sí se respetan: son el contrato, no un default.
+	t.Setenv("GROWTH_WINDOW_PRIMARY_YEARS", "3")
+	t.Setenv("GROWTH_WINDOW_FALLBACK_YEARS", "5")
+	if got := ConfigFromEnv(); got.WindowPrimaryYears != 3 || got.WindowFallbackYears != 5 {
+		t.Fatalf("las ventanas canónicas deben respetarse, got %d/%d", got.WindowPrimaryYears, got.WindowFallbackYears)
+	}
+}
+
+// TestConfigFromEnvValidoNoSeToca: una config sin variables de ventana no debe
+// cambiar (canonicalWindows es un no-op sobre los defaults).
+func TestConfigFromEnvValidoNoSeToca(t *testing.T) {
+	if got := ConfigFromEnv(); got.WindowPrimaryYears != 3 || got.WindowFallbackYears != 5 {
+		t.Fatalf("sin env: esperado 3/5, got %d/%d", got.WindowPrimaryYears, got.WindowFallbackYears)
 	}
 }

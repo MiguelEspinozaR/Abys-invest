@@ -1,0 +1,153 @@
+{
+  "scanner": "Security Scanner agent (opencode/big-pickle, executed as general agent; model of the scanner agent produced degenerate output)",
+  "date": "2026-09-30T00:00:00Z",
+  "task": "abys-m6b-valuation",
+  "verdict": "pass",
+  "files": [
+    "Makefile",
+    "cmd/analytics/main.go",
+    "internal/api/handlers.go",
+    "internal/api/health.go",
+    "internal/api/health_integration_test.go",
+    "internal/api/loader.go",
+    "internal/api/m3_integration_test.go",
+    "internal/api/refresh.go",
+    "internal/api/score_response.go",
+    "internal/api/score_response_test.go",
+    "internal/collect/yahoo/update_sector.go",
+    "internal/growth/config.go",
+    "internal/growth/growth.go",
+    "internal/growth/growth_test.go",
+    "internal/pipeline/analytics.go",
+    "internal/pipeline/pipeline.go",
+    "internal/pipeline/valuation.go",
+    "internal/score/dimensions.go",
+    "internal/score/dimensions_test.go",
+    "internal/score/fixtures/aapl_score.json",
+    "internal/score/justification.go",
+    "internal/score/score.go",
+    "internal/score/score_test.go",
+    "internal/storage/comparables.go",
+    "internal/storage/fundamentals.go",
+    "internal/storage/models.go",
+    "internal/storage/valuation.go",
+    "internal/valuation/concepts.go",
+    "internal/valuation/confidence.go",
+    "internal/valuation/config.go",
+    "internal/valuation/dcf.go",
+    "internal/valuation/dcf_test.go",
+    "internal/valuation/graham.go",
+    "internal/valuation/graham_test.go",
+    "internal/valuation/mos.go",
+    "internal/valuation/peg.go",
+    "internal/valuation/uncertainty.go",
+    "internal/valuation/valuation.go",
+    "internal/valuation/valuation_test.go",
+    "migrations/014_create_valuation_results.sql",
+    "web/src/api/types.ts",
+    "web/src/pages/DashboardPage.tsx",
+    "web/src/pages/TickerDetailPage.tsx"
+  ],
+  "excluded_from_scan": [
+    "analytics (untracked 14.9 MB ELF build artifact at repo root, NOT matched by .gitignore which only has /bin/ — hygiene finding SEC-M6b-006, not a security issue; not a source file)",
+    "docs/ (untracked documentation, out of security scope per task instruction)",
+    ".ai/ (SDD/AI infrastructure, gitignored, out of product scope)"
+  ],
+  "findings": [
+    {
+      "id": "SEC-M6b-001",
+      "severity": "low",
+      "category": "configuration/sql",
+      "file": "migrations/014_create_valuation_results.sql",
+      "lines": "66-68",
+      "finding": "Unbounded payload columns in the new table: `sensitivity JSONB`, `inputs_snapshot JSONB` and `reasons TEXT[]` have no size limit at the DB level. The migration is otherwise sound (no secrets, taxonomy CHECKs on growth_confidence/wacc_confidence/wacc_source/valuation_status/valuation_confidence/graham_*/dcf_*, `> 0` CHECKs on all six scenarios, valuation_components BETWEEN 0 AND 4, UNIQUE (security_id, as_of, model_version), FK to securities(id), plus ck_valuation_results_has_value which forbids value-less rows). No user-controlled write path exists in M6b: the only writer is the pipeline (internal/pipeline/valuation.go -> storage.UpsertValuationResult) and its content is engine-generated and bounded (3x3 grid per axis by VALUATION_SENSITIVITY_STEPS, a ~20-field typed snapshot, and the fixed reason constants of internal/valuation/valuation.go). No endpoint accepts a body that reaches these columns. Abuse would therefore require a future mutating endpoint or a user-supplied concept/ticker list reaching the writer.",
+      "recommended_fix": "No change required for M6b. When the first endpoint that can influence these payloads is added, add a guard (e.g. CHECK (octet_length(sensitivity::text) <= 65536) AND octet_length(inputs_snapshot::text) <= 65536) or document the invariant that only engine-generated payloads may be persisted."
+    },
+    {
+      "id": "SEC-M6b-002",
+      "severity": "low",
+      "category": "input-validation",
+      "file": "internal/valuation/config.go",
+      "lines": "155-180",
+      "finding": "envFloat/envInt accept non-finite input: strconv.ParseFloat succeeds on \"NaN\", \"Inf\" and \"+Inf\", so VALUATION_BEAR_WACC_DELTA=NaN, MARGIN_OF_SAFETY=Inf or DCF_DISCOUNT_RATE=NaN are accepted SILENTLY (no slog.Warn, unlike an unparseable string) and enter Config. The engine is hardened downstream — sane() (internal/valuation/valuation.go:347) and isFinite() (internal/valuation/valuation.go:358) funnel every formula result and turn NaN/Inf into nil + the `non_finite` reason, and calcMOS/CalcUncertainty/CalcPEG re-check with isFinite — so today the failure mode is 'every valuation silently unavailable', not corruption or panic. Residual risk: PostgreSQL NUMERIC accepts 'NaN' and evaluates `NaN > 0` as TRUE, so any future numeric column NOT funneled through sane()/isFinite() could persist a NaN and pass the `> 0` CHECKs of migration 014. Requires operator misconfiguration (env var), not remote input.",
+      "recommended_fix": "Harden envFloat/envInt: after parsing, reject non-finite values (math.IsNaN/math.IsInf) with the existing slog.Warn + default path, so a bad env var is visible in the logs instead of silently degrading every row. Alternatively add the isFinite guard at the ConfigFromEnv boundary for the four reused env vars (MARGIN_OF_SAFETY, DCF_HORIZON_YEARS, DCF_TERMINAL_GROWTH, DCF_DISCOUNT_RATE, GROWTH_RATE_DEFAULT, WACC_FALLBACK)."
+    },
+    {
+      "id": "SEC-M6b-003",
+      "severity": "low",
+      "category": "secrets-handling",
+      "file": "Makefile",
+      "lines": "44, 146",
+      "finding": "The `integration` recipe prints the full test DSN to stdout in both the success and the failure branch: `echo \"==> integración contra BD de test: $(TEST_DATABASE_URL)\"` and the ERROR branch repeats it. The DSN shape used by this project embeds credentials (postgres://abys:abys@localhost:55432/abys_test per .env.example:16, deploy/setup.sh:141), so a real TEST_DATABASE_URL with a password would land in the terminal and in CI logs. PRE-EXISTING (already present at HEAD 7b68aed); M6b only touches the neighbouring line (TEST_DATABASE_URL=$$TEST_DATABASE_URL -> '$(TEST_DATABASE_URL)'), which actually FIXES the pre-existing F1 of abys-m52-health (empty propagation to the sub-make caused the integration suite to pass green with 0 tests). No secret value from the working tree (.env) was read during the scan.",
+      "recommended_fix": "Echo only the non-secret part of the DSN (e.g. host/port/database, or `${TEST_DATABASE_URL%%\\?*}` with the userinfo stripped) so the guard message proves the *_test suffix without printing credentials. Low urgency: operator-controlled value, dev/test credentials."
+    },
+    {
+      "id": "SEC-M6b-004",
+      "severity": "info",
+      "category": "secrets-handling",
+      "file": "internal/valuation/config.go",
+      "lines": "162, 176, 194",
+      "finding": "The slog.Warn of a rejected env var includes the raw value (`\"value\", v`). Not a secret exposure today: every key read by ConfigFromEnv is numeric or boolean by contract (VALUATION_* deltas/steps, MARGIN_OF_SAFETY, DCF_*, GROWTH_RATE_DEFAULT, WACC_FALLBACK) and none can carry a credential. Recorded as a pattern to keep out of this function rather than as a defect.",
+      "recommended_fix": "No change required. If a string-valued key is ever parsed here, log the key only (or a truncated value)."
+    },
+    {
+      "id": "SEC-M6b-005",
+      "severity": "info",
+      "category": "configuration",
+      "file": ".env.example",
+      "lines": "62-66",
+      "finding": ".env.example is UNCHANGED by M6b while the milestone introduces 9 new env knobs read by valuation.ConfigFromEnv (VALUATION_BEAR_GROWTH_DELTA, VALUATION_BULL_GROWTH_DELTA, VALUATION_BEAR_WACC_DELTA, VALUATION_BULL_WACC_DELTA, VALUATION_BEAR_TERMINAL_DELTA, VALUATION_BULL_TERMINAL_DELTA, VALUATION_GROWTH_TRANSITION, VALUATION_GROWTH_TRANSITION_CAP, VALUATION_SENSITIVITY_STEPS), documented only in code comments (config.go:100-124). Impact is discoverability, not safety: absent env vars fall back to the defaults (confirmed tolerant parsing: envFloat/envInt/envBool return the default on empty or unparseable input, and ConfigFromEnv clamps HorizonYears<=0 and SensitivitySteps<1 — never panics, never errors). MARGIN_OF_SAFETY reuse is CONFIRMED: present in .env.example:65 and read at config.go:137. No new VALUATION_* entry leaks a value or credential anywhere.",
+      "recommended_fix": "Add a commented VALUATION_* block (names + default, no values) to .env.example next to MARGIN_OF_SAFETY, or defer to M6c together with the Parameter Sets (§24/§25) which will need the same block."
+    },
+    {
+      "id": "SEC-M6b-006",
+      "severity": "info",
+      "category": "hygiene (non-security)",
+      "file": "analytics",
+      "lines": "n/a (untracked artifact)",
+      "finding": "A 14.9 MB non-stripped Go ELF binary sits untracked at the repository root (identical Go BuildID to bin/analytics) and is NOT covered by .gitignore, which ignores only /bin/. Excluded from the source scan as instructed; it carries no secret material, but it is a commit accident waiting to happen (binary blob in product history).",
+      "recommended_fix": "Remove it (`make clean`) and add `/analytics` to .gitignore, or build exclusively into bin/ (the Makefile already targets bin/). Owner: git-manager/miky; no Git mutation performed by this scan."
+    },
+    {
+      "id": "SEC-M6b-007",
+      "severity": "info",
+      "category": "tooling",
+      "file": "n/a",
+      "lines": "n/a",
+      "finding": "tool_missing: gitleaks, gosec and govulncheck are not installed on this host (`which` returned only npm/node/go). Secret detection therefore used the documented regex fallback, which the skill classifies as ADVISORY and not as proof of absence. Mitigation applied instead: full read of migrations/014_create_valuation_results.sql, plus manual review of every changed/new Go and TSX file. `go vet` over internal/valuation, internal/storage, internal/pipeline, internal/api, internal/score, internal/growth and cmd/... returned clean (no findings).",
+      "recommended_fix": "Install gitleaks (and optionally gosec) as a setup concern outside the task, then re-run this scan to replace the advisory regex evidence with a real secret scan."
+    }
+  ],
+  "hard_blocks": 0,
+"checks": {
+      "secrets_in_diff": "clean — regex over all added diff lines (5194-line diff) and over the new files for api_key|apikey|secret|password|passwd|token|PRIVATE KEY|AKIA|ghp_|gho_|github_pat|BEGIN|bearer|authorization returned ZERO matches; no credential, key or DSN with a real host is added. No production secret store was accessed: the scan only read tracked source plus the untracked new code files. The dev/test DSNs (:55432) already existed at HEAD and are not findings.",
+      "migration_014": "read in full (80 lines): no secrets; idempotent CREATE TABLE IF NOT EXISTS + CREATE INDEX IF NOT EXISTS; taxonomy CHECKs on every status/confidence and on wacc_source (5 values); `> 0` CHECKs on all six scenarios; valuation_components BETWEEN 0 AND 4; UNIQUE (security_id, as_of, model_version); FK security_id -> securities(id); ck_valuation_results_has_value prevents value-less rows; no identifier comes from user input (all identifiers are literals in the file).",
+      "sql_injection": "clean — no dynamic SQL in the new code. storage/valuation.go is 100% parameterized ($1..$37 + now() for calculation_timestamp); fundamentals.go builds SQL only by concatenating placeholder indices ($n) of an internal counter, never a user value; health.go's buildCountQuery interpolates only the hardcoded healthTableNames list, filtered by healthTableNameRe and qualified with public. (valuation_results added to that list, matches the regex).",
+    "api_surface": "no new routes — internal/api/router.go is NOT in the M6b diff, so the mutating endpoints are unchanged (PUT/DELETE /watchlist/{ticker}, POST /refresh, POST /force-refresh, all pre-existing M5.1). M6b only adds an additive `valuation` counter to the POST /refresh response and reads the new table in GET /valuation/{ticker} and GET /health.",
+    "api_response_fields": "no sensitive field exposure — the new blocks are market/derived data (graham/dcf scenarios, margin_of_safety, uncertainty, confidence, reasons, sensitivity grid, inputs echo, model_version). /valuation removes `upside_pct` (M4b consensus) and adds `valuation_source` (persisted|computed). No credentials, DSNs, internal hostnames or stack traces in any payload. loader.go degrades gracefully on an unreadable inputs_snapshot/sensitivity (warn + column projection) instead of failing the request.",
+    "authz_and_authn": "unchanged — no authentication/authorization model was added, removed or weakened by M6b; POST /refresh keeps its existing guardPipeline advisory-lock behaviour (409 on concurrent job).",
+    "sql_parameterization_and_input": "clean — GetSecurityByTicker/path params and all query filters use placeholders; the new GetLatestFYFundamentalsAsOf is fully parameterized ($1 security_id, $2 concept = ANY[], $3 asOf) and adds a look-ahead guard (filing_date <= asOf), which is an integrity improvement.",
+    "dependencies": "UNCHANGED — `git diff --stat 7b68aed -- go.mod go.sum web/package.json web/package-lock.json package.json package-lock.json` is empty and `git status --short` shows no modification/untracked entry for any of them. M6b introduces zero new third-party dependencies (new imports are limited to encoding/json, errors, log/slog, math, time and the already-present github.com/jackc/pgx/v5). Dependency audit is therefore not applicable to this diff (no new supply-chain surface).",
+    "env_parsing": "tolerant, no panic — envFloat/envInt/envBool (config.go:155-196) return the default on empty or unparseable values with slog.Warn and never return an error; ConfigFromEnv clamps HorizonYears<=0 -> 5 and SensitivitySteps<1 -> 1; Calculate (valuation.go:264) is pure and reads no environment. The only parsing gap is the non-finite case of SEC-M6b-002.",
+    "frontend": "clean — no dangerouslySetInnerHTML, innerHTML, eval, new Function, document.write, or dynamic href/src in the web diff (DashboardPage.tsx, TickerDetailPage.tsx, types.ts); React escaping applies to the new valuation block. No new external URL, no fetch to a third-party host, no VITE_/process.env secret usage; the new UI consumes the existing API_BASE client.",
+    "dangerous_go_constructs": "none in the new code — no panic(), os.Exit, exec.Command, unsafe or reflect in internal/valuation/*, internal/pipeline/valuation.go or internal/storage/valuation.go (only reflect.DeepEqual in a test). go vet clean.",
+    "log_hygiene": "acceptable — new slog lines log ticker, as_of, counts, model_version and errors; no DSN, password or raw env value is logged except the pattern noted in SEC-M6b-004.",
+    "non_finite_defense": "verified — sane() and isFinite() in internal/valuation/valuation.go, re-checked in calcMOS (mos.go:16,20), CalcUncertainty (uncertainty.go:23,36,45,51) and CalcPEG (peg.go:18-45), so NaN/Inf can never reach the six scenario columns through the engine."
+  },
+  "tools": {
+    "gitleaks": "not_available (tool_missing)",
+    "gosec": "not_available (tool_missing)",
+    "govulncheck": "not_available (tool_missing)",
+    "go_vet": "available_and_clean",
+    "secret_scan_method": "regex_fallback_ADVISORY",
+    "dependency_audit": "not_applicable_no_dependency_changes"
+  },
+  "methodology": {
+    "gitleaks_available": false,
+    "scan_type": "diff-based regex (advisory) + full manual review of migration 014, the 7 new internal/valuation files, internal/pipeline/valuation.go, internal/storage/valuation.go, the API diff (loader/handlers/refresh/health/score_response) and the web diff",
+    "baseline": "HEAD 7b68aed2c81c3b95ada3704241596e4675ab69da -> working tree (git diff + untracked code files); docs/, .ai/ and the ./analytics ELF artifact excluded",
+    "git_mutations": "none (no add/commit/tag/push); no production secret store accessed; no secret value printed",
+    "notes": "M6b is a pure-valuation milestone with no new routes, no new dependencies and no credential surface. The new table is taxonomy-constrained at the DB level and every write path is parameterized and engine-generated. The two low findings are hardening opportunities (unbounded JSONB payload columns, non-finite env values) and one pre-existing low finding on the Makefile DSN echo whose neighbouring line M6b actually fixes. No policy-defined hard block (exposed secret) is present, so M6b may proceed to Review."
+  },
+  "summary": "Security scan M6b abys-m6b-valuation: VERDICT pass, 0 hard blocks, 7 findings (2 low, 5 info), all advisory. No secrets in the 5194-line diff or the 7 new internal/valuation files, internal/pipeline/valuation.go, internal/storage/valuation.go and migration 014 (regex fallback = advisory; gitleaks/gosec/govulncheck tool_missing). Zero dependency changes: go.mod, go.sum and web/package-lock.json are untouched, so no new supply-chain surface and no dependency audit applicable. Migration 014 has no secrets, constrains every status/confidence with CHECKs, blocks value-less rows and takes no identifier from user input. No dynamic SQL: all writes/reads are parameterized; health.go still interpolates only the hardcoded, regex-filtered table list (valuation_results added). No new API routes (router.go unchanged) and no new sensitive response fields; POST /refresh only gains an additive `valuation` counter. Frontend adds no dangerous sinks, external URLs or secret usage. New VALUATION_* env vars parse tolerantly without panic (defaults + warn, clamped ranges); the only gap is that ParseFloat accepts NaN/Inf silently, contained downstream by sane()/isFinite(). go vet clean. Hygiene: untracked 14.9 MB ./analytics ELF binary at the repo root is not covered by .gitignore (excluded from the scan, no secret material)."
+}

@@ -83,8 +83,14 @@ GROUP BY metric`, securityID, years)
 	return out, nil
 }
 
-// GetLastClosePrices returns the most recent 'n' daily closes of a security
-// (date ascending), used for SMA/momentum inputs of the score engine.
+// GetLastClosePrices returns the most recent 'n' daily bars of a security
+// (date ascending), used for the SMA/momentum inputs of the score engine.
+//
+// Returns the WHOLE row on purpose (the caller decides which price it needs):
+// the score's trend dimension reads `adjusted_close`, while the valuation uses
+// the raw `close` of the last bar as the valuation price (§22). Keeping both in
+// the result is what lets both consumers be explicit about which one they use
+// instead of assuming.
 func GetLastClosePrices(ctx context.Context, q DBTX, securityID int64, n int) ([]DailyPrice, error) {
 	if n <= 0 {
 		n = 400

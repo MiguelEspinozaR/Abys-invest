@@ -13,14 +13,6 @@ import (
 	"github.com/miky/abys-invest/internal/storage"
 )
 
-// ReferenceEnricher resolves the reference data (sector/industry and beta) of a
-// ticker.
-type ReferenceEnricher interface {
-	// GetReferenceData returns the reference data or an error (the caller falls
-	// back to the next source).
-	GetReferenceData(ctx context.Context, ticker string) (*ReferenceData, error)
-}
-
 // ReferenceData is the reference data resolved from any source. Beta is
 // nil when the source does not provide it: only Yahoo does (plan D17), Finviz
 // is a sector/industry fallback and its scraping is NOT used for beta (ToS).

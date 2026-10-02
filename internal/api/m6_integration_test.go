@@ -43,16 +43,24 @@ func m6Seed(t *testing.T, ticker string, withBeta bool) int64 {
 			}
 			return out
 		}
-		add := func(concept string, v float64) {
-			rows = append(rows, storage.Fundamental{
+		add := func(concept string, v float64, instant bool) {
+			row := storage.Fundamental{
 				SecurityID: sec.ID, Concept: concept, Value: &v, Unit: &unit,
 				PeriodType: "duration", PeriodStart: &start, PeriodEnd: end,
 				FiscalYear: &fiscalYear, FiscalPeriod: &fy, FilingDate: &filing, Source: src,
-			})
+			}
+			if instant {
+				row.PeriodType = "instant"
+				row.PeriodStart = nil // instant facts: period_start IS NULL (EDGAR real)
+				row.PeriodEnd = end
+			}
+			rows = append(rows, row)
 		}
-		add("revenues", g(300_000))
-		add("eps_diluted", g(5))
-		add("free_cash_flow", g(80_000))
+		add("revenues", g(300_000), false)
+		add("eps_diluted", g(5), false)
+		add("free_cash_flow", g(80_000), false)
+		add("shares_outstanding", 1_000, true)
+		add("total_debt", 400_000, true)
 	}
 	prices := make([]storage.DailyPrice, 0, 20)
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)

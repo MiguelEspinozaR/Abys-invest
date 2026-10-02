@@ -52,29 +52,34 @@ const (
 
 // ScoresResult summarizes a metrics + scores refresh pass.
 type ScoresResult struct {
-	Tickers int `json:"tickers"` // securities objetivo seleccionadas
-	Growth  int `json:"growth"`  // securities con growth_metrics persistida OK
-	WACC    int `json:"wacc"`    // securities con wacc_metrics persistida OK
-	Metrics int `json:"metrics"` // securities con métricas persistidas OK
-	Scores  int `json:"scores"`  // securities con score persistido OK
+	Tickers   int `json:"tickers"`   // securities objetivo seleccionadas
+	Growth    int `json:"growth"`    // securities con growth_metrics persistida OK
+	WACC      int `json:"wacc"`      // securities con wacc_metrics persistida OK
+	Valuation int `json:"valuation"` // securities con valuation_results persistida OK
+	Metrics   int `json:"metrics"`   // securities con métricas persistidas OK
+	Scores    int `json:"scores"`    // securities con score persistido OK
 }
 
 // ForceResult summarizes a full pipeline force-refresh pass.
 type ForceResult struct {
-	Tickers int            `json:"tickers"` // securities objetivo (metrics+scores)
-	Growth  int            `json:"growth"`  // securities con growth_metrics persistida OK
-	WACC    int            `json:"wacc"`    // securities con wacc_metrics persistida OK
-	Metrics int            `json:"metrics"` // securities con métricas persistidas OK
-	Scores  int            `json:"scores"`  // securities con score persistido OK
-	Steps   map[string]int `json:"steps"`   // conteos por etapa (edgar/prices/sector/growth/metrics/scores)
+	Tickers   int            `json:"tickers"`   // securities objetivo (metrics+scores)
+	Growth    int            `json:"growth"`    // securities con growth_metrics persistida OK
+	WACC      int            `json:"wacc"`      // securities con wacc_metrics persistida OK
+	Valuation int            `json:"valuation"` // securities con valuation_results persistida OK
+	Metrics   int            `json:"metrics"`   // securities con métricas persistidas OK
+	Scores    int            `json:"scores"`    // securities con score persistido OK
+	Steps     map[string]int `json:"steps"`     // conteos por etapa (edgar/prices/sector/growth/valuation/metrics/scores)
 }
 
 var errPoolNil = errors.New("pipeline: pool nil (BD no disponible)")
 
 // RefreshMetricsAndScores re-computes and persists growth_metrics + wacc_metrics
-// + derived_metrics + scores (plan M4c "Refresh" + M6a, sin red) for every
-// active security with a price. dryRun logs without persisting. Returns the
-// processed counts.
+// + valuation_results + derived_metrics + scores (plan M4c "Refresh" + M6a/M6b,
+// sin red) for every active security with a price. dryRun logs without
+// persisting. Returns the processed counts.
+//
+// ORDEN (M6b C2): growth → valuation → metrics → scores. Cada etapa consume la
+// fila persistida por la anterior; los scores además LEEN valuation_results.
 func RefreshMetricsAndScores(ctx context.Context, pool *pgxpool.Pool, growth float64, dryRun bool) (ScoresResult, error) {
 	if pool == nil {
 		return ScoresResult{}, errPoolNil
@@ -92,16 +97,19 @@ func RefreshMetricsAndScores(ctx context.Context, pool *pgxpool.Pool, growth flo
 		return ScoresResult{}, nil
 	}
 
-	// growth ANTES de metrics/scores (M6a D1): las filas quedan disponibles
-	// para cuando M6b cablee el valor individual a las fórmulas.
+	// growth ANTES de valuation: la valoración USA el growth ya persistido.
 	g := runGrowthWaccJob(ctx, pool, securities, dryRun)
+	// valuation ANTES de metrics/scores: los scores leen valuation_results y,
+	// sin fila, renormalizan sus pesos sin las dimensiones de valoración.
+	v := runValuationJob(ctx, pool, securities, dryRun)
 
 	return ScoresResult{
-		Tickers: len(securities),
-		Growth:  g.Growth,
-		WACC:    g.WACC,
-		Metrics: runMetricsJob(ctx, pool, securities, growth, dryRun),
-		Scores:  runScoresJob(ctx, pool, securities, growth, dryRun),
+		Tickers:   len(securities),
+		Growth:    g.Growth,
+		WACC:      g.WACC,
+		Valuation: v.Inserted,
+		Metrics:   runMetricsJob(ctx, pool, securities, growth, dryRun),
+		Scores:    runScoresJob(ctx, pool, securities, growth, dryRun),
 	}, nil
 }
 
@@ -177,7 +185,9 @@ func ForceRefreshWithProgress(ctx context.Context, pool *pgxpool.Pool, companies
 	res.Steps["sector"] = n
 	report("sector", n)
 
-	// 4) Métricas + 5) scores.
+	// 4) growth/wacc → 5) valuation 2.0.0 → 6) métricas → 7) scores.
+	//    El orden es parte del contrato (M6b C2): cada etapa lee la fila
+	//    persistida por la anterior.
 	securities, err := resolveTargets(ctx, pool, tickersCSV)
 	if err != nil {
 		return res, fmt.Errorf("pipeline: resolución de tickers: %w", err)
@@ -191,6 +201,10 @@ func ForceRefreshWithProgress(ctx context.Context, pool *pgxpool.Pool, companies
 	res.Growth, res.WACC = g.Growth, g.WACC
 	res.Steps["growth"] = g.Growth
 	report("growth", g.Growth)
+	v := runValuationJob(ctx, pool, securities, dryRun)
+	res.Valuation = v.Inserted
+	res.Steps["valuation"] = v.Inserted
+	report("valuation", v.Inserted)
 	res.Metrics = runMetricsJob(ctx, pool, securities, growth, dryRun)
 	res.Scores = runScoresJob(ctx, pool, securities, growth, dryRun)
 	res.Steps["metrics"] = res.Metrics
@@ -201,8 +215,8 @@ func ForceRefreshWithProgress(ctx context.Context, pool *pgxpool.Pool, companies
 }
 
 // WatchlistRefresh (M5.1) es el pipeline PARCIAL de los tickers ya catalogados
-// de la watchlist: prices -> sector -> growth/wacc -> metrics -> scores, en ese
-// orden y SIN EDGAR ni catálogo (el ticker ya existe en securities: lo
+// de la watchlist: prices -> sector -> growth/wacc -> valuation -> metrics ->
+// scores, en ese orden y SIN EDGAR ni catálogo (el ticker ya existe en securities: lo
 // garantiza el PUT /watchlist/{ticker}, que devuelve 404 si no). Devuelve
 // ForceResult con Steps{prices,sector,growth,metrics,scores} (sin clave "edgar").
 //
@@ -254,7 +268,7 @@ func WatchlistRefresh(ctx context.Context, pool *pgxpool.Pool, tickers []string,
 
 	// 3) Growth + WACC (M6a). Sin red: lee fundamentals/precios y la beta
 	// observada que el paso 2 acaba de refrescar, así que va DESPUÉS de sector
-	// y ANTES de metrics/scores.
+	// y ANTES de valuation/metrics/scores.
 	securities, err := resolveTargets(ctx, pool, tickersCSV)
 	if err != nil {
 		return res, fmt.Errorf("pipeline: resolución de tickers: %w", err)
@@ -269,7 +283,19 @@ func WatchlistRefresh(ctx context.Context, pool *pgxpool.Pool, tickers []string,
 	res.Tickers = len(securities)
 	report("growth", g.Growth)
 
-	// 4) Métricas derivadas.
+	// 4) Valuation 2.0.0 (M6b). Etapa propia y OBSERVABLE (step "valuation")
+	// porque los scores leen valuation_results: sin esta fila el score se
+	// renormaliza sin las dimensiones Graham/DCF, y eso debe verse en el
+	// progreso del job, no aparecer como un score mysteriously más bajo.
+	v, err := RunAnalytics(ctx, pool, tickersCSV, growth, dryRun, AnalyticsJobValuation)
+	if err != nil {
+		return res, fmt.Errorf("pipeline: valuation: %w", err)
+	}
+	res.Valuation = v.Valuation
+	res.Steps["valuation"] = v.Valuation
+	report("valuation", v.Valuation)
+
+	// 5) Métricas derivadas.
 	m, err := RunAnalytics(ctx, pool, tickersCSV, growth, dryRun, AnalyticsJobMetrics)
 	if err != nil {
 		return res, fmt.Errorf("pipeline: metrics: %w", err)
@@ -277,7 +303,7 @@ func WatchlistRefresh(ctx context.Context, pool *pgxpool.Pool, tickers []string,
 	res.Steps["metrics"] = m.Metrics
 	report("metrics", m.Metrics)
 
-	// 5) Scores (job aparte: progreso en dos saltos y métricas ya persistidas).
+	// 6) Scores (job aparte: progreso en dos saltos y métricas ya persistidas).
 	s, err := RunAnalytics(ctx, pool, tickersCSV, growth, dryRun, AnalyticsJobScores)
 	if err != nil {
 		return res, fmt.Errorf("pipeline: scores: %w", err)

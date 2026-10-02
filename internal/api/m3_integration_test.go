@@ -15,6 +15,7 @@ import (
 
 	"github.com/miky/abys-invest/internal/api"
 	"github.com/miky/abys-invest/internal/storage"
+	"github.com/miky/abys-invest/internal/valuation"
 )
 
 // E2E del plan M3 (T10/T13): el router sirve los endpoints de valoración,
@@ -82,21 +83,35 @@ func seedFixture(t *testing.T) {
 	}
 
 	// Fundamentals FY del ticker principal (EPS = 112000/15400 = 7.27; FCF 98B).
-	periodEnd := time.Date(2025, 9, 28, 0, 0, 0, 0, time.UTC)
-	fundVal := func(concept string, v float64) storage.Fundamental {
-		return storage.Fundamental{
+	// Usar FY2024 con filing_date <= asOf (precio ~2024-10-28) para evitar look-ahead.
+	// Duración ~365 días para facts de duración; period_start IS NULL para instants.
+	periodEnd := time.Date(2024, 9, 30, 0, 0, 0, 0, time.UTC)
+	periodStart := periodEnd.AddDate(0, 0, -365)
+	filingDate := time.Date(2024, 10, 15, 0, 0, 0, 0, time.UTC) // <= asOf (~2024-10-28)
+	fundVal := func(concept string, v float64, instant bool) storage.Fundamental {
+		f := storage.Fundamental{
 			SecurityID: ids[m3Tick], Concept: concept, Value: &v, Unit: d(3),
-			PeriodType: "P", PeriodStart: &periodEnd, PeriodEnd: periodEnd,
-			FiscalYear: int16Ptr(2025), FiscalPeriod: &fy, FilingDate: &periodEnd,
+			PeriodEnd:  periodEnd,
+			FiscalYear: int16Ptr(2024), FiscalPeriod: &fy, FilingDate: &filingDate,
 			Source: src,
 		}
+		if instant {
+			f.PeriodType = "instant"
+			f.PeriodStart = nil // instant facts: period_start IS NULL (EDGAR real)
+		} else {
+			f.PeriodType = "duration"
+			f.PeriodStart = &periodStart // duration facts: ~1 año (330-400 días)
+		}
+		return f
 	}
 	funds := []storage.Fundamental{
-		fundVal("net_earnings", 112000), fundVal("shares_outstanding", 15400),
-		fundVal("shareholders_equity", 62000), fundVal("total_liabilities", 302000),
-		fundVal("free_cash_flow", 98500), fundVal("long_term_debt", 98959),
-		fundVal("short_term_debt", 19987), fundVal("cash_and_equivalents", 29943),
-		fundVal("operating_cash_flow", 118254), fundVal("capex", -9445),
+		fundVal("net_earnings", 112000, false), fundVal("shares_outstanding", 15400, true),
+		fundVal("free_cash_flow", 98500, false), fundVal("cash_and_equivalents", 29943, true),
+		fundVal("operating_cash_flow", 118254, false), fundVal("capex", -9445, false),
+		// total_debt es derivado (long_term_debt + short_term_debt) en EDGAR real;
+		// aquí lo sembramos directo para que el loader lo encuentre.
+		fundVal("total_debt", 118946, true),
+		fundVal("depreciation_amortization", 11000, false),
 	}
 
 	tx, err := pool.Begin(ctx)
@@ -253,9 +268,29 @@ func TestM3Endpoints(t *testing.T) {
 		if !ok {
 			t.Fatalf("sin bloque value: %v", body)
 		}
-		g, _ := val["graham"].(float64)
-		if g <= 0 {
-			t.Fatalf("graham esperado >0 con EPS=7.27, got %v", val["graham"])
+		// Contrato 2.0.0: `graham` es un bloque con status y los TRES
+		// escenarios; el valor base es `graham.base` (ya no un número plano).
+		g, ok := val["graham"].(map[string]any)
+		if !ok {
+			t.Fatalf("value.graham debe ser objeto 2.0.0, got %T: %v", val["graham"], val)
+		}
+		base, _ := g["base"].(float64)
+		if base <= 0 {
+			t.Fatalf("graham.base esperado >0 con EPS=7.27, got %v", g)
+		}
+		if g["status"] != "available" {
+			t.Fatalf("graham.status esperado available con EPS positivo, got %v", g["status"])
+		}
+		if val["model_version"] != valuation.ModelVersion {
+			t.Fatalf("model_version esperado %s, got %v", valuation.ModelVersion, val["model_version"])
+		}
+		// Sin fila persistida el endpoint recalcula: debe declararlo.
+		if src := body["valuation_source"]; src != "computed" && src != "persisted" {
+			t.Fatalf("valuation_source ausente o inválido: %v", body["valuation_source"])
+		}
+		// El 1.x `upside_pct` "vs consenso" desaparece en 2.0.0: no hay consenso.
+		if _, ok := body["upside_pct"]; ok {
+			t.Fatalf("upside_pct ya no existe en el contrato 2.0.0: %v", body)
 		}
 		if body["price"] == nil {
 			t.Fatalf("falta price en /valuation: %v", body)

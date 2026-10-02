@@ -1,0 +1,373 @@
+{
+  "task_id": "abys-m6b-valuation",
+  "stage": "TEST",
+  "date": "2026-10-01T02:45:00-04:00",
+  "tested_at_utc": "2026-10-01T06:45:00Z",
+  "tester": "Tester (verificación independiente; sin commit, sin git, sin tags, sin push, sin deploy, sin modificar código de producto; puerto temporal :18xxx; único archivo escrito: este)",
+  "verdict": "PASS_WITH_FINDINGS",
+  "verdict_detail": "M6b reproduce de forma independiente todos los conteos afirmados por el reviewer: gofmt vacío, go build y go vet limpios, UNIT 344/0/0 (192 top + 152 subtests, por encima del umbral >=342), INTEGRACIÓN 480/0/1 (267 top + 213 subtests) con el único SKIP preexistente TestForceRefreshLoopbackSkips (M4c), npm run build OK, y smoke de contrato del motor 2.0.0 verificado contra datos YA PERSISTIDOS en la BD de datos (sin depender de red ni de precios vivos): /health expone 12 tablas con valuation_results=3 filas, /valuation/AAPL devuelve model_version 2.0.0 con value anidado graham/dcf, margin_of_safety por método, uncertainty, confidence+reasons (wacc_configured + incomplete_scenarios), sensitivity 3x3=9 celdas, peg y p_fcf, price/currency intactos y SIN consensus/upside_pct; /score/AAPL devuelve 2.0.0 con 5 dimensiones y pesos 0.15/0.20/0.30/0.20/0.15 y weight_used ~1.0; /score/MSFT devuelve 1.1.0 legible y SIN dimensions (gate por versión, coexistencia 1.1.0/2.0.0 confirmada también en BD: 50 scores 1.1.0 + 1 score 2.0.0); 404 en envelope tanto en /valuation como en /score; idempotencia verificada con dos ejecuciones consecutivas de run-valuation (insertadas=1, siempre 1 fila, UNIQUE(security_id,as_of,model_version) presente). Se arrastran como hallazgos NO bloqueantes los tres observations del reviewer (H1-H3) y se registra 1 hallazgo NUEVO de severidad mayor sobre el contrato del bloque `bear` y 1 menor sobre el estado del tooling de integración. Ningún fallo, ningún SKIP nuevo, ninguna regresión respecto de M6a.",
+
+  "summary": {
+    "unit": { "pass": 344, "fail": 0, "skip": 0, "exit": 0, "top_level": 192, "subtests": 152, "threshold_required": 342, "threshold_met": true },
+    "integration": { "pass": 480, "fail": 0, "skip": 1, "exit": 0, "top_level": 267, "subtests": 213, "packages_ok": 16, "packages_no_test_files": 2 },
+    "gofmt": { "clean": true, "exit": 0, "output": "" },
+    "go_build": { "ok": true, "exit": 0 },
+    "go_vet": { "ok": true, "exit": 0, "variants": ["./...", "./... -tags=integration"] },
+    "npm_build": { "ok": true, "exit": 0, "js": "index-CSe1P_03.js", "css": "index-B5larWmE.css" },
+    "api_smoke": { "endpoints_checked": 7, "endpoints_ok": 7, "unexpected": 0 },
+    "idempotency": { "runs": 2, "inserted_each_run": 1, "rows_after": 1, "unique_constraint": "UNIQUE (security_id, as_of, model_version)", "ok": true },
+    "secret_scan": { "hits_in_m6b_tree": 0, "security_evidence_verdict": "pass", "hard_blocks": 0, "git_mutated": false },
+    "findings": 5,
+    "findings_by_severity": { "major": 1, "minor": 1, "info": 3 },
+    "findings_blocking_m6b": 0,
+    "delta_vs_m6a_evidence": {
+      "unit": "252/0/0 -> 344/0/0 (+92 PASS, 0 FAIL, 0 SKIP nuevos)",
+      "integration": "388/0/1 -> 480/0/1 (+92 PASS, 0 FAIL, mismo único SKIP de M4c)"
+    }
+  },
+
+  "suites": [
+    {
+      "id": "format",
+      "name": "Formato y estáticos de compilación",
+      "commands": [
+        { "cmd": "gofmt -l cmd internal", "exit": 0, "stdout": "", "expected": "vacío", "ok": true },
+        { "cmd": "go build ./...", "exit": 0, "ok": true },
+        { "cmd": "go vet ./...", "exit": 0, "stdout": "", "ok": true },
+        { "cmd": "go vet -tags=integration ./...", "exit": 0, "stdout": "", "ok": true }
+      ]
+    },
+    {
+      "id": "unit",
+      "name": "Suite de unidad (sin tag de integración, sin BD, sin red)",
+      "commands_run": [
+        "env -u DATABASE_URL -u TEST_DATABASE_URL go test ./... -count=1 -v -p 1",
+        "env -u DATABASE_URL -u TEST_DATABASE_URL go test ./... -count=1 -p 1 -json"
+      ],
+      "exit": 0,
+      "counts": { "pass": 344, "fail": 0, "skip": 0, "top_level": 192, "subtests": 152 },
+      "count_method": "conteo autoritativo sobre `go test -json`, que reporta el campo Package por evento. El primer intento con parseo del log -v dio 342 y se descartó por un off-by-one al cerrar bloques de paquete; el desglose por paquete se reporta desde el JSON y fue cruzado contra los ficheros *_test.go (0 discrepancias reales; las 2 aparentes eran nombres de test duplicados entre paquetes: TestClientRetry e TestConfigFromEnv).",
+      "reviewer_claim": "unit ~342/0/0 (190 top + 152 subtests)",
+      "reviewer_claim_verified": true,
+      "measured_vs_claim": "342ish — MEDIDO 344 (192 top + 152 subtests). Supera el umbral >=342 solicitado; los 2 tests de diferencia son subtests/top-level contados de forma más exacta por el JSON que por el conteo manual del reviewer. 0 FAIL.",
+      "packages_ok": 11,
+      "packages_no_test_files": 3,
+      "packages_no_test_files_list": ["cmd/analytics", "cmd/collector", "internal/storage"],
+      "pass_by_package": {
+        "cmd/api": 2,
+        "internal/api": 38,
+        "internal/backtest": 5,
+        "internal/collect/edgar": 31,
+        "internal/collect/finviz": 4,
+        "internal/collect/macro": 11,
+        "internal/collect/yahoo": 46,
+        "internal/compare": 6,
+        "internal/growth": 39,
+        "internal/metrics": 13,
+        "internal/pipeline": 9,
+        "internal/score": 31,
+        "internal/valuation": 87,
+        "internal/wacc": 22,
+        "total": 344
+      },
+      "largest_package": "internal/valuation con 87 PASS (23 top + 64 subtests) — es el paquete que crece en M6b; incluye los tests del motor 2.0.0 (graham/dcf por escenarios, sensitivity grid, MOS, peg/p_fcf, confidence/reasons, determinismo del calculator).",
+      "no_db_dependency": "verificado: la suite corre con DATABASE_URL y TEST_DATABASE_URL sin definir y no emite ningún skip por BD."
+    },
+    {
+      "id": "integration",
+      "name": "Suite de integración completa contra la BD de pruebas abys_test",
+      "command": "export TEST_DATABASE_URL='postgres://abys:abys@localhost:55432/abys_test?sslmode=disable' && make integration",
+      "equivalent_direct_verified": "export DATABASE_URL='…abys_test…' && go test ./... -tags=integration -count=1 -p 1 -v  -> 480/0/1 exit 0 (idéntico, verificado por el Tester)",
+      "exit": 0,
+      "counts": { "pass": 480, "fail": 0, "skip": 1, "top_level": 267, "subtests": 213 },
+      "count_method": "conteo autoritativo sobre `go test -json -tags=integration` (campo Package por evento), ejecutado con DATABASE_URL exportada apuntando a abys_test. Verificado también vía make integration (sin -v) que da 16 paquetes ok y 0 FAIL.",
+      "reviewer_claim": "480/0/1",
+      "reviewer_claim_verified": true,
+      "builder_claim": "integración en verde",
+      "builder_claim_verified": true,
+      "verified_db": {
+        "name": "abys_test",
+        "host_port": "localhost:55432",
+        "user": "abys",
+        "method": "el guard de make confirmó 'integración contra BD de test: postgres://abys:abys@localhost:55432/abys_test' antes de ejecutar; la recipe ahora propaga DATABASE_URL correctamente (fix T1).",
+        "note": "El DSN por defecto del Makefile autentica correctamente. NUNCA la BD de datos 'abys' para la suite."
+      },
+      "packages_ok": 16,
+      "packages_no_test_files": 2,
+      "packages_no_test_files_list": ["cmd/analytics", "cmd/collector"],
+      "pass_by_package": {
+        "cmd/api": 3,
+        "internal/api": 113,
+        "internal/backtest": 5,
+        "internal/collect/edgar": 33,
+        "internal/collect/finviz": 4,
+        "internal/collect/macro": 13,
+        "internal/collect/yahoo": 51,
+        "internal/compare": 6,
+        "internal/growth": 42,
+        "internal/metrics": 16,
+        "internal/pipeline": 16,
+        "internal/score": 23,
+        "internal/score/fixtures": 1,
+        "internal/storage": 33,
+        "internal/valuation": 87,
+        "internal/wacc": 26,
+        "total": 480
+      },
+      "largest_package": "internal/api con 113 PASS (39 top + 74 subtests) — incluye los nuevos checks de contrato del valuation 2.0.0 y el gate de score por versión.",
+      "skip_detail": {
+        "count": 1,
+        "test": "TestForceRefreshLoopbackSkips",
+        "reason": "t.Skip preexistente de M4c: requiere acceso a SEC/EDGAR + Yahoo desde el entorno de test",
+        "verdict": "SKIP preexistente y esperado. Idéntico al único SKIP registrado en la evidencia de M5.1, M5.2 y M6a. NO es una regresión de M6b.",
+        "new_skips_vs_m6a": 0
+      },
+      "t1_fix_verified": "el fix T1 (propagar TEST_DATABASE_URL -> DATABASE_URL en la recipe integration) FUNCIONA: `make integration` ejecuta los tests contra la BD real y da 0 FAIL. Sin embargo, la vía directa `export TEST_DATABASE_URL=… && go test ./… -tags=integration` (sin pasar por make) SIGUE saltándose los tests de BD: se midió 140 PASS / 0 FAIL / 39 SKIP con exit 0 (ver hallazgo T1-residual)."
+    }
+  ],
+
+  "api_smoke": {
+    "setup": {
+      "binary": "/tmp/opencode/m6b/api (go build -o, fuera del repo; el producto NO se modificó)",
+      "listen": "0.0.0.0:18091 (API_PORT; puerto temporal)",
+      "database": "abys (localhost:55432) — BD de DATOS, solo lecturas GET para el smoke de contrato",
+      "isolation": "NO se tocaron :8080 ni :8082; ambos siguen escuchando con sus procesos originales tras el smoke (verificado con ss -ltnp). Se observó un proceso ajeno 'apismoke' en :18099 (no del Tester) que se dejó intacto.",
+      "teardown": "proceso detenido; :18091 sin listener al terminar",
+      "data_used": "datos YA PERSISTIDOS en valuation_results (AAPL/MSFT/NVDA, model_version 2.0.0) y en scores. NO se forzó red ni precios vivos durante el smoke; los endpoints que calculan en vivo (p.ej. GOOGL, valuation_source=computed) lo hicieron de forma determinista contra la BD local."
+    },
+    "checks": [
+      {
+        "id": "health",
+        "request": "GET http://127.0.0.1:18091/health",
+        "status": 200,
+        "ok": true,
+        "assertions": [
+          "status == 'ok' y database == 'connected'",
+          "tables == 12 entradas EXACTAMENTE (anti-deriva de M6a, ahora incluye valuation_results)",
+          "valuation_results == 3 filas (>0) — confirma persistencia real del motor 2.0.0",
+          "claves de nivel superior: database, db_size, latency_ms, postgres_version, status, tables, version (7; sin laptops)",
+          "postgres_version == '18.6'"
+        ],
+        "tables": [
+          "securities=10428", "daily_prices=54642", "fundamentals=39931", "derived_metrics=400",
+          "scores=51", "growth_metrics=1", "wacc_metrics=1", "valuation_results=3", "watchlist=44",
+          "macro_series=67", "edgar_staging=44", "xbrl_concept_map=20"
+        ]
+      },
+      {
+        "id": "valuation_aapl_2_0_0",
+        "request": "GET http://127.0.0.1:18091/valuation/AAPL",
+        "status": 200,
+        "ok": true,
+        "assertions": [
+          "ticker='AAPL', price=341.07, currency='USD' — contrato de M3 (price/currency) INTACTO",
+          "valuation_source == 'persisted' (datos deterministas desde valuation_results, sin red)",
+          "value.model_version == '2.0.0'",
+          "value anidado: graham {status, base, bull, confidence, reasons} y dcf {status, base, bull, confidence, reasons}; 'bear' AUSENTE en AAPL porque su reason es growth_non_positive (escenario bear baja el growth a negativo y no es calculable) -> nil omitido, coherente con omitempty y nil≠0. Verificado en BD: graham_bear y dcf_bear NULL para AAPL, no-zero para MSFT/NVDA.",
+          "margin_of_safety por método: graham_base=-293.455, dcf_base=-245.6344, dcf_bull=-146.8161, target_margin_of_safety=30 (dcf_bear ausente por el mismo motivo nil). graham_bear/graham_bull sin MOS por diseño (comentado en mos.go: §11 no las define en M6b).",
+          "uncertainty presente: mean=107.8511, std_dev=22.0031, dispersion=0.204014, components=3",
+          "confidence='low' con reasons=['wacc_configured','incomplete_scenarios'] — se espera wacc_configured + incomplete_scenarios (wacc_source=configured_fallback por beta NULL en BD)",
+          "sensitivity == 9 celdas (3x3) presentes con growth/wacc/dcf_base",
+          "peg=30.653996… y p_fcf=51.026868… PRESENTES (aditivos, no sustituyen a metrics)",
+          "inputs: wacc_used=9, wacc_source='configured_fallback', discount_source='configured_fallback', discount_reason='wacc_configured', discount_level=3, normalized_growth_rate=1.4678",
+          "SIN consensus y SIN upside_pct en el contrato 2.0.0 (verificado sobre el JSON crudo): no aparecen ni en value ni a nivel superior",
+          "growth y wacc (bloques M6a) siguen presentes e intactos"
+        ]
+      },
+      {
+        "id": "valuation_msft_full_scenarios",
+        "request": "GET http://127.0.0.1:18091/valuation/MSFT",
+        "status": 200,
+        "ok": true,
+        "assertions": [
+          "model_version='2.0.0', valuation_source='persisted', price=516.17",
+          "graham con los 3 escenarios: bear=261.1741, base=405.2702, bull=513.3423",
+          "dcf con los 3 escenarios: bear=106.8807, base=153.6588, bull=204.4091",
+          "margin_of_safety con dcf_bear=-382.9402 (a diferencia de AAPL, aquí sí hay bear)",
+          "confidence='low', reasons=['growth_fallback','wacc_configured']",
+          "peg=null explícito (nil≠0 correcto: sin earnings growth disponible), p_fcf=57.2177 presente",
+          "sensitivity == 9 celdas",
+          "NOTA: este caso demuestra que el omitempty de 'bear' en AAPL es un nil legítimo (growth_non_positive), NO un campo perdido"
+        ]
+      },
+      {
+        "id": "valuation_unavailable_nil_keys",
+        "request": "GET http://127.0.0.1:18091/valuation/GOOGL (y KO/PEP/AMZN/TSLA)",
+        "status": 200,
+        "ok": true,
+        "assertions": [
+          "GOOGL: valuation_source='computed', graham.status='unavailable' [eps_non_positive], dcf.status='unavailable' [shares_non_positive], confidence='low' reasons=['no_valuation']",
+          "GOOGL/PEP: sensitivity, peg y p_fcf AUSENTES (nil omitido, no 0)",
+          "AMZN/TSLA/KO: sensitivity y peg presentes (tienen datos suficientes)",
+          "VEREDICTO: los bloques nil se OMITEN por completo (no null, no 0) — nil≠0 respetado en valor anidado"
+        ]
+      },
+      {
+        "id": "score_aapl_2_0_0_dimensions",
+        "request": "GET http://127.0.0.1:18091/score/AAPL",
+        "status": 200,
+        "ok": true,
+        "assertions": [
+          "model_version == '2.0.0'",
+          "dimensions == lista de 5 con pesos 0.15/0.20/0.30/0.20/0.15: graham(0.15,score 0), dcf(0.20,score 0), fundamentals(0.30,score 27.5), comparables(0.20,score 50), trend(0.15,score 83)",
+          "weight_used == 0.9999999999999999 (~1.0)",
+          "score y signal presentes; justification legible"
+        ],
+        "dimensions": [
+          { "name": "graham", "weight": 0.15, "score": 0, "valid": true },
+          { "name": "dcf", "weight": 0.20, "score": 0, "valid": true },
+          { "name": "fundamentals", "weight": 0.30, "score": 27.5, "valid": true },
+          { "name": "comparables", "weight": 0.20, "score": 50, "valid": true },
+          { "name": "trend", "weight": 0.15, "score": 83, "valid": true }
+        ],
+        "weight_used": 0.9999999999999999
+      },
+      {
+        "id": "score_version_gate_msft",
+        "request": "GET http://127.0.0.1:18091/score/MSFT",
+        "status": 200,
+        "ok": true,
+        "assertions": [
+          "model_version == '1.1.0' — el score de MSFT sigue en la versión antigua",
+          "SIN 'dimensions' en el body (gate por versión: solo 2.0.0 expone dimensions)",
+          "SIN 'weight_configured' ni 'weight_used' (propios de 2.0.0)",
+          "score=36, signal='vender', justification legible con texto 1.1.0",
+          "COEXISTENCIA 1.1.0/2.0.0 confirmada también en BD: scores tiene 50 filas 1.1.0 + 1 fila 2.0.0"
+        ]
+      },
+      {
+        "id": "404_valuation",
+        "request": "GET http://127.0.0.1:18091/valuation/NONEXISTS",
+        "status": 404,
+        "ok": true,
+        "assertions": [
+          "sigue en envelope de error: {\"error\":{\"code\":\"not_found\",\"message\":\"security \\\"NONEXISTS\\\" no encontrada o sin datos de valoración\"}}",
+          "NO se filtra información de la BD al migrar el contrato a 2.0.0"
+        ],
+        "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"security \\\"NONEXISTS\\\" no encontrada o sin datos de valoración\"}}"
+      },
+      {
+        "id": "404_score",
+        "request": "GET http://127.0.0.1:18091/score/NONEXISTS",
+        "status": 404,
+        "ok": true,
+        "assertions": ["envelope de error de score preservado: {\"error\":{\"code\":\"not_found\",\"message\":\"sin score para \\\"NONEXISTS\\\" (ejecuta analytics -job scores primero)\"}}"],
+        "body": "{\"error\":{\"code\":\"not_found\",\"message\":\"sin score para \\\"NONEXISTS\\\" (ejecuta analytics -job scores primero)\"}}"
+      }
+    ],
+    "result": "8/8 checks OK. Ningún 5xx, ningún panic, ningún campo en 0 que deba ser nil."
+  },
+
+  "idempotency": {
+    "target": "valuation_results / make run-valuation TICKERS=AAPL",
+    "runs": 2,
+    "inserted_each_run": 1,
+    "result": "OK — sin duplicados",
+    "unique_constraint": "uq_valuation_results UNIQUE (security_id, as_of, model_version)",
+    "detail": "Se ejecutó `make run-valuation TICKERS=AAPL` dos veces consecutivas. Ambas imprimieron 'insertadas=1 sin_precio=0 sin_valoracion=0 total=1'. Tras ambas, `select count(*) from valuation_results where security_id=AAPL` devuelve 1. El log de la 2a ejecución muestra model_version=2.0.0, graham_base=86.685907, dcf_base=98.679416, confidence=low. La constraint UNIQUE (security_id, as_of, model_version) está presente en la BD y garantiza la idempotencia por diseño (upsert).",
+    "db_rows_after": { "AAPL": 1, "MSFT": 1, "NVDA": 1, "model_version": "2.0.0" }
+  },
+
+  "frontend": {
+    "command": "cd web && npm run build",
+    "exit": 0,
+    "ok": true,
+    "detail": "tsc (modo estricto, sin errores de tipo) + vite build. 46 módulos, dist/index.html 0.40 kB, dist/assets/index-B5larWmE.css 20.63 kB (gzip 4.41), dist/assets/index-CSe1P_03.js 207.34 kB (gzip 64.11), construido en 5.98s.",
+    "asset_hashes_vs_m6a": "CAMBIAN respecto a M6a (index-BeqNKrtA.js / index-CD-PyuE9.css -> index-CSe1P_03.js / index-B5larWmE.css). Es correcto: a diferencia de M6a (solo tipos), M6b introduce lógica de UI de valoración/score, por lo que el bundle sí cambia. La ausencia de errores tsc confirma que los tipos TS de web/src/api/types.ts siguen siendo coherentes con el contrato 2.0.0 (dimensions, sensitivity, margin_of_safety, etc.)."
+  },
+
+  "findings": [
+    {
+      "id": "H1",
+      "severity": "info",
+      "status": "reviewer — arrastrado, NO bloqueante, confirmado en vivo",
+      "title": "reason 'wacc_configured' + confidence degradado a 'low' por beta NULL (wacc_source=configured_fallback)",
+      "detail": "Verificado en vivo: /valuation/AAPL expone inputs.wacc_used=9, wacc_source='configured_fallback', discount_reason='wacc_configured', discount_level=3, y el confidence global del valor es 'low' con reasons ['wacc_configured','incomplete_scenarios']. El WACC configurado por defecto (9%) se usa como valor por defecto explícito (wacc_used=9 coincide con wacc=9 de M6a) y el motor lo DECLARA (no lo disfraza de observado). Es el comportamiento correcto y esperado mientras securities.beta siga a NULL; se resuelve operativamente con `make run-sector` + `make run-growth` (como en M6a, F3). No afecta al contrato 2.0.0.",
+      "affects_m6b": false
+    },
+    {
+      "id": "H2",
+      "severity": "info",
+      "status": "reviewer — arrastrado, NO bloqueante, confirmado en vivo",
+      "title": "reason 'incomplete_scenarios' cuando falta el escenario bear (caso growth_non_positive)",
+      "detail": "En AAPL el escenario bear no es calculable (razón interna growth_non_positive: el shift bear baja el growth a negativo), por lo que graham_bear/dcf_bear se omiten (nil, no 0) y el motor añade 'incomplete_scenarios' al reason, degradando confidence a 'low'. Verificado en BD que AAPL tiene graham_bear/dcf_bear NULL mientras MSFT/NVDA tienen los 3 escenarios. Es la semántica de nil≠0 del motor, no un defecto: el uncertainty.components=3 (no 4) refleja honestamente que solo 3 de 4 valores se usaron. Coherente con la review del reviewer.",
+      "affects_m6b": false
+    },
+    {
+      "id": "H3",
+      "severity": "info",
+      "status": "reviewer — arrastrado, NO bloqueante",
+      "title": "coexistencia 1.1.0/2.0.0 y gate por versión en /score",
+      "detail": "Confirmado en vivo y en BD: /score/AAPL -> 2.0.0 con dimensions/weight_used; /score/MSFT -> 1.1.0 SIN dimensions (gate por versión). BD: scores tiene 50 filas 1.1.0 + 1 fila 2.0.0; valuation_results solo 2.0.0. LaGate evita que un consumidor 1.1.0 lea dimensiones inexistentes. Sin impacto negativo.",
+      "affects_m6b": false
+    },
+    {
+      "id": "F1",
+      "severity": "major",
+      "status": "NUEVO, caracterización del residuo del fix T1 — NO bloqueante para M6b",
+      "title": "El fix T1 arregla `make integration` pero la vía directa `go test` con solo TEST_DATABASE_URL sigue dando un falso verde (140/0/39)",
+      "detail": "El fix T1 (propagar TEST_DATABASE_URL->DATABASE_URL en la recipe) hace que `make integration` funcione correctamente (480/0/1). Sin embargo, la vía directa `export TEST_DATABASE_URL=… && go test ./… -tags=integration` — que el propio plan/uso habitual puede invocar — sigue ejecutándose con DATABASE_URL vacía: se midió 140 PASS / 0 FAIL / 39 SKIP con exit 0 (los 39 tests de BD se saltan en silencio por el guard 'DATABASE_URL no configurado'). Los tests leen DATABASE_URL, no TEST_DATABASE_URL. La evidencia de esta tarea (480/0/1) se obtuvo exportando AMBAS variables y se contrastó con make integration (idéntico), por lo que es genuina. No es código de M6b ni bloquea el avance, pero condiciona la fiabilidad de cualquier verificación futura de integración si se usa la vía directa. Mismo patrón residual que el F1 de M6a, parcialmente mitigado.",
+      "reproduction": [
+        { "cmd": "export TEST_DATABASE_URL='…abys_test…' && make integration", "result": "480/0/1, exit 0", "note": "fix T1: CORRECTO" },
+        { "cmd": "export TEST_DATABASE_URL='…abys_test…' && go test ./… -tags=integration -count=1 -p 1 -v", "result": "140/0/39, exit 0", "note": "vía directa: FALSO VERDE, DATABASE_URL no llega a los tests" },
+        { "cmd": "export DATABASE_URL='…abys_test…' && go test ./… -tags=integration -count=1 -p 1 -v", "result": "480/0/1, exit 0", "note": "vía directa correcta (la usada para el conteo autoritativo)" }
+      ],
+      "suggested_fix": "heredar de M6a: unificar en que los tests de integración lean TEST_DATABASE_URL (o que el guard/export documenten que hay que exportar DATABASE_URL), para que no exista una vía que devuelva verde sin ejecutar los tests de BD.",
+      "affects_m6b": false
+    },
+    {
+      "id": "F2",
+      "severity": "minor",
+      "status": "NUEVO, información de contrato — NO bloqueante",
+      "title": "El bloque `bear` y los escenarios no calculables se OMITEN (omitempty), no se emiten como null/0 — el consumidor debe tratarlos como opcionales",
+      "detail": "En el contrato 2.0.0 los escenarios de graham/dcf y los MOS son punteros *float64 con omitempty (valuation.go:135-137,159-162). Cuando un escenario no es calculable (caso growth_non_positive de AAPL) la clave desaparece del JSON en vez de valer 0. Esto es INTENCIONADO y correcto (nil≠0), y el motor lo señala con reason 'incomplete_scenarios' y uncertainty.components<4. Sin embargo, es una diferencia de forma entre tickers (AAPL sin bear, MSFT con bear) que un consumidor debe manejar como campo opcional, no como número. Se registra como información de contrato para la documentación de la API; no es un defecto. Coherente con la filosofía nil≠0 del proyecto ya validada en M6a.",
+      "affects_m6b": false
+    }
+  ],
+
+  "secret_scan": {
+    "scope": "árbol de trabajo M6b completo: los 49 ficheros modificados trackeados + los 10 no versionados (internal/valuation/{concepts,confidence,config,mos,peg,uncertainty}.go, internal/pipeline/valuation.go, internal/storage/valuation.go, migrations/014_create_valuation_results.sql, docs/), y el JSON de seguridad test-results/security/abys-m6b-valuation.json",
+    "patterns": ["api_key/apikey", "password/passwd", "secret", "bearer <token>", "postgres://user:pass@", "AKIA…", "BEGIN … PRIVATE KEY"],
+    "hits_in_product_code": 0,
+    "hits_detail": "Los únicos matches de los patrones son (a) menciones en comentarios/documentación que nombran variables de entorno (p.ej. 'DATABASE_URL', 'SEC_EDGAR_USER_AGENT', 'BLS_API_KEY') NUNCA con su valor, y (b) texto DESCRIPTIVO dentro de los findings del security-scanner. Ninguno contiene una credencial real.",
+    "env_handling": ".env existe en el árbol de trabajo pero (i) NO fue leído por el Tester, (ii) está en .gitignore, y (iii) NO está trackeado en git (`git ls-files .env` falla). Ningún DSN de datos real se copió a la evidencia; en el smoke solo se usó el DSN docker de desarrollo local (abys@localhost:55432), preexistente y documentado en .env.example/deploy/setup.sh.",
+    "security_evidence_crosscheck": "test-results/security/abys-m6b-valuation.json: verdict=pass, 0 hard blocks, 7 findings (2 low, 5 info, todos consultivos/advisory). Coincide con mi escaneo: 0 secretos en el diff de M6b.",
+    "verdict": "no hay secretos en el árbol de M6b. Ningún artefacto o fichero nuevo contiene credenciales reales."
+  },
+
+  "git_scope_check": {
+    "git_mutated_by_tester": false,
+    "commits": 0,
+    "tags": 0,
+    "pushes": 0,
+    "branch": "sin cambios de rama (master)",
+    "head_at_start": "7b68aed feat(m6a): …",
+    "head_at_end": "7b68aed feat(m6a): … (sin cambios)",
+    "product_files_touched_by_tester": 0,
+    "files_written_by_tester": ["test-results/tests/abys-m6b-valuation.json"],
+    "build_artifacts_outside_repo": "/tmp/opencode/m6b/api (binario), /tmp/opencode/m6b/*.log|json (logs de evidencia, fuera del repo)",
+    "note": "El 'analytics' ELF no versionado de 14.9 MB en la raíz del repo (mencionado por el security-scanner) es preexistente del Builder/Reviewer y no del Tester."
+  },
+
+  "reproducibility": {
+    "unit_runs": 1,
+    "unit_result": "344/0/0 (go test -json, autoritativo)",
+    "integration_runs": 2,
+    "integration_results": "480/0/1 vía `export DATABASE_URL=… && go test … -tags=integration -json`; y make integration (sin -v) dio 0 FAIL con 16 paquetes ok, reproducido dos veces.",
+    "counting_note": "Los conteos se tomaron de `go test -json` (campo Package por evento), no de un conteo manual del log -v. El primer parseo del log -v arrojó 342/477 por un off-by-one al cerrar bloques de paquete; se descartó tras cruzarlo con el JSON autoritativo.",
+    "smoke_against": "BD de datos 'abys' con migraciones aplicadas, valuation_results sembrada para AAPL/MSFT/NVDA (2.0.0) y scores con coexistencia 1.1.0/2.0.0. Solo lecturas GET para el contrato, salvo el run-valuation de idempotencia (que es la operación de escritura esperada y no dejó duplicados)."
+  },
+
+  "operational_notes": [
+    "Órdenes verificadas por el Tester, de la más a la menos fiable para la integración: (1) `export DATABASE_URL='…abys_test…' && go test ./… -tags=integration -count=1 -p 1` (o la variante -json para conteo autoritativo); (2) `export TEST_DATABASE_URL='…' && make integration` (fix T1 lo hace correcto); (3) NUNCA `export TEST_DATABASE_URL` + `go test` directo sin exportar DATABASE_URL (falso verde 140/0/39, ver F1).",
+    "El API lee el puerto de la variable API_PORT (no PORT). Para el smoke se usó API_PORT=18091. No usar PORT: si no se define API_PORT el servidor intenta escuchar en :8080 por defecto y falla por 'address already in use'.",
+    "Los tests de integración comparten la BD abys_test y la truncan (de ahí el -p 1); la suite restaura el estado al terminar. El smoke de contrato se hizo contra 'abys' (solo lectura GET).",
+    "Puertos: el smoke usó :18091 y lo liberó al terminar. :8080 y :8082 nunca se tocaron y siguen con sus procesos originales. Se observó un proceso ajeno 'apismoke' en :18099 (no del Tester) que se dejó intacto.",
+    "Idempotencia de run-valuation verificada con dos ejecuciones: siempre insertadas=1 y 1 fila en BD, con constraint UNIQUE (security_id, as_of, model_version).",
+    "Coexistencia 1.1.0/2.0.0: /score gatea por versión (solo 2.0.0 expone dimensions); BD: scores 1.1.0=50 + 2.0.0=1; valuation_results solo 2.0.0.",
+    "Cobertura: se midió por paquete (internal/valuation e internal/api son los más altos y son los que grow en M6b). NO se aplica ni se inventa ningún umbral de cobertura — el proyecto no define gate de cobertura en el Makefile/CI (no hay target `coverage` ni `-coverprofile`).",
+    "`go vet -tags=integration ./...` también sale limpio."
+  ],
+
+  "verdict_reasoning": "PASS con hallazgos. Todos los conteos afirmados por el reviewer se reprodujeron de forma independiente y autoritativa (unit 344/0/0 >= 342; integración 480/0/1 con el único SKIP preexistente de M4c; gofmt/build/vet limpios; build web OK; contrato 2.0.0 correcto con omitempty y nil≠0; coexistencia 1.1.0/2.0.0; 404 en envelope; idempotencia; sin secretos; diff acotado a M6b). El motor 2.0.0 se comporta como el esperado por el reviewer: valor anidado graham/dcf por escenarios, MOS por método, uncertainty, confidence con reasons honestos (wacc_configured + incomplete_scenarios), sensitivity 3x3, peg/p_fcf aditivos, price/currency intactos y sin consensus/upside_pct; los datos se tomaron de la BD persistida (sin red, determinista). Ningún fallo, ningún SKIP nuevo, ninguna regresión. Los hallazgos H1-H3 (arrastrados del reviewer) son informativos y no bloqueantes; el hallazgo NUEVO mayor (F1) es un residuo del fix T1 que afecta a la fiabilidad de la vía directa `go test` (falso verde), no al código de M6b ni al resultado; F2 documenta la semántica de campos opcionales del contrato 2.0.0. Ninguno impide cerrar la milestone."
+}

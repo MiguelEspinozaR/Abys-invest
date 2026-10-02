@@ -42,9 +42,10 @@ func seedM6Pipeline(t *testing.T, pool *pgxpool.Pool, ticker string, withBeta bo
 				PeriodType: "duration", PeriodStart: &start, PeriodEnd: end,
 				FiscalYear: &fiscalYear, FiscalPeriod: &fy, FilingDate: &filing, Source: src,
 			}
-			if instant { // los saldos son instantáneos (period_start = period_end)
+			if instant { // los saldos son instantáneos (period_start IS NULL en EDGAR real)
 				row.PeriodType = "instant"
-				row.PeriodStart = &end
+				row.PeriodStart = nil
+				row.PeriodEnd = end
 			}
 			rows = append(rows, row)
 		}

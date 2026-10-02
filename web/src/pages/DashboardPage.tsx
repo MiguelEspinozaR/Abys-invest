@@ -276,8 +276,14 @@ export default function DashboardPage() {
                 <th className="px-4 py-3">Ticker</th>
                 <th className="px-4 py-3">Nombre</th>
                 <th className="px-4 py-3 text-right">Precio</th>
-                <th className="px-4 py-3 text-right">Graham</th>
-                <th className="px-4 py-3 text-right">DCF</th>
+                {/* Escenario BASE de cada método (2.0.0): los tres escenarios
+                    y el bloque completo están en la ficha del ticker. */}
+                <th className="px-4 py-3 text-right" title="Escenario base de Graham">
+                  Graham base
+                </th>
+                <th className="px-4 py-3 text-right" title="Escenario base del DCF">
+                  DCF base
+                </th>
                 <th className="px-4 py-3 text-right">Score</th>
                 <th className="px-4 py-3">Señal</th>
                 <th className="px-4 py-3 text-right">P/E</th>
@@ -304,11 +310,16 @@ export default function DashboardPage() {
                     <td className="px-4 py-2.5 text-right tabular-nums">
                       {valuation?.price != null ? fmtNumber(valuation.price) : '—'}
                     </td>
+                    {/* `graham.base`/`dcf.base` del contrato 2.0.0: un método
+                        `unavailable` no tiene bloque, así que se pinta "—" y no
+                        se cae al otro método para rellenarlo. */}
                     <td className="px-4 py-2.5 text-right tabular-nums">
-                      {valuation?.value?.graham != null ? fmtNumber(valuation.value.graham) : '—'}
+                      {valuation?.value?.graham.base != null
+                        ? fmtNumber(valuation.value.graham.base)
+                        : '—'}
                     </td>
                     <td className="px-4 py-2.5 text-right tabular-nums">
-                      {valuation?.value?.dcf != null ? fmtNumber(valuation.value.dcf) : '—'}
+                      {valuation?.value?.dcf.base != null ? fmtNumber(valuation.value.dcf.base) : '—'}
                     </td>
                     <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
                       {fmtNumber(row.score.score)}

@@ -61,14 +61,15 @@ func guardPipeline(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) b
 }
 
 // handleRefresh: POST /refresh — recalcula growth_metrics + wacc_metrics +
-// métricas y scores de las securities activas con precio (GROWTH_RATE_DEFAULT /
+// valuation_results + métricas y scores de las securities activas con precio
+// (GROWTH_RATE_DEFAULT /
 // WACC_* / MARGIN_OF_SAFETY / COMPARABLES_* del entorno, mismo contrato que los
 // endpoints de valoración). Sigue siendo SÍNTRONO (no es una ingesta) y toma el
 // mismo lock que el job en segundo plano: si hay un job en curso responde 409
 // para no competir por la BD (growth_metrics/wacc_metrics/derived_metrics/
 // scores) con él. Respuesta: {"ok":true,"tickers":N,"growth":G,"wacc":W,
-// "duration_ms":D}. growth/wacc son conteos de filas persistidas (campos
-// aditivos: un cliente antiguo los ignora).
+// "valuation":V,"duration_ms":D}. growth/wacc/valuation son conteos de filas
+// persistidas (campos aditivos: un cliente antiguo los ignora).
 func handleRefresh(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) {
 	if !guardPipeline(w, r, pool) {
 		return
@@ -91,12 +92,14 @@ func handleRefresh(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) {
 		"tickers":     res.Tickers,
 		"growth":      res.Growth,
 		"wacc":        res.WACC,
+		"valuation":   res.Valuation,
 		"duration_ms": time.Since(start).Milliseconds(),
 	})
 }
 
 // handleForceRefresh: POST /force-refresh — pipeline completo (edgar con
-// re-ingesta fresca → prices → sector → growth/wacc → metrics → scores) sobre el
+// re-ingesta fresca → prices → sector → growth/wacc → valuation → metrics →
+// scores) sobre el
 // universo watchlist ∪ securities activas con precio.
 //
 // M5.1: responde 202 Accepted con el estado INICIAL del job (PipelineStatus) y

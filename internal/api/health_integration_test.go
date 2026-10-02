@@ -60,13 +60,13 @@ func TestHealthAmpliado(t *testing.T) {
 	if !ok {
 		t.Fatalf("tables debe ser array, got %T: %s", body["tables"], rec.Body.String())
 	}
-	// 11 desde M6a (las 9 de M5.2 + growth_metrics + wacc_metrics). La lista
-	// esperada se declara aquí a propósito: si se reutilizara la constante
-	// interna de producción el test sería tautológico.
+	// 12 desde M6b (las 9 de M5.2 + growth_metrics + wacc_metrics +
+	// valuation_results). La lista esperada se declara aquí a propósito: si se
+	// reutilizara la constante interna de producción el test sería tautológico.
 	wantTables := []string{
 		"securities", "daily_prices", "fundamentals", "derived_metrics", "scores",
-		"growth_metrics", "wacc_metrics", "watchlist", "macro_series",
-		"edgar_staging", "xbrl_concept_map",
+		"growth_metrics", "wacc_metrics", "valuation_results", "watchlist",
+		"macro_series", "edgar_staging", "xbrl_concept_map",
 	}
 	if len(tables) != len(wantTables) {
 		t.Fatalf("se esperaban %d tablas, got %d", len(wantTables), len(tables))

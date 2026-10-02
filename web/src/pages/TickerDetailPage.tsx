@@ -9,6 +9,7 @@ import type {
   ScoreResponse,
   ScoresHistoryItem,
   SecurityDetail,
+  ValuationMethod,
   ValuationResponse,
 } from '../api/types';
 import MetricsTable, { METRIC_DEFS } from '../components/MetricsTable';
@@ -17,7 +18,19 @@ import { fmtDate, fmtNumber, fmtPct } from '../lib/format';
 import { useFetch } from '../lib/useFetch';
 import type { FetchState } from '../lib/useFetch';
 
+/**
+ * Etiquetas de las dimensiones del score 2.0.0. El bloque 1.x "valuation" 35%
+ * son DOS dimensiones independientes (Graham 15% + DCF 20%, §18): Graham y DCF
+ * pueden estar disponibles por separado, así que la UI las nombra por separado
+ * en lugar de agruparlas bajo una "Valoración" que ya no existe.
+ *
+ * `valuation` se conserva como clave de compatibilidad con las filas de score
+ * persistidas por la versión 1.x del modelo (esas dimensiones no se exponen en
+ * la API, pero la etiqueta evita un "undefined" si alguna arrives).
+ */
 const DIM_LABELS: Record<string, string> = {
+  graham: 'Graham',
+  dcf: 'DCF',
   valuation: 'Valoración',
   fundamentals: 'Métricas',
   comparables: 'Comparables',
@@ -185,69 +198,210 @@ const renderScore = (data: ScoreResponse) => (
     {data.dimensions.length > 0 && (
       <div className="mt-5 space-y-4">
         {data.dimensions.map((dim) => (
-          <DimensionBar key={dim.name} name={dim.name} score={dim.score} weight={dim.weight} />
+          <DimensionBar
+            key={dim.name}
+            name={dim.name}
+            score={dim.score}
+            valid={dim.valid}
+            weight={dim.weight}
+            reason={dim.reason}
+          />
         ))}
+        {/* §18: si el score se renormalizó, decirlo. Un score más bajo del
+            esperado sin esta nota parece un bug; con ella es el contrato. */}
+        {data.weight_used != null &&
+          data.weight_configured != null &&
+          data.weight_used < data.weight_configured && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              Score renormalizado: se aplicó el {fmtPct(data.weight_used * 100)} de los{' '}
+              {fmtPct(data.weight_configured * 100)} pesos configurados (las
+              dimensiones sin dato no aportan).
+            </p>
+          )}
       </div>
     )}
   </div>
 );
 
-function DimensionBar({ name, score, weight }: { name: string; score: number; weight: number }) {
-  const clamped = Math.min(100, Math.max(0, score));
-  const tone = score >= 66 ? 'bg-emerald-500' : score >= 33 ? 'bg-amber-500' : 'bg-red-500';
+/**
+ * Barra de una dimensión 2.0.0. `score` es opcional a propósito: una dimensión
+ * INVÁLIDA (sin dato suficiente) se pinta como indisponible con su reason, en
+ * lugar de dibujar una barra en 0 que se leería como "puntúa 0".
+ */
+function DimensionBar({
+  name,
+  score,
+  valid,
+  weight,
+  reason,
+}: {
+  name: string;
+  score?: number;
+  valid: boolean;
+  weight: number;
+  reason?: string;
+}) {
+  const hasScore = valid && score != null;
+  const value = hasScore ? Math.min(100, Math.max(0, score)) : 0;
+  const tone = !hasScore
+    ? 'bg-slate-300 dark:bg-slate-600'
+    : value >= 66
+      ? 'bg-emerald-500'
+      : value >= 33
+        ? 'bg-amber-500'
+        : 'bg-red-500';
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
-        <span className="font-medium">{DIM_LABELS[name] ?? name}</span>
+        <span className="font-medium">
+          {DIM_LABELS[name] ?? name}
+          {!hasScore && (
+            <span className="ml-2 text-xs font-normal text-slate-400">(sin dato)</span>
+          )}
+        </span>
         <span className="text-xs tabular-nums text-slate-500 dark:text-slate-400">
-          {fmtNumber(score)}/100 · peso {fmtPct(weight * 100)}
+          {hasScore ? `${fmtNumber(score)}/100` : '—'} · peso {fmtPct(weight * 100)}
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-        <div
-          className={`h-full rounded-full ${tone}`}
-          style={{ width: `${clamped}%` }}
-        />
+        <div className={`h-full rounded-full ${tone}`} style={{ width: `${value}%` }} />
       </div>
+      {reason != null && (
+        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{reason}</p>
+      )}
     </div>
   );
 }
 
+/**
+ * Sección de valoración 2.0.0.
+ *
+ * Reglas de presentación que NO son cosméticas:
+ *  - No hay "consenso" ni "upside": el sistema no tiene consenso ni precio
+ *    objetivo, y M6b los eliminó del contrato. La UI no puede reintroducirlos.
+ *  - Graham y DCF son independientes: cada uno muestra sus TRES escenarios
+ *    (bear/base/bull) o, si está `unavailable`, sus reasons. Un método ausente
+ *    no se rellena con el otro.
+ *  - `confidence` se pinta SIEMPRE. Cuando es LOW la UI muestra el literal
+ *    "LOW CONFIDENCE" del contrato: es la información que evita que el usuario
+ *    lea un escenario como una prediction.
+ *  - Todo número ausente se pinta "—". `value` ausente (security sin datos) no
+ *    es un 0.
+ */
 const renderValuation = (score: FetchState<ScoreResponse>) => (data: ValuationResponse) => {
   const snapshot = decodeScoreSnapshot(score.data?.inputs_snapshot);
+  const value = data.value;
+  const inputs = value?.inputs;
+
+  if (!value) {
+    return (
+      <div className="space-y-3 text-sm text-slate-500 dark:text-slate-400">
+        <p>
+          Sin valoración disponible
+          {data.valuation_source === 'computed' ? ' (recalculada al vuelo)' : ''}.
+        </p>
+        <p>Precio: {data.price != null ? fmtNumber(data.price) : '—'}</p>
+      </div>
+    );
+  }
+
   const items: ReadonlyArray<{ label: string; value: string }> = [
     { label: 'Precio', value: data.price != null ? fmtNumber(data.price) : '—' },
-    ...(data.value.graham != null
-      ? [{ label: 'Graham', value: fmtNumber(data.value.graham) }]
-      : []),
-    ...(data.value.dcf != null ? [{ label: 'DCF', value: fmtNumber(data.value.dcf) }] : []),
-    {
-      label: 'Promedio (Graham/DCF)',
-      value: data.value.consensus != null ? fmtNumber(data.value.consensus) : '—',
-    },
-    { label: 'Upside', value: data.upside_pct != null ? fmtPct(data.upside_pct) : '—' },
+    ...scenarioItems('Graham', value.graham),
+    ...scenarioItems('DCF', value.dcf),
+    { label: 'MOS Graham', value: fmtPctOrDash(value.margin_of_safety.graham_base) },
+    { label: 'MOS DCF base', value: fmtPctOrDash(value.margin_of_safety.dcf_base) },
+    { label: 'WACC usado', value: fmtPctOrDash(inputs?.wacc_used) },
+    { label: 'Crecimiento', value: fmtPctOrDash(inputs?.normalized_growth_rate) },
+    { label: 'PEG', value: fmtNumberOrDash(value.peg) },
+    { label: 'P/FCF', value: fmtNumberOrDash(value.p_fcf) },
     ...(snapshot?.margin_of_safety != null
       ? [{ label: 'Margen objetivo', value: fmtPct(snapshot.margin_of_safety) }]
       : []),
   ];
+
   return (
-    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-      {items.map((item) => (
-        <div key={item.label} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/60">
-          <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            {item.label}
-          </dt>
-          <dd className="mt-1 text-lg font-semibold tabular-nums">{item.value}</dd>
+    <div>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span
+          className={`rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ${
+            value.confidence === 'low'
+              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+              : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+          }`}
+        >
+          {value.confidence === 'low' ? 'LOW CONFIDENCE' : 'HIGH CONFIDENCE'}
+        </span>
+        <span className="text-xs text-slate-500 dark:text-slate-400">
+          {value.status === 'available' ? 'valoración disponible' : 'sin valoración'} ·
+          origen: {data.valuation_source === 'persisted' ? 'persistida' : 'recalculada'} ·
+          modelo {value.model_version}
+        </span>
+      </div>
+
+      {value.reasons?.length && (
+        <div className="mb-3 text-xs text-slate-600 dark:text-slate-400">
+          <span className="font-medium">Motivos de confianza:</span>{' '}
+          {value.reasons!.map((r, i) => (
+            <span key={r} className={i > 0 ? 'mx-1' : ''}>
+              {r}{i < value.reasons!.length - 1 ? ',' : ''}
+            </span>
+          ))}
         </div>
-      ))}
+      )}
+
+      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {items.map((item) => (
+          <div key={item.label} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/60">
+            <dt className="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {item.label}
+            </dt>
+            <dd className="mt-1 text-lg font-semibold tabular-nums">{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {(value.graham.status === 'unavailable' || value.dcf.status === 'unavailable') && (
+        <ul className="mt-3 space-y-1 text-xs text-slate-500 dark:text-slate-400">
+          {value.graham.status === 'unavailable' && (
+            <li>Graham no disponible: {(value.graham.reasons ?? []).join(', ') || 'sin reasons'}</li>
+          )}
+          {value.dcf.status === 'unavailable' && (
+            <li>DCF no disponible: {(value.dcf.reasons ?? []).join(', ') || 'sin reasons'}</li>
+          )}
+        </ul>
+      )}
+
       {data.currency && (
-        <p className="col-span-full text-xs text-slate-400 dark:text-slate-500">
-          Moneda: {data.currency} · upside vs. consenso (Graham/DCF)
+        <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
+          Moneda: {data.currency} · escenarios independientes (Graham/DCF), sin consenso ni
+          precio objetivo
         </p>
       )}
-    </dl>
+    </div>
   );
 };
+
+/** bear/base/bull de un método; nada si el método no tiene valores. */
+function scenarioItems(
+  label: string,
+  method: ValuationMethod,
+): ReadonlyArray<{ label: string; value: string }> {
+  return [
+    { label: `${label} bear`, value: fmtNumberOrDash(method.bear) },
+    { label: `${label} base`, value: fmtNumberOrDash(method.base) },
+    { label: `${label} bull`, value: fmtNumberOrDash(method.bull) },
+  ];
+}
+
+/** Ausente/null → "—": nunca 0 de relleno (nil significa "sin dato"). */
+function fmtNumberOrDash(v?: number): string {
+  return v != null ? fmtNumber(v) : '—';
+}
+
+function fmtPctOrDash(v?: number): string {
+  return v != null ? fmtPct(v) : '—';
+}
 
 const renderHistory = (data: ScoresHistoryItem[]) =>
   data.length === 0 ? (

@@ -3,9 +3,11 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/miky/abys-invest/internal/metrics"
@@ -19,19 +21,25 @@ import (
 const (
 	// AnalyticsJobGrowth computes ONLY growth_metrics + wacc_metrics (M6a):
 	// an isolated job to recompute them without touching the MVP metrics.
-	AnalyticsJobGrowth  = "growth"
-	AnalyticsJobMetrics = "metrics"
-	AnalyticsJobScores  = "scores"
-	AnalyticsJobAll     = "all"
+	AnalyticsJobGrowth = "growth"
+	// AnalyticsJobValuation computes ONLY valuation_results (M6b): an isolated
+	// job so a valuation can be recomputed (e.g. after a config change) without
+	// recomputing the metrics or the scores, and so "no valuation is computable"
+	// is a visible count instead of a line inside the scores job.
+	AnalyticsJobValuation = "valuation"
+	AnalyticsJobMetrics   = "metrics"
+	AnalyticsJobScores    = "scores"
+	AnalyticsJobAll       = "all"
 )
 
 // AnalyticsResult summarizes an analytics CLI job pass.
 type AnalyticsResult struct {
-	Tickers int `json:"tickers"` // securities objetivo
-	Growth  int `json:"growth"`  // securities con growth_metrics persistida OK
-	WACC    int `json:"wacc"`    // securities con wacc_metrics persistida OK
-	Metrics int `json:"metrics"` // securities con métricas persistidas OK
-	Scores  int `json:"scores"`  // securities con score persistido OK
+	Tickers   int `json:"tickers"`   // securities objetivo
+	Growth    int `json:"growth"`    // securities con growth_metrics persistida OK
+	WACC      int `json:"wacc"`      // securities con wacc_metrics persistida OK
+	Valuation int `json:"valuation"` // securities con valuation_results persistida OK
+	Metrics   int `json:"metrics"`   // securities con métricas persistidas OK
+	Scores    int `json:"scores"`    // securities con score persistido OK
 }
 
 // RunAnalytics replicates the CLI contract of cmd/analytics: resolves the
@@ -46,9 +54,9 @@ func RunAnalytics(ctx context.Context, pool *pgxpool.Pool, tickersCSV string, gr
 		growth = DefaultGrowth
 	}
 	switch job {
-	case AnalyticsJobGrowth, AnalyticsJobMetrics, AnalyticsJobScores, AnalyticsJobAll:
+	case AnalyticsJobGrowth, AnalyticsJobValuation, AnalyticsJobMetrics, AnalyticsJobScores, AnalyticsJobAll:
 	default:
-		return AnalyticsResult{}, fmt.Errorf("job desconocido %q (esperado growth|metrics|scores|all)", job)
+		return AnalyticsResult{}, fmt.Errorf("job desconocido %q (esperado growth|valuation|metrics|scores|all)", job)
 	}
 
 	securities, err := resolveTargets(ctx, pool, tickersCSV)
@@ -61,11 +69,25 @@ func RunAnalytics(ctx context.Context, pool *pgxpool.Pool, tickersCSV string, gr
 	}
 
 	res := AnalyticsResult{Tickers: len(securities)}
-	// growth ANTES de metrics/scores en el job `all` (M6a D1: el orden fija que
-	// la fila exista cuando M6b cablee el valor individual a las fórmulas).
+	// ORDEN del job `all` (M6a D1 + M6b C2): growth → valuation → metrics →
+	// scores. Cada etapa consume la fila de la anterior:
+	//   - growth antes que valuation: la valuation USA el growth persistido.
+	//   - valuation antes que metrics: sin métricas no hay comparables, y scores
+	//     necesita las dimensiones de valoración (graham_base/dcf_base).
+	//   - metrics antes que scores: los comparables salen de derived_metrics.
+	// Invertir este orden produce scores sin dimensiones de valoración, no un
+	// error visible: por eso el orden es código, no una nota.
 	if job == AnalyticsJobGrowth || job == AnalyticsJobAll {
 		g := runGrowthWaccJob(ctx, pool, securities, dryRun)
 		res.Growth, res.WACC = g.Growth, g.WACC
+	}
+	if job == AnalyticsJobValuation || job == AnalyticsJobAll {
+		v := runValuationJob(ctx, pool, securities, dryRun)
+		res.Valuation = v.Inserted
+		if v.SkippedNoPrice > 0 || v.Unavailable > 0 {
+			slog.Info("valoración: sin fila para algunas securities",
+				"sin_precio", v.SkippedNoPrice, "sin_valoracion", v.Unavailable)
+		}
 	}
 	if job == AnalyticsJobMetrics || job == AnalyticsJobAll {
 		res.Metrics = runMetricsJob(ctx, pool, securities, growth, dryRun)
@@ -202,22 +224,33 @@ func runOneScore(ctx context.Context, pool *pgxpool.Pool, sec storage.Security, 
 		return fmt.Errorf("sin precio previo (%w)", err)
 	}
 
-	funds, err := storage.GetLatestFYFundamentals(ctx, pool, sec.ID, valuationConcepts())
-	if err != nil {
-		return fmt.Errorf("fundamentales FY: %w", err)
+	// Valuation 2.0.0: the score READS the persisted row (M6b D2) and never
+	// recomputes a valuation. Without a row for this exact (as_of, 2.0.0) both
+	// valuation dimensions are invalid and the score renormalises by
+	// active_weight_sum (§18). The warning below is deliberate: a mis-ordered
+	// pipeline (`scores` before `valuation`) produces exactly this case, and it
+	// must be visible rather than silently scoring a company without valuation.
+	var grahamBase, dcfBase *float64
+	var grahamConfidence, dcfConfidence string
+	var grahamReasons, dcfReasons []string
+	vr, err := storage.GetValuationResultAsOf(ctx, pool, sec.ID, priceRow.Date, valuation.ModelVersion)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		slog.Warn("sin fila de valoración 2.0.0 para este as_of: el score se renormaliza sin las dimensiones de valoración (§18)",
+			"ticker", sec.Ticker, "as_of", priceRow.Date.Format("2006-01-02"), "model_version", valuation.ModelVersion)
+	case err != nil:
+		return fmt.Errorf("valuation_results: %w", err)
+	default:
+		grahamBase, dcfBase = vr.GrahamBase, vr.DcfBase
+		if vr.GrahamConfidence != nil {
+			grahamConfidence = *vr.GrahamConfidence
+		}
+		if vr.DcfConfidence != nil {
+			dcfConfidence = *vr.DcfConfidence
+		}
+		grahamReasons = methodReasons(vr.Reasons, vr.GrahamStatus)
+		dcfReasons = methodReasons(vr.Reasons, vr.DcfStatus)
 	}
-
-	// Intravalo: Graham y DCF con inputs FY.
-	iv := valuation.CalcIntrinsicValue(valuation.IntrinsicInput{
-		GrowthRate:        p.Growth,
-		DCFDiscountRate:   envFloatCfg("DCF_DISCOUNT_RATE", 10),
-		DCFHorizon:        envIntCfg("DCF_HORIZON_YEARS", 5),
-		TerminalGrowth:    envFloatCfg("DCF_TERMINAL_GROWTH", 2.5),
-		EPS:               ratioF(funds["net_earnings"], funds["shares_outstanding"]),
-		FreeCashFlow:      fcfFromF(funds),
-		SharesOutstanding: funds["shares_outstanding"],
-		NetDebt:           netDebtFromF(funds),
-	})
 
 	// Métricas derivadas (ya persistidas por metrics; sin ellas se degrada).
 	metricsMap := map[string]*float64{}
@@ -242,12 +275,17 @@ func runOneScore(ctx context.Context, pool *pgxpool.Pool, sec storage.Security, 
 		histMedian = hm
 	}
 
-	// Tendencia: SMA50/SMA200 y momentum sobre cierres (Close, documentado).
+	// Tendencia: SMA50/SMA200 y momentum sobre ADJUSTED_CLOSE (dividendos y
+	// splits corregidos). No es un detalle: sobre `close` sin ajustar, un split
+	// 4:1 rompe la serie y la SMA200 mide un salto artificial. El precio de la
+	// VALORACIÓN sigue siendo el `close` del último bar (§22).
 	sma50, sma200, m6, m12 := trendInputs(ctx, pool, sec.ID)
 
 	input := score.ScoreInput{
 		Ticker: sec.Ticker, Price: priceRow.Close,
-		GrahamIntrinsic: iv.Graham, DCFIntrinsic: iv.DCF,
+		GrahamBase: grahamBase, DCFBase: dcfBase,
+		GrahamConfidence: grahamConfidence, DCFConfidence: dcfConfidence,
+		GrahamReasons: grahamReasons, DCFReasons: dcfReasons,
 		Metrics:      metricsMap,
 		SectorMedian: sectorMedian, HistoricalMedian: histMedian,
 		SectorCount:              sectorCount,
@@ -269,7 +307,7 @@ func runOneScore(ctx context.Context, pool *pgxpool.Pool, sec storage.Security, 
 			"score", res.Score, "signal", res.Signal, "version", res.ModelVersion)
 		for _, d := range res.Dimensions {
 			slog.Info("  dimensión (dry-run)", "ticker", sec.Ticker,
-				"name", d.Name, "score", d.Score, "weight", d.Weight)
+				"name", d.Name, "score", formatValue(d.Score), "weight", d.Weight, "válida", d.Valid)
 		}
 		return nil
 	}
@@ -299,46 +337,59 @@ func runOneScore(ctx context.Context, pool *pgxpool.Pool, sec storage.Security, 
 	return nil
 }
 
-// valuationConcepts recoge los conceptos FY necesarios para Graham y DCF.
-func valuationConcepts() []string {
-	return []string{
-		"net_earnings", "shares_outstanding", "free_cash_flow",
-		"long_term_debt", "short_term_debt", "cash_and_equivalents",
-		"operating_cash_flow", "capex",
-	}
-}
-
-func ratioF(a, b *float64) *float64 {
-	if a == nil || b == nil || *b <= 0 {
+// methodReasons keeps, for the justification, only the reasons that explain the
+// state of ONE method. valuation_results stores a single valuation-level reason
+// array (the same one the API returns), so the filter is what keeps the text
+// honest: the Graham sentence must not be blamed for a discount rate that only
+// affected the DCF.
+func methodReasons(reasons []string, methodStatus string) []string {
+	if len(reasons) == 0 {
 		return nil
 	}
-	out := *a / *b
-	return &out
+	// Reasons attributable to a single method vs reasons common to both.
+	dcfOnly := map[string]bool{
+		valuation.ReasonFCFNonPositive:    true,
+		valuation.ReasonSharesNonPositive: true,
+		valuation.ReasonNetDebtUnknown:    true,
+		valuation.ReasonInvalidHorizon:    true,
+		valuation.ReasonWACCBelowTerminal: true,
+		valuation.ReasonWACCConfigured:    true,
+		valuation.ReasonWACCCostOfEquity:  true,
+		valuation.ReasonWACCLegacyEnv:     true,
+		valuation.ReasonNoPrice:           true,
+	}
+	grahamOnly := map[string]bool{
+		valuation.ReasonEPSNonPositive: true,
+	}
+	// Reasons that describe the valuation as a whole (growth fallback, input
+	// confidence, incomplete scenarios) are relevant to a method only when the
+	// method has no value: if it produced one, the reason is context.
+	common := map[string]bool{
+		valuation.ReasonGrowthFallback:      true,
+		valuation.ReasonInputConfidence:     true,
+		valuation.ReasonIncompleteScenarios: true,
+		valuation.ReasonGrowthNonPositive:   true,
+		valuation.ReasonGrowthUnavailable:   true,
+		valuation.ReasonGrowthNotReliable:   true,
+	}
+	available := methodStatus == string(valuation.StatusAvailable)
+	var out []string
+	for _, r := range reasons {
+		switch {
+		case available:
+			// A method WITH values is not explained by its own failure reasons.
+			continue
+		case dcfOnly[r], grahamOnly[r], common[r]:
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
-func fcfFromF(funds map[string]*float64) *float64 {
-	if v := funds["free_cash_flow"]; v != nil {
-		return v
-	}
-	ocf, capex := funds["operating_cash_flow"], funds["capex"]
-	if ocf == nil || capex == nil {
-		return nil
-	}
-	out := *ocf + *capex
-	return &out
-}
-
-func netDebtFromF(funds map[string]*float64) *float64 {
-	lt, st, cash := funds["long_term_debt"], funds["short_term_debt"], funds["cash_and_equivalents"]
-	if lt == nil || st == nil || cash == nil {
-		return nil
-	}
-	out := *lt + *st - *cash
-	return &out
-}
-
-// trendInputs calcula SMA50, SMA200 y momentum 6m/12m sobre cierres
-// ajustados de los últimos scoreLookbackBars días (documentado: Close).
+// trendInputs calcula SMA50, SMA200 y momentum 6m/12m sobre el ADJUSTED_CLOSE
+// de los últimos scoreLookbackBars días (dividendos y splits ya corregidos por
+// el proveedor). Se distingue del `close` a propósito: la valoración usa el
+// `close` (§22) y la tendencia usa el ajustado.
 func trendInputs(ctx context.Context, pool *pgxpool.Pool, securityID int64) (*float64, *float64, *float64, *float64) {
 	prices, err := storage.GetLastClosePrices(ctx, pool, securityID, scoreLookbackBars)
 	if err != nil || len(prices) < 200 {

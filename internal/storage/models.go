@@ -217,3 +217,79 @@ type WaccMetric struct {
 	CalculationTimestamp time.Time  `json:"calculation_timestamp" db:"calculation_timestamp"`
 	CreatedAt            time.Time  `json:"created_at" db:"created_at"`
 }
+
+// ValuationResult is one row of valuation_results (migrations/014, SPEC v2
+// §6-§11/§19-§21, plan M6b ADR D4). One row per
+// (security_id, as_of, model_version): the SIX scenarios (graham/dcf ×
+// bear/base/bull), the four margins of safety of §11, the §19 uncertainty, the
+// §10/§20/§21 status + confidence and the reasons behind them.
+//
+// Every scenario/MOS/uncertainty field is a POINTER: NULL means "not
+// computable", never 0 (§21), and a consumer can tell a real zero apart from a
+// missing value. Status + Confidence are NOT pointers because they are always
+// present: an unavailable valuation is a real, persisted answer.
+//
+// Wacc/WaccSource are the discount rate ACTUALLY used and its provenance (the
+// 5-value taxonomy of D9, wider than the 3 of wacc_metrics): the rate is never
+// invisible, so a configured discount rate can never be mistaken for a CAPM one.
+type ValuationResult struct {
+	ID         int64     `json:"id" db:"id"`
+	SecurityID int64     `json:"security_id" db:"security_id"`
+	AsOf       time.Time `json:"as_of" db:"as_of"`
+	// AvailableAt is the max(filing_date) of the facts actually used (SPEC §4),
+	// NOT the growth/wacc one: this row owns its provenance (deuda M6a-F1).
+	AvailableAt      *time.Time `json:"available_at,omitempty" db:"available_at"`
+	FundamentalsAsOf *time.Time `json:"fundamentals_as_of,omitempty" db:"fundamentals_as_of"`
+	// Price is the close used as the valuation price (the denominator input of
+	// the §11 margin of safety), not a valuation result.
+	Price    *float64 `json:"price,omitempty" db:"price"`
+	Currency *string  `json:"currency,omitempty" db:"currency"`
+
+	// Inputs echoed for auditability. growth_metrics / wacc_metrics remain the
+	// source of truth for the growth and the WACC; these are copies of what the
+	// engine really consumed.
+	NormalizedGrowthRate *float64 `json:"normalized_growth_rate,omitempty" db:"normalized_growth_rate"`
+	GrowthSource         *string  `json:"growth_source,omitempty" db:"growth_source"`
+	GrowthConfidence     *string  `json:"growth_confidence,omitempty" db:"growth_confidence"`
+	Wacc                 *float64 `json:"wacc,omitempty" db:"wacc"`
+	WaccSource           string   `json:"wacc_source" db:"wacc_source"`
+	WaccConfidence       *string  `json:"wacc_confidence,omitempty" db:"wacc_confidence"`
+
+	// §6/§8 scenarios: nil = not computable, never 0.
+	GrahamBear *float64 `json:"graham_bear,omitempty" db:"graham_bear"`
+	GrahamBase *float64 `json:"graham_base,omitempty" db:"graham_base"`
+	GrahamBull *float64 `json:"graham_bull,omitempty" db:"graham_bull"`
+	DcfBear    *float64 `json:"dcf_bear,omitempty" db:"dcf_bear"`
+	DcfBase    *float64 `json:"dcf_base,omitempty" db:"dcf_base"`
+	DcfBull    *float64 `json:"dcf_bull,omitempty" db:"dcf_bull"`
+
+	// §11 margin of safety, in percent. graham_mos is the base scenario only
+	// (§11 does not ask for graham bear/bull).
+	GrahamMos  *float64 `json:"graham_mos,omitempty" db:"graham_mos"`
+	DcfBearMos *float64 `json:"dcf_bear_mos,omitempty" db:"dcf_bear_mos"`
+	DcfBaseMos *float64 `json:"dcf_base_mos,omitempty" db:"dcf_base_mos"`
+	DcfBullMos *float64 `json:"dcf_bull_mos,omitempty" db:"dcf_bull_mos"`
+	TargetMos  float64  `json:"target_mos" db:"target_mos"`
+
+	// §19 valuation uncertainty (population std / mean over the 4 components).
+	ValuationMean       *float64 `json:"valuation_mean,omitempty" db:"valuation_mean"`
+	ValuationStddev     *float64 `json:"valuation_stddev,omitempty" db:"valuation_stddev"`
+	ValuationDispersion *float64 `json:"valuation_dispersion,omitempty" db:"valuation_dispersion"`
+	ValuationComponents int16    `json:"valuation_components" db:"valuation_components"`
+
+	// §10/§20/§21 availability and confidence. The CHECK of 014 forbids a row
+	// with every scenario NULL, so ValuationStatus can only be 'available' here.
+	ValuationStatus     string  `json:"valuation_status" db:"valuation_status"`
+	ValuationConfidence string  `json:"valuation_confidence" db:"valuation_confidence"`
+	GrahamStatus        string  `json:"graham_status" db:"graham_status"`
+	GrahamConfidence    *string `json:"graham_confidence,omitempty" db:"graham_confidence"`
+	DcfStatus           string  `json:"dcf_status" db:"dcf_status"`
+	DcfConfidence       *string `json:"dcf_confidence,omitempty" db:"dcf_confidence"`
+
+	Reasons              []string  `json:"reasons" db:"reasons"`
+	Sensitivity          []byte    `json:"sensitivity,omitempty" db:"sensitivity"`
+	InputsSnapshot       []byte    `json:"inputs_snapshot,omitempty" db:"inputs_snapshot"`
+	ModelVersion         string    `json:"model_version" db:"model_version"`
+	CalculationTimestamp time.Time `json:"calculation_timestamp" db:"calculation_timestamp"`
+	CreatedAt            time.Time `json:"created_at" db:"created_at"`
+}
