@@ -204,45 +204,7 @@ func GetLatestFYFundamentalsAsOf(ctx context.Context, q DBTX, securityID int64, 
 	return out, avail, nil
 }
 
-// GetLatestFYFundamentals returns the newest FY row of every requested
-// concept (DISTINCT ON concept ordered by period_end DESC). Missing concepts
-// are simply absent from the map (conservative engine rule).
-//
-// DEPRECATED: it applies NO temporal filter, so it can consume a fact filed
-// after the valuation date (the M6a-F1 look-ahead debt). New code must call
-// GetLatestFYFundamentalsAsOf; it is kept because the M6a WACC stage still
-// calls it and changing its behaviour would rewrite M6a results in the same
-// milestone.
-func GetLatestFYFundamentals(ctx context.Context, q DBTX, securityID int64, concepts []string) (map[string]*float64, error) {
-	out := map[string]*float64{}
-	if len(concepts) == 0 {
-		return out, nil
-	}
-	rows, err := q.Query(ctx, `SELECT DISTINCT ON (concept) concept, value
-		FROM fundamentals
-		WHERE security_id = $1 AND concept = ANY($2) AND fiscal_period = 'FY'
-		ORDER BY concept, period_end DESC`, securityID, concepts)
-	if err != nil {
-		return nil, fmt.Errorf("storage: fundamentales FY security %d: %w", securityID, err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var concept string
-		var value *float64
-		if err := rows.Scan(&concept, &value); err != nil {
-			return nil, fmt.Errorf("storage: scan fundamentales FY: %w", err)
-		}
-		out[concept] = value
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("storage: rows fundamentales FY: %w", err)
-	}
-	return out, nil
-}
-
-// FYPoint is one annual FY fact of `fundamentals` with its availability date
-// (filing_date): the pair (value, available_at) allows reproducing a calculation
-// as of a date without look-ahead (SPEC §4).
+// FYPoint is one annual observation of a fundamental series.
 type FYPoint struct {
 	PeriodEnd   time.Time // end of the fiscal year
 	Value       float64
@@ -252,21 +214,9 @@ type FYPoint struct {
 // GetFYAnnualSeries returns, for every requested concept, the series of ANNUAL
 // FY facts available at asOf, deduplicated and ordered ASC by period_end.
 //
-// The filters live here and not in the engine (plan D2) because they are the
-// ones that make a CAGR correct:
-//
-//   - fiscal_period = 'FY' AND duration between minDays and maxDays: in EDGAR
-//     'FY' also carries quarterly periods (AAPL net_earnings has 2018-03-31,
-//     2018-06-30...), and a CAGR over quarters is meaningless. A fiscal year is
-//     not exactly 365 days (52/53-week years), hence the 330-400 day window.
-//   - filing_date IS NULL OR filing_date <= asOf: no look-ahead. A 10-K filed
-//     after asOf cannot have informed a value dated asOf, even if it restates
-//     the same fiscal year.
-//   - DISTINCT ON (concept, period_end) with the deterministic tie-break
-//     `fiscal_year DESC, filing_date DESC NULLS LAST, id DESC`: the same
-//     period_end can be stored 3 times (free_cash_flow 2023-09-30), and the
-//     most recent restatement wins, deterministically.
-//
+// The temporal filters live here and not in the engine because they are what make
+// a CAGR correct: no fact filed after asOf, only annual periods (330-400 days),
+// and one row per period_end (the most recent restatement wins, deterministically).
 // A concept without data simply does not appear in the map (conservative rule).
 func GetFYAnnualSeries(ctx context.Context, q DBTX, securityID int64, concepts []string, asOf time.Time, minDays, maxDays int) (map[string][]FYPoint, error) {
 	out := map[string][]FYPoint{}

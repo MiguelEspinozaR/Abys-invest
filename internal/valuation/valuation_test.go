@@ -588,3 +588,164 @@ func TestRankAndCap(t *testing.T) {
 		t.Errorf("cap = %s, want medium", got)
 	}
 }
+
+// TestParseSnapshotRoundTrip verifies that Snapshot() → ParseSnapshot() preserves
+// Inputs, Config and Result with float tolerance (determinism §27).
+func TestParseSnapshotRoundTrip(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.BearGrowthDelta = -5
+	cfg.BullGrowthDelta = 4
+	cfg.BearWACCDelta = 1.5
+	cfg.BullWACCDelta = -1
+	cfg.BearTerminalDelta = -0.5
+	cfg.BullTerminalDelta = 0.5
+	cfg.Transition = true
+	cfg.TransitionCapPP = 2
+	cfg.SensitivitySteps = 4
+	cfg.TargetMOS = 35
+	cfg.HorizonYears = 6
+	cfg.TerminalGrowth = 2.0
+	cfg.DiscountFallback = 11.0
+	cfg.GrowthFallback = 5.0
+	cfg.WACCFallback = 9.0
+
+	in := goodInputs()
+	in.Price = f64v(100)
+	in.EPS = f64v(5.5)
+	in.FreeCashFlow = f64v(120e6)
+	in.SharesOutstanding = f64v(1.1e9)
+	in.NetDebt = f64v(10e9)
+	in.NormalizedGrowthRate = f64v(8.5)
+	in.GrowthConfidence = ConfidenceHigh
+	in.GrowthSource = "individual_normalized"
+	in.GrowthModelVersion = "1.0.0"
+	in.WACC = f64v(9.2)
+	in.WACCSource = WACCSourceCAPMHybrid
+	in.WACCConfidence = ConfidenceMedium
+	in.WACCModelVersion = "1.0.0"
+	in.BetaObserved = true
+
+	res := Calculate(in, cfg)
+	snap, err := MarshalSnapshot(in, cfg, res)
+	if err != nil {
+		t.Fatalf("MarshalSnapshot: %v", err)
+	}
+
+	parsedSnap, err := ParseSnapshot(snap)
+	if err != nil {
+		t.Fatalf("ParseSnapshot: %v", err)
+	}
+
+	// Verify Inputs
+	if parsedSnap.Inputs.Ticker != in.Ticker {
+		t.Errorf("Ticker: got %q, want %q", parsedSnap.Inputs.Ticker, in.Ticker)
+	}
+	if !parsedSnap.Inputs.AsOf.Equal(in.AsOf) {
+		t.Errorf("AsOf: got %v, want %v", parsedSnap.Inputs.AsOf, in.AsOf)
+	}
+	assertFloatPtrEq(t, "Price", parsedSnap.Inputs.Price, in.Price, 1e-6)
+	assertFloatPtrEq(t, "EPS", parsedSnap.Inputs.EPS, in.EPS, 1e-6)
+	assertFloatPtrEq(t, "FreeCashFlow", parsedSnap.Inputs.FreeCashFlow, in.FreeCashFlow, 1e-6)
+	assertFloatPtrEq(t, "SharesOutstanding", parsedSnap.Inputs.SharesOutstanding, in.SharesOutstanding, 1e-6)
+	assertFloatPtrEq(t, "NetDebt", parsedSnap.Inputs.NetDebt, in.NetDebt, 1e-6)
+	assertFloatPtrEq(t, "NormalizedGrowthRate", parsedSnap.Inputs.NormalizedGrowthRate, in.NormalizedGrowthRate, 1e-6)
+	if parsedSnap.Inputs.GrowthConfidence != in.GrowthConfidence {
+		t.Errorf("GrowthConfidence: got %q, want %q", parsedSnap.Inputs.GrowthConfidence, in.GrowthConfidence)
+	}
+	if parsedSnap.Inputs.GrowthSource != in.GrowthSource {
+		t.Errorf("GrowthSource: got %q, want %q", parsedSnap.Inputs.GrowthSource, in.GrowthSource)
+	}
+	if parsedSnap.Inputs.GrowthModelVersion != in.GrowthModelVersion {
+		t.Errorf("GrowthModelVersion: got %q, want %q", parsedSnap.Inputs.GrowthModelVersion, in.GrowthModelVersion)
+	}
+	assertFloatPtrEq(t, "WACC", parsedSnap.Inputs.WACC, in.WACC, 1e-6)
+	if parsedSnap.Inputs.WACCSource != in.WACCSource {
+		t.Errorf("WACCSource: got %q, want %q", parsedSnap.Inputs.WACCSource, in.WACCSource)
+	}
+	if parsedSnap.Inputs.WACCConfidence != in.WACCConfidence {
+		t.Errorf("WACCConfidence: got %q, want %q", parsedSnap.Inputs.WACCConfidence, in.WACCConfidence)
+	}
+	if parsedSnap.Inputs.WACCModelVersion != in.WACCModelVersion {
+		t.Errorf("WACCModelVersion: got %q, want %q", parsedSnap.Inputs.WACCModelVersion, in.WACCModelVersion)
+	}
+	if parsedSnap.Inputs.BetaObserved != in.BetaObserved {
+		t.Errorf("BetaObserved: got %v, want %v", parsedSnap.Inputs.BetaObserved, in.BetaObserved)
+	}
+
+	// Verify Config
+	if parsedSnap.Config.BearGrowthDelta != cfg.BearGrowthDelta {
+		t.Errorf("BearGrowthDelta: got %v, want %v", parsedSnap.Config.BearGrowthDelta, cfg.BearGrowthDelta)
+	}
+	if parsedSnap.Config.BullGrowthDelta != cfg.BullGrowthDelta {
+		t.Errorf("BullGrowthDelta: got %v, want %v", parsedSnap.Config.BullGrowthDelta, cfg.BullGrowthDelta)
+	}
+	if math.Abs(parsedSnap.Config.BearWACCDelta-cfg.BearWACCDelta) > 1e-9 {
+		t.Errorf("BearWACCDelta: got %v, want %v", parsedSnap.Config.BearWACCDelta, cfg.BearWACCDelta)
+	}
+	if math.Abs(parsedSnap.Config.BullWACCDelta-cfg.BullWACCDelta) > 1e-9 {
+		t.Errorf("BullWACCDelta: got %v, want %v", parsedSnap.Config.BullWACCDelta, cfg.BullWACCDelta)
+	}
+	if math.Abs(parsedSnap.Config.BearTerminalDelta-cfg.BearTerminalDelta) > 1e-9 {
+		t.Errorf("BearTerminalDelta: got %v, want %v", parsedSnap.Config.BearTerminalDelta, cfg.BearTerminalDelta)
+	}
+	if math.Abs(parsedSnap.Config.BullTerminalDelta-cfg.BullTerminalDelta) > 1e-9 {
+		t.Errorf("BullTerminalDelta: got %v, want %v", parsedSnap.Config.BullTerminalDelta, cfg.BullTerminalDelta)
+	}
+	if parsedSnap.Config.Transition != cfg.Transition {
+		t.Errorf("Transition: got %v, want %v", parsedSnap.Config.Transition, cfg.Transition)
+	}
+	if parsedSnap.Config.TransitionCapPP != cfg.TransitionCapPP {
+		t.Errorf("TransitionCapPP: got %v, want %v", parsedSnap.Config.TransitionCapPP, cfg.TransitionCapPP)
+	}
+	if parsedSnap.Config.SensitivitySteps != cfg.SensitivitySteps {
+		t.Errorf("SensitivitySteps: got %v, want %v", parsedSnap.Config.SensitivitySteps, cfg.SensitivitySteps)
+	}
+	if parsedSnap.Config.TargetMOS != cfg.TargetMOS {
+		t.Errorf("TargetMOS: got %v, want %v", parsedSnap.Config.TargetMOS, cfg.TargetMOS)
+	}
+	if parsedSnap.Config.HorizonYears != cfg.HorizonYears {
+		t.Errorf("HorizonYears: got %v, want %v", parsedSnap.Config.HorizonYears, cfg.HorizonYears)
+	}
+	if math.Abs(parsedSnap.Config.TerminalGrowth-cfg.TerminalGrowth) > 1e-9 {
+		t.Errorf("TerminalGrowth: got %v, want %v", parsedSnap.Config.TerminalGrowth, cfg.TerminalGrowth)
+	}
+	if math.Abs(parsedSnap.Config.DiscountFallback-cfg.DiscountFallback) > 1e-9 {
+		t.Errorf("DiscountFallback: got %v, want %v", parsedSnap.Config.DiscountFallback, cfg.DiscountFallback)
+	}
+	if math.Abs(parsedSnap.Config.GrowthFallback-cfg.GrowthFallback) > 1e-9 {
+		t.Errorf("GrowthFallback: got %v, want %v", parsedSnap.Config.GrowthFallback, cfg.GrowthFallback)
+	}
+	if math.Abs(parsedSnap.Config.WACCFallback-cfg.WACCFallback) > 1e-9 {
+		t.Errorf("WACCFallback: got %v, want %v", parsedSnap.Config.WACCFallback, cfg.WACCFallback)
+	}
+
+	// Verify Result (key fields) - Snapshot has these fields directly
+	if parsedSnap.ModelVersion != res.ModelVersion {
+		t.Errorf("ModelVersion: got %q, want %q", parsedSnap.ModelVersion, res.ModelVersion)
+	}
+	if parsedSnap.Graham.Status != res.Graham.Status {
+		t.Errorf("Graham.Status: got %q, want %q", parsedSnap.Graham.Status, res.Graham.Status)
+	}
+	if parsedSnap.DCF.Status != res.DCF.Status {
+		t.Errorf("DCF.Status: got %q, want %q", parsedSnap.DCF.Status, res.DCF.Status)
+	}
+	if parsedSnap.Confidence != res.Confidence {
+		t.Errorf("Confidence: got %q, want %q", parsedSnap.Confidence, res.Confidence)
+	}
+	assertFloatPtrEq(t, "Graham.Base", parsedSnap.Graham.Base, res.Graham.Base, 1e-4)
+	assertFloatPtrEq(t, "DCF.Base", parsedSnap.DCF.Base, res.DCF.Base, 1e-4)
+	assertFloatPtrEq(t, "MOS.GrahamBase", parsedSnap.MOS.GrahamBase, res.MOS.GrahamBase, 1e-4)
+	assertFloatPtrEq(t, "MOS.DCFBase", parsedSnap.MOS.DCFBase, res.MOS.DCFBase, 1e-4)
+}
+
+// assertFloatPtrEq compares two *float64 with tolerance, handling nil.
+func assertFloatPtrEq(t *testing.T, label string, got, want *float64, tol float64) {
+	t.Helper()
+	if (got == nil) != (want == nil) {
+		t.Errorf("%s: nil mismatch (got=%v, want=%v)", label, got, want)
+		return
+	}
+	if got != nil && math.Abs(*got-*want) > tol {
+		t.Errorf("%s: got %v, want %v (tol %v)", label, *got, *want, tol)
+	}
+}

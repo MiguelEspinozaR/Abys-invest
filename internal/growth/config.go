@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+
+	"github.com/miky/abys-invest/internal/modelcfg"
 )
 
 // Defaults of the Growth Engine (SPEC §5, plan D5/D14). All rates are
@@ -52,32 +54,23 @@ func DefaultConfig() Config {
 //	GROWTH_WINDOW_FALLBACK_YEARS 5      ventana de reserva (fija, ver abajo)
 //	GROWTH_ANNUAL_MIN_DAYS       330    duración mínima de un hecho FY anual
 //	GROWTH_ANNUAL_MAX_DAYS       400    duración máxima de un hecho FY anual
-//	GROWTH_EPS_WEIGHT            0.5    peso de EPS en el blend
-//	GROWTH_FCF_WEIGHT            0.5    peso de FCF en el blend
-//	GROWTH_DISCREPANCY_PP        10     umbral de discrepancia con revenue (pp)
-//	GROWTH_MIN_RATE              -10    suelo de la tasa normalizada (%)
-//	GROWTH_MAX_RATE              25     techo de crecimiento extraordinario (%)
+//	GROWTH_EPS_WEIGHT            0.5    peso de EPS en el blend (0..1)
+//	GROWTH_FCF_WEIGHT            0.5    peso de FCF en el blend (0..1)
+//	GROWTH_DISCREPANCY_PP        10     umbral de discrepancia con revenue (pp) (0..100)
+//	GROWTH_MIN_RATE              -10    suelo de la tasa normalizada (%) (-100..100)
+//	GROWTH_MAX_RATE              25     techo de crecimiento extraordinario (%) (-100..100)
 func ConfigFromEnv() Config {
 	cfg := DefaultConfig()
 	cfg.WindowPrimaryYears = envInt("GROWTH_WINDOW_PRIMARY_YEARS", cfg.WindowPrimaryYears)
 	cfg.WindowFallbackYears = envInt("GROWTH_WINDOW_FALLBACK_YEARS", cfg.WindowFallbackYears)
 	cfg.AnnualMinDays = envInt("GROWTH_ANNUAL_MIN_DAYS", cfg.AnnualMinDays)
 	cfg.AnnualMaxDays = envInt("GROWTH_ANNUAL_MAX_DAYS", cfg.AnnualMaxDays)
-	cfg.EPSWeight = envFloat("GROWTH_EPS_WEIGHT", cfg.EPSWeight)
-	cfg.FCFWeight = envFloat("GROWTH_FCF_WEIGHT", cfg.FCFWeight)
-	cfg.DiscrepancyPP = envFloat("GROWTH_DISCREPANCY_PP", cfg.DiscrepancyPP)
-	cfg.MinRate = envFloat("GROWTH_MIN_RATE", cfg.MinRate)
-	cfg.MaxRate = envFloat("GROWTH_MAX_RATE", cfg.MaxRate)
+	cfg.EPSWeight = modelcfg.EnvFloatRange("GROWTH_EPS_WEIGHT", cfg.EPSWeight, 0, 1)
+	cfg.FCFWeight = modelcfg.EnvFloatRange("GROWTH_FCF_WEIGHT", cfg.FCFWeight, 0, 1)
+	cfg.DiscrepancyPP = modelcfg.EnvFloatRange("GROWTH_DISCREPANCY_PP", cfg.DiscrepancyPP, 0, 100)
+	cfg.MinRate = modelcfg.EnvFloatRange("GROWTH_MIN_RATE", cfg.MinRate, -100, 100)
+	cfg.MaxRate = modelcfg.EnvFloatRange("GROWTH_MAX_RATE", cfg.MaxRate, -100, 100)
 	return cfg.canonicalWindows()
-}
-
-func envFloat(key string, def float64) float64 {
-	if v := os.Getenv(key); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			return f
-		}
-	}
-	return def
 }
 
 func envInt(key string, def int) int {

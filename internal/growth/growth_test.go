@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -394,5 +395,137 @@ func TestConfigFromEnvRechazaVentanasNoCanonicas(t *testing.T) {
 func TestConfigFromEnvValidoNoSeToca(t *testing.T) {
 	if got := ConfigFromEnv(); got.WindowPrimaryYears != 3 || got.WindowFallbackYears != 5 {
 		t.Fatalf("sin env: esperado 3/5, got %d/%d", got.WindowPrimaryYears, got.WindowFallbackYears)
+	}
+}
+
+// TestParseSnapshotModelVersionGate verifica que el gate de model_version
+// rechaza versiones vacías, desconocidas y acepta la soportada.
+func TestParseSnapshotModelVersionGate(t *testing.T) {
+	validSnap := `{"ticker":"AAPL","as_of":"2026-01-01T00:00:00Z","series":{"eps":[],"fcf":[],"revenue":[]},"config":{},"result":{"model_version":"1.0.0"},"model_version":"1.0.0"}`
+
+	// Versión correcta → OK
+	_, _, _, err := ParseSnapshot([]byte(validSnap))
+	if err != nil {
+		t.Fatalf("versión soportada debe parsear: %v", err)
+	}
+
+	// Versión vacía → ErrSnapshotIncomplete
+	emptyVer := `{"ticker":"AAPL","as_of":"2026-01-01T00:00:00Z","series":{"eps":[],"fcf":[],"revenue":[]},"config":{},"result":{},"model_version":""}`
+	_, _, _, err = ParseSnapshot([]byte(emptyVer))
+	if err == nil || !strings.Contains(err.Error(), "falta model_version") {
+		t.Fatalf("versión vacía debe dar ErrSnapshotIncomplete, got: %v", err)
+	}
+
+	// Versión no soportada → ErrUnsupportedModelVersion
+	unsupported := `{"ticker":"AAPL","as_of":"2026-01-01T00:00:00Z","series":{"eps":[],"fcf":[],"revenue":[]},"config":{},"result":{},"model_version":"9.9.9"}`
+	_, _, _, err = ParseSnapshot([]byte(unsupported))
+	if err == nil || !strings.Contains(err.Error(), "no soportada") {
+		t.Fatalf("versión no soportada debe dar ErrUnsupportedModelVersion, got: %v", err)
+	}
+
+	// Snapshot vacío → ErrSnapshotIncomplete
+	_, _, _, err = ParseSnapshot([]byte{})
+	if err == nil || !strings.Contains(err.Error(), "snapshot vacío") {
+		t.Fatalf("snapshot vacío debe dar ErrSnapshotIncomplete, got: %v", err)
+	}
+
+	// Falta ticker → ErrSnapshotIncomplete
+	noTicker := `{"as_of":"2026-01-01T00:00:00Z","series":{"eps":[],"fcf":[],"revenue":[]},"config":{},"result":{"model_version":"1.0.0"},"model_version":"1.0.0"}`
+	_, _, _, err = ParseSnapshot([]byte(noTicker))
+	if err == nil || !strings.Contains(err.Error(), "falta ticker") {
+		t.Fatalf("falta ticker debe dar ErrSnapshotIncomplete, got: %v", err)
+	}
+}
+
+// TestParseSnapshotRoundTrip verifies that Snapshot() → ParseSnapshot() preserves
+// Inputs, Config and Result with float tolerance (determinism §27).
+func TestParseSnapshotRoundTrip(t *testing.T) {
+	in := Inputs{
+		Ticker: "AAPL",
+		AsOf:   time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC),
+		Series: Series{
+			EPS:     serie(6, 1.0, 0.10),
+			FCF:     serie(6, 1.0, 0.15),
+			Revenue: serie(6, 100.0, 0.08),
+		},
+	}
+	cfg := DefaultConfig()
+	cfg.EPSWeight, cfg.FCFWeight = 0.6, 0.4
+	cfg.DiscrepancyPP = 12.5
+
+	res := Calculate(in, cfg)
+	snap, err := res.Snapshot(in, cfg)
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+
+	parsedIn, parsedCfg, parsedRes, err := ParseSnapshot(snap)
+	if err != nil {
+		t.Fatalf("ParseSnapshot: %v", err)
+	}
+
+	// Verify Inputs
+	if parsedIn.Ticker != in.Ticker {
+		t.Errorf("Ticker: got %q, want %q", parsedIn.Ticker, in.Ticker)
+	}
+	if !parsedIn.AsOf.Equal(in.AsOf) {
+		t.Errorf("AsOf: got %v, want %v", parsedIn.AsOf, in.AsOf)
+	}
+	if len(parsedIn.Series.EPS) != len(in.Series.EPS) {
+		t.Errorf("EPS points: got %d, want %d", len(parsedIn.Series.EPS), len(in.Series.EPS))
+	}
+	if len(parsedIn.Series.FCF) != len(in.Series.FCF) {
+		t.Errorf("FCF points: got %d, want %d", len(parsedIn.Series.FCF), len(in.Series.FCF))
+	}
+	if len(parsedIn.Series.Revenue) != len(in.Series.Revenue) {
+		t.Errorf("Revenue points: got %d, want %d", len(parsedIn.Series.Revenue), len(in.Series.Revenue))
+	}
+
+	// Verify Config
+	if parsedCfg.WindowPrimaryYears != cfg.WindowPrimaryYears {
+		t.Errorf("WindowPrimaryYears: got %d, want %d", parsedCfg.WindowPrimaryYears, cfg.WindowPrimaryYears)
+	}
+	if parsedCfg.WindowFallbackYears != cfg.WindowFallbackYears {
+		t.Errorf("WindowFallbackYears: got %d, want %d", parsedCfg.WindowFallbackYears, cfg.WindowFallbackYears)
+	}
+	if math.Abs(parsedCfg.EPSWeight-cfg.EPSWeight) > 1e-9 {
+		t.Errorf("EPSWeight: got %v, want %v", parsedCfg.EPSWeight, cfg.EPSWeight)
+	}
+	if math.Abs(parsedCfg.FCFWeight-cfg.FCFWeight) > 1e-9 {
+		t.Errorf("FCFWeight: got %v, want %v", parsedCfg.FCFWeight, cfg.FCFWeight)
+	}
+	if math.Abs(parsedCfg.DiscrepancyPP-cfg.DiscrepancyPP) > 1e-9 {
+		t.Errorf("DiscrepancyPP: got %v, want %v", parsedCfg.DiscrepancyPP, cfg.DiscrepancyPP)
+	}
+	if math.Abs(parsedCfg.MinRate-cfg.MinRate) > 1e-9 {
+		t.Errorf("MinRate: got %v, want %v", parsedCfg.MinRate, cfg.MinRate)
+	}
+	if math.Abs(parsedCfg.MaxRate-cfg.MaxRate) > 1e-9 {
+		t.Errorf("MaxRate: got %v, want %v", parsedCfg.MaxRate, cfg.MaxRate)
+	}
+
+	// Verify Result (float comparison with tolerance)
+	if (parsedRes.NormalizedGrowthRate == nil) != (res.NormalizedGrowthRate == nil) {
+		t.Errorf("NormalizedGrowthRate nil mismatch: got %v, want %v", parsedRes.NormalizedGrowthRate, res.NormalizedGrowthRate)
+	}
+	if parsedRes.NormalizedGrowthRate != nil && res.NormalizedGrowthRate != nil {
+		if math.Abs(*parsedRes.NormalizedGrowthRate-*res.NormalizedGrowthRate) > 1e-6 {
+			t.Errorf("NormalizedGrowthRate: got %v, want %v", *parsedRes.NormalizedGrowthRate, *res.NormalizedGrowthRate)
+		}
+	}
+	if parsedRes.Confidence != res.Confidence {
+		t.Errorf("Confidence: got %q, want %q", parsedRes.Confidence, res.Confidence)
+	}
+	if parsedRes.Source != res.Source {
+		t.Errorf("Source: got %q, want %q", parsedRes.Source, res.Source)
+	}
+	if parsedRes.Clamped != res.Clamped {
+		t.Errorf("Clamped: got %v, want %v", parsedRes.Clamped, res.Clamped)
+	}
+	if parsedRes.RevenueDiscrepancy != res.RevenueDiscrepancy {
+		t.Errorf("RevenueDiscrepancy: got %v, want %v", parsedRes.RevenueDiscrepancy, res.RevenueDiscrepancy)
+	}
+	if parsedRes.ModelVersion != res.ModelVersion {
+		t.Errorf("ModelVersion: got %q, want %q", parsedRes.ModelVersion, res.ModelVersion)
 	}
 }

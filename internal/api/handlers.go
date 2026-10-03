@@ -289,11 +289,27 @@ func handleScore(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, tic
 		asOf = parsed
 	}
 
+	// B15: `?model_version=` fija la REVISIÓN. Sin él se sirve la última fila,
+	// que desde M6c es 2.1.0; con él, la de esa revisión, que es lo que hace
+	// falta para comprobar que 1.1.0 y 2.0.0 siguen siendo legibles.
+	modelVersion := strings.TrimSpace(r.URL.Query().Get("model_version"))
+	if modelVersion != "" {
+		if !isKnownModelVersion(modelVersion) {
+			writeError(w, http.StatusBadRequest, CodeValidation,
+				"model_version desconocido (esperado 1.1.0, 2.0.0 o 2.1.0)")
+			return
+		}
+	}
 	var score *storage.Score
 	var err error
-	if !asOf.IsZero() {
+	switch {
+	case modelVersion != "" && !asOf.IsZero():
+		score, err = storage.GetScoreByTickerAndVersion(r.Context(), pool, ticker, asOf, modelVersion)
+	case modelVersion != "":
+		score, err = storage.GetLatestScoreByVersion(r.Context(), pool, ticker, modelVersion)
+	case !asOf.IsZero():
 		score, err = storage.GetScoreByTicker(r.Context(), pool, ticker, asOf)
-	} else {
+	default:
 		score, err = storage.GetLatestScore(r.Context(), pool, ticker)
 	}
 	if err != nil {
@@ -308,13 +324,7 @@ func handleScore(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, tic
 	// inputs_snapshot persistido. Campos previos intactos (scoreResponse
 	// embebe storage.Score); las dimensiones son exactas porque el motor es
 	// determinista y el score persistido se generó con ese snapshot.
-	resp := scoreResponse{
-		Score:      *score,
-		Dimensions: dimensionsFromSnapshot(score.InputsSnapshot, score.ModelVersion),
-	}
-	c, u := weightSums(resp.Dimensions)
-	resp.WeightConfigured, resp.WeightUsed = c, u
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, newScoreResponse(*score))
 }
 
 // handleListScores: GET /scores?ticker=&from=&to=&limit=

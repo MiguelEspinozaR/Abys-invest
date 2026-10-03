@@ -12,6 +12,7 @@ import (
 
 	"github.com/miky/abys-invest/internal/api"
 	"github.com/miky/abys-invest/internal/storage"
+	"github.com/miky/abys-invest/internal/testsupport"
 )
 
 // Integración M6a: los bloques aditivos `growth` y `wacc` de
@@ -89,6 +90,9 @@ func m6Seed(t *testing.T, ticker string, withBeta bool) int64 {
 		if err := storage.UpdateSecurityReference(ctx, pool, ticker, nil, nil, &beta); err != nil {
 			t.Fatalf("beta: %v", err)
 		}
+		// ADR D29: la observación canónica, fechada en la última barra de precio
+		// del fixture (la fecha de valoración que usa el pipeline).
+		testsupport.SeedBetaAsOf(t, pool, sec.ID, prices[len(prices)-1].Date, beta)
 	}
 	return sec.ID
 }
@@ -207,7 +211,21 @@ func TestValuationExponeGrowthYWacc(t *testing.T) {
 // siendo válida.
 func TestValuationOmiteGrowthYWaccSinFilas(t *testing.T) {
 	const ticker = "M6TST2"
-	m6Seed(t, ticker, false)
+	secID := m6Seed(t, ticker, false)
+	// This suite shares abys_test with the packages that DO run the real pipeline
+	// (/refresh runs it over every seeded ticker), so a previous or later test can
+	// leave growth/wacc rows for this very security. The contract under test is
+	// "NO row ⇒ no block", so the precondition is created here instead of being
+	// inherited from the order in which tests happened to run.
+	ctx := context.Background()
+	for _, q := range []string{
+		`DELETE FROM growth_metrics WHERE security_id = $1`,
+		`DELETE FROM wacc_metrics WHERE security_id = $1`,
+	} {
+		if _, err := pool.Exec(ctx, q, secID); err != nil {
+			t.Fatalf("limpiar growth/wacc del fixture: %v", err)
+		}
+	}
 	body := m6Valuation(t, api.NewRouter(pool), ticker)
 	if _, present := body["growth"]; present {
 		t.Fatalf("growth no debe aparecer sin fila: %v", body["growth"])

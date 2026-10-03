@@ -19,8 +19,13 @@ package wacc
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
+	"strings"
 	"time"
+
+	"github.com/miky/abys-invest/internal/modelcfg"
+	"github.com/miky/abys-invest/internal/reason"
 )
 
 // ModelVersion is the revision of the WACC formula persisted in
@@ -60,16 +65,34 @@ type Config struct {
 // observed": the value comes from Config (and the source is downgraded
 // accordingly). Ticker/AsOf are traceability only.
 type Inputs struct {
-	Ticker            string    `json:"ticker"`
-	AsOf              time.Time `json:"as_of"`
-	EquityValue       *float64  `json:"equity_value"`        // observado: E = valuation_price x shares
-	DebtValue         *float64  `json:"debt_value"`          // observado: D = total_debt
-	Beta              *float64  `json:"beta"`                // observado: securities.beta (Yahoo, D17)
-	RiskFreeRate      *float64  `json:"risk_free_rate"`      // nil -> Config (hoy siempre nil)
-	EquityRiskPremium *float64  `json:"equity_risk_premium"` // nil -> Config
-	CostOfDebt        *float64  `json:"cost_of_debt"`        // nil -> Config
-	TaxRate           *float64  `json:"tax_rate"`            // nil -> Config
+	Ticker      string    `json:"ticker"`
+	AsOf        time.Time `json:"as_of"`
+	EquityValue *float64  `json:"equity_value"` // observado: E = valuation_price x shares
+	DebtValue   *float64  `json:"debt_value"`   // observado: D = total_debt
+	Beta        *float64  `json:"beta"`         // observado: beta_history (ADR D29)
+	// BetaAsOf is the date of the beta OBSERVATION (not the date it was fetched).
+	// BetaSource is "history" when it came from beta_history and "configured" when
+	// Inputs.Beta is nil. Both travel to the result so the taxonomy can tell an
+	// observed beta from an assumed one without re-reading the database.
+	BetaAsOf          *time.Time `json:"beta_as_of,omitempty"`
+	BetaSource        string     `json:"beta_source,omitempty"` // history|configured
+	RiskFreeRate      *float64   `json:"risk_free_rate"`        // nil -> Config (hoy siempre nil)
+	EquityRiskPremium *float64   `json:"equity_risk_premium"`   // nil -> Config
+	CostOfDebt        *float64   `json:"cost_of_debt"`          // nil -> Config
+	TaxRate           *float64   `json:"tax_rate"`              // nil -> Config
+
+	// Reasons are the reasons the CALLER already knows about the inputs (the beta
+	// reader reports `beta_missing` / `beta_stale`, ADR D29). The engine does not
+	// invent them: it normalises and propagates them into the result and the
+	// snapshot, so a reason travels with the number it explains.
+	Reasons []string `json:"reasons,omitempty"`
 }
+
+// Beta provenance values (ADR D29).
+const (
+	BetaSourceHistory    = "history"
+	BetaSourceConfigured = "configured"
+)
 
 // Result is the deterministic output of Calculate. WACC is nil when the
 // conservative rule forbids inventing it (no observed beta/E-D AND no positive
@@ -89,6 +112,16 @@ type Result struct {
 	Confidence   string   `json:"wacc_confidence"` // high|medium|low
 	ModelVersion string   `json:"model_version"`
 
+	// BetaAsOf and BetaSource are the provenance of the beta used: the observation
+	// date and where it came from. They are reported even when the WACC degraded
+	// to the fallback, because "why is this a fallback" is the answer a reader of
+	// wacc_metrics needs (ADR D29: beta_stale / beta_missing).
+	BetaAsOf   *time.Time `json:"beta_as_of,omitempty"`
+	BetaSource string     `json:"beta_source,omitempty"`
+
+	// Reasons carry `beta_missing` / `beta_stale` (ADR D29) through the engine.
+	Reasons []string `json:"reasons,omitempty"`
+
 	// Resolved (observed OR configured) values of the four macro/discount
 	// parameters, so the persistence layer can record the provenance of each one
 	// without re-deriving the resolution rule outside the engine.
@@ -106,7 +139,7 @@ type Result struct {
 // the CAPM is validated; anything that is not calculable degrades to the
 // configured fallback instead of producing a NaN.
 func Calculate(in Inputs, cfg Config) Result {
-	res := Result{ModelVersion: ModelVersion}
+	res := Result{ModelVersion: ModelVersion, Reasons: reason.Normalize(in.Reasons)}
 
 	betaObserved := usableBeta(in.Beta)
 	beta := cfg.BetaAssumed
@@ -114,6 +147,13 @@ func Calculate(in Inputs, cfg Config) Result {
 		beta = *in.Beta
 	}
 	res.Beta, res.BetaObserved = ptr(beta), betaObserved
+	// Provenance of the beta. An assumed beta is reported as "configured" with no
+	// date: there is no observation to date.
+	res.BetaSource = BetaSourceConfigured
+	if betaObserved {
+		res.BetaSource = BetaSourceHistory
+		res.BetaAsOf = in.BetaAsOf
+	}
 
 	rf, rfObserved := observedOr(in.RiskFreeRate, cfg.RiskFreeRate)
 	erp, erpObserved := observedOr(in.EquityRiskPremium, cfg.EquityRiskPremium)
@@ -186,14 +226,52 @@ func fallback(res Result, cfg Config) Result {
 // wacc_metrics.inputs_snapshot (§26/§30).
 func (r Result) Snapshot(in Inputs, cfg Config) ([]byte, error) {
 	raw, err := json.Marshal(struct {
-		Inputs Inputs `json:"inputs"`
-		Config Config `json:"config"`
-		Result Result `json:"result"`
-	}{Inputs: in, Config: cfg, Result: r})
+		Inputs       Inputs `json:"inputs"`
+		Config       Config `json:"config"`
+		Result       Result `json:"result"`
+		ModelVersion string `json:"model_version"`
+	}{Inputs: in, Config: cfg, Result: r, ModelVersion: ModelVersion})
 	if err != nil {
 		return nil, err
 	}
 	return raw, nil
+}
+
+// SnapshotData is the structure used for JSON unmarshaling of a WACC snapshot.
+type SnapshotData struct {
+	Inputs       Inputs `json:"inputs"`
+	Config       Config `json:"config"`
+	Result       Result `json:"result"`
+	ModelVersion string `json:"model_version"`
+}
+
+// ParseSnapshot decodes a WACC snapshot and validates it has the required
+// fields for replay (ADR D27, B12). It is tolerant of unknown fields but
+// strict on required fields.
+func ParseSnapshot(raw []byte) (Inputs, Config, Result, error) {
+	if len(raw) == 0 {
+		return Inputs{}, Config{}, Result{}, fmt.Errorf("%w: snapshot vacío", modelcfg.ErrSnapshotIncomplete)
+	}
+	var probe struct {
+		ModelVersion string `json:"model_version"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return Inputs{}, Config{}, Result{}, fmt.Errorf("wacc: parse snapshot: %w", err)
+	}
+	if strings.TrimSpace(probe.ModelVersion) == "" {
+		return Inputs{}, Config{}, Result{}, fmt.Errorf("%w: wacc: falta model_version", modelcfg.ErrSnapshotIncomplete)
+	}
+	if probe.ModelVersion != ModelVersion {
+		return Inputs{}, Config{}, Result{}, fmt.Errorf("%w: %q (soportada: %q)", modelcfg.ErrUnsupportedModelVersion, probe.ModelVersion, ModelVersion)
+	}
+	var data SnapshotData
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return Inputs{}, Config{}, Result{}, fmt.Errorf("wacc: parse snapshot: %w", err)
+	}
+	if data.Inputs.Ticker == "" {
+		return Inputs{}, Config{}, Result{}, fmt.Errorf("%w: wacc: falta ticker", modelcfg.ErrSnapshotIncomplete)
+	}
+	return data.Inputs, data.Config, data.Result, nil
 }
 
 // usableBeta reports whether the security has an OBSERVED, credible beta

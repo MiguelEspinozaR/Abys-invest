@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/miky/abys-invest/internal/storage"
+	"github.com/miky/abys-invest/internal/testsupport"
 )
 
 // Integration coverage of the CAPM WACC against a real database: the
@@ -25,6 +26,8 @@ func TestMain(m *testing.M) {
 	if dsn == "" {
 		os.Exit(0) // sin BD: suite de integración se omite (sin error)
 	}
+	// Validate and redact DSN before connecting (ADR D30)
+	redacted := testsupport.EnsureTestDSN(dsn)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -40,6 +43,7 @@ func TestMain(m *testing.M) {
 	if err := storage.RunMigrations(ctx, testPool, "../../migrations"); err != nil {
 		panic("wacc integration: migraciones fallaron: " + err.Error())
 	}
+	_ = redacted // silence unused warning if not logged
 	os.Exit(m.Run())
 }
 
@@ -113,12 +117,16 @@ func setup(t *testing.T, pool *pgxpool.Pool, ticker string, beta *float64, share
 			t.Fatalf("Commit: %v", err)
 		}
 	}
-	// La beta observada la escribe el job de referencia (D17) y se relee del
-	// catálogo: el engine solo la usa si viene de securities.beta.
+	// La beta observada vive en beta_history (ADR D29): securities.beta es solo la
+	// caché. Se siembra la OBSERVACIÓN fechada en `asOf` (no en time.Now), porque
+	// GetBetaAsOf rechaza tanto una fila posterior a la fecha de valoración como
+	// una de más de BETA_MAX_AGE_DAYS.
 	if beta != nil {
 		if err := storage.UpdateSecurityReference(ctx, pool, ticker, nil, nil, beta); err != nil {
 			t.Fatalf("UpdateSecurityReference: %v", err)
 		}
+		testsupport.SeedBetaAsOf(t, pool, sec.ID, asOf, *beta)
+		testsupport.AssertBetaCacheMatchesHistory(t, pool, sec.ID)
 		sec, err = storage.GetSecurityByTicker(ctx, pool, ticker)
 		if err != nil {
 			t.Fatalf("GetSecurityByTicker tras la beta: %v", err)
@@ -185,9 +193,11 @@ func TestWACCCAPMHybridConBetaObservadaPersistida(t *testing.T) {
 	shares, debt, close := 1_000.0, 400.0, 250.0
 	sec, price := setup(t, pool, "M6WACC", ptrOf(1.2), &shares, &debt, close)
 
-	funds, err := storage.GetLatestFYFundamentals(ctx, pool, sec.ID, []string{"shares_outstanding", "total_debt"})
+	// ADR D14: los hechos se leen con corte temporal; sin él el test podría
+	// usar un 10-K publicado después de la fecha de valoración.
+	funds, _, err := storage.GetLatestFYFundamentalsAsOf(ctx, pool, sec.ID, []string{"shares_outstanding", "total_debt"}, asOf)
 	if err != nil {
-		t.Fatalf("GetLatestFYFundamentals: %v", err)
+		t.Fatalf("GetLatestFYFundamentalsAsOf: %v", err)
 	}
 	equity := *funds["shares_outstanding"] * price
 	res := Calculate(Inputs{Ticker: sec.Ticker, AsOf: asOf, EquityValue: &equity, DebtValue: funds["total_debt"], Beta: sec.Beta}, DefaultConfig())
@@ -261,9 +271,11 @@ func TestWACCSinDeudaUsaFallback(t *testing.T) {
 
 	shares, close := 1_000.0, 200.0
 	sec, _ := setup(t, pool, "M6NODEBT", nil, &shares, nil, close)
-	funds, err := storage.GetLatestFYFundamentals(ctx, pool, sec.ID, []string{"shares_outstanding", "total_debt"})
+	// ADR D14: los hechos se leen con corte temporal; sin él el test podría
+	// usar un 10-K publicado después de la fecha de valoración.
+	funds, _, err := storage.GetLatestFYFundamentalsAsOf(ctx, pool, sec.ID, []string{"shares_outstanding", "total_debt"}, asOf)
 	if err != nil {
-		t.Fatalf("GetLatestFYFundamentals: %v", err)
+		t.Fatalf("GetLatestFYFundamentalsAsOf: %v", err)
 	}
 	equity := *funds["shares_outstanding"] * close
 	res := Calculate(Inputs{Ticker: sec.Ticker, AsOf: asOf, EquityValue: &equity, DebtValue: funds["total_debt"], Beta: sec.Beta}, DefaultConfig())

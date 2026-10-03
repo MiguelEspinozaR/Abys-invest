@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/miky/abys-invest/internal/growth"
+	"github.com/miky/abys-invest/internal/modelcfg"
 	"github.com/miky/abys-invest/internal/storage"
 	"github.com/miky/abys-invest/internal/wacc"
 )
@@ -35,9 +36,15 @@ var waccConcepts = []string{"shares_outstanding", "total_debt"}
 // incluye la beta observada de Yahoo, D17): SIN RED, por lo que se ejecuta
 // también en POST /refresh. Los errores por security se loguean y la pasada
 // continúa (mismo contrato que runMetricsJob). Devuelve los conteos de filas.
-func runGrowthWaccJob(ctx context.Context, pool *pgxpool.Pool, securities []storage.Security, dryRun bool) growthWaccResult {
+// mc es la configuración resuelta (code < env < parameter set). Si es nil, se
+// usa ModelConfigFromEnv() (para jobs standalone sin parameter set).
+func runGrowthWaccJob(ctx context.Context, pool *pgxpool.Pool, securities []storage.Security, dryRun bool, mc *modelcfg.ModelConfig) growthWaccResult {
+	if mc == nil {
+		mcPtr := modelcfg.ModelConfigFromEnv()
+		mc = &mcPtr
+	}
 	gcfg := growth.ConfigFromEnv()
-	wcfg := wacc.ConfigFromEnv()
+	wcfg := wacc.ConfigFromModelConfig(*mc)
 
 	counts := growthWaccResult{}
 	for _, sec := range securities {
@@ -105,15 +112,32 @@ func runGrowthWaccOne(ctx context.Context, pool *pgxpool.Pool, sec storage.Secur
 		v := *shares * last.Close
 		equity = &v
 	}
-	// (4) Beta OBSERVADA de Yahoo (D17): ya viene en el Security que
-	// resolveTargets cargó, sin query extra. nil = nunca observada.
-	beta := sec.Beta
-	if beta == nil {
-		slog.Debug("beta no observada; WACC configured_fallback", "ticker", sec.Ticker)
+	// (4) Beta OBSERVADA, ahora desde beta_history (ADR D29 / E4, Az8).
+	//
+	// M6a leía `securities.beta`, la CACHÉ de la última observación, sin fecha de
+	// la observación: un beta de hace dos años entraba al CAPM con el mismo peso
+	// que uno de ayer. GetBetaAsOf devuelve la observación VIGENTE en asOf o un
+	// motivo (`beta_missing` / `beta_stale`); un beta caducado NO se usa, se
+	// degrada a configured_fallback/low diciendo por qué.
+	obs, betaReason, err := storage.GetBetaAsOf(ctx, pool, sec.ID, asOf, storage.DefaultBetaMaxAgeDays)
+	if err != nil {
+		return false, false, err
+	}
+	var beta *float64
+	var betaAsOf *time.Time
+	if obs != nil {
+		b := obs.Beta
+		beta, betaAsOf = &b, &obs.AsOf
+	} else {
+		slog.Debug("beta no vigente; WACC configured_fallback", "ticker", sec.Ticker, "reason", betaReason)
 	}
 	win := wacc.Inputs{
 		Ticker: sec.Ticker, AsOf: asOf,
 		EquityValue: equity, DebtValue: funds["total_debt"], Beta: beta,
+		BetaAsOf: betaAsOf,
+	}
+	if beta == nil && betaReason != "" {
+		win.Reasons = []string{betaReason}
 	}
 	wr := wacc.Calculate(win, wcfg)
 
@@ -143,7 +167,10 @@ func runGrowthWaccOne(ctx context.Context, pool *pgxpool.Pool, sec storage.Secur
 	waccRow := &storage.WaccMetric{
 		SecurityID: sec.ID, AsOf: asOf, AvailableAt: &availableAt,
 		EquityValue: equity, DebtValue: funds["total_debt"],
-		Beta: wr.Beta, BetaObserved: wr.BetaObserved, BetaUpdatedAt: sec.BetaUpdatedAt,
+		// BetaUpdatedAt is the DATE OF THE OBSERVATION used (wr.BetaAsOf), not the
+		// date the cache row was written: "which beta produced this WACC" is the
+		// question the column answers (ADR D29, riesgo R4).
+		Beta: wr.Beta, BetaObserved: wr.BetaObserved, BetaUpdatedAt: wr.BetaAsOf,
 		CostOfEquity: wr.Ke, CostOfDebtPreTax: wr.CostOfDebt, CostOfDebtAfterTax: wr.KdAfterTax,
 		TaxRate: wr.TaxRate, RiskFreeRate: wr.RiskFreeRate, EquityRiskPremium: wr.EquityRiskPremium,
 		Wacc: wr.WACC, WeightEquity: wr.WeightEquity, WeightDebt: wr.WeightDebt,

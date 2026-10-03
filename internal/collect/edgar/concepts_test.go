@@ -516,3 +516,91 @@ func TestAAPLFixtureEndToEndExtraction(t *testing.T) {
 		}
 	}
 }
+
+// Az9: el reescalado post-split de un hecho POR ACCIÓN es un NO-OP.
+//
+// El caso que importa: el 10-K del año siguiente reexpresa el EPS del ejercicio
+// anterior en las acciones post-split. Si se aceptara, `eps_diluted` de 2024
+// pasaría de 6.40 a 1.60 sin que nadie decidiera nada, y TODA la cadena de M6c
+// (growth → quality → score) se calcularía sobre un número que no existió.
+func TestAz9ReexpresionPostSplitDeEPSEsNoOp(t *testing.T) {
+	end := time.Date(2024, 9, 28, 0, 0, 0, 0, time.UTC)
+	start := time.Date(2023, 9, 25, 0, 0, 0, 0, time.UTC)
+	fy := 2024
+	orig := CanonicalFact{
+		Canonical: "eps_diluted", SourceConcept: "EarningsPerShareDiluted",
+		Namespace: "us-gaap", Priority: 1, Value: 6.40, HasValue: true,
+		Unit: "USD/shares", PeriodType: "duration", StartDate: &start, EndDate: end,
+		FiscalYear: &fy, FiscalPeriod: "FY", FormType: "10-K",
+		FilingDate: time.Date(2024, 10, 30, 0, 0, 0, 0, time.UTC),
+		Accession:  "000-24-A",
+	}
+	// Split 4:1 reexpresado en el 10-K siguiente.
+	restated := orig
+	restated.Value = 1.60 // 6.40 / 4
+	restated.FilingDate = time.Date(2025, 10, 31, 0, 0, 0, 0, time.UTC)
+	restated.Accession = "000-25-B"
+
+	if !isPostSplitReexpression(&orig, &restated) {
+		t.Fatalf("un 4:1 sobre el mismo periodo debe detectarse como reexpresión post-split")
+	}
+	if newerFact(&restated, &orig) {
+		t.Fatalf("la reexpresión post-split NO puede ganar: eps_diluted volvería 6.40 → 1.60")
+	}
+
+	facts := dedupeCanonical([]CanonicalFact{restated, orig})
+	if len(facts) != 1 {
+		t.Fatalf("se esperaba 1 hecho tras el dedupe, got %d", len(facts))
+	}
+	if facts[0].Value != 6.40 {
+		t.Fatalf("el hecho persistido debe ser el ORIGINAL: %v", facts[0].Value)
+	}
+}
+
+// Un RESTATEMENT real (cambia la ventana de presentación) SÍ sustituye: no es un
+// split, es una corrección, y el dato bueno es el nuevo.
+func TestAz9RestatementRealSiSustituye(t *testing.T) {
+	end := time.Date(2024, 9, 28, 0, 0, 0, 0, time.UTC)
+	start := time.Date(2023, 9, 25, 0, 0, 0, 0, time.UTC)
+	fy := 2024
+	orig := CanonicalFact{
+		Canonical: "eps_diluted", Priority: 1, Value: 6.40, HasValue: true,
+		Unit: "USD/shares", PeriodType: "duration", StartDate: &start, EndDate: end,
+		FiscalYear: &fy, FiscalPeriod: "FY", FilingDate: time.Date(2024, 10, 30, 0, 0, 0, 0, time.UTC),
+	}
+	restated := orig
+	restated.Value = 6.10
+	restated.FilingDate = time.Date(2025, 1, 15, 0, 0, 0, 0, time.UTC)
+
+	if isPostSplitReexpression(&orig, &restated) {
+		t.Fatalf("una corrección de 6.40 a 6.10 no es un reescalado: no debe ser no-op")
+	}
+	if !newerFact(&restated, &orig) {
+		t.Fatalf("un restatement real debe ganar (gana el filing más reciente)")
+	}
+}
+
+// La regla es sólo de las magnitudes POR ACCIÓN: un hecho agregado reescalado en
+// el 10-K siguiente es un error de la compañía y el filing nuevo es el bueno.
+func TestAz9NoAplicaAHechosNoPorAccion(t *testing.T) {
+	end := time.Date(2024, 9, 28, 0, 0, 0, 0, time.UTC)
+	fy := 2024
+	orig := CanonicalFact{
+		Canonical: "revenues", Priority: 1, Value: 400, HasValue: true,
+		Unit: "USD", PeriodType: "duration", EndDate: end,
+		FiscalYear: &fy, FiscalPeriod: "FY", FilingDate: time.Date(2024, 10, 30, 0, 0, 0, 0, time.UTC),
+	}
+	restated := orig
+	restated.Value = 100 // exactamente /4
+	restated.FilingDate = time.Date(2025, 10, 31, 0, 0, 0, 0, time.UTC)
+
+	if !newerFact(&restated, &orig) {
+		t.Fatalf("para revenues el filing más reciente debe ganar siempre")
+	}
+	if reexpressionAllowedFor("eps_diluted") || reexpressionAllowedFor("eps_basic") {
+		t.Fatalf("eps_diluted/eps_basic no admiten reexpresión por acción")
+	}
+	if !reexpressionAllowedFor("revenues") {
+		t.Fatalf("revenues sí admite sustitución por filing posterior")
+	}
+}

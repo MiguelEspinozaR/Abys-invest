@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/miky/abys-invest/internal/metricver"
 	"github.com/miky/abys-invest/internal/storage"
 )
 
@@ -62,7 +63,7 @@ func ComputeComparables(ctx context.Context, pool *pgxpool.Pool, ticker string, 
 		return res, nil
 	}
 
-	sc, err := storage.GetSectorComparables(ctx, pool, *sec.Sector, sec.ID)
+	sc, err := storage.GetSectorComparables(ctx, pool, *sec.Sector, sec.ID, metricver.AllPairs())
 	if err != nil {
 		return nil, fmt.Errorf("compare: comparables sector %q: %w", *sec.Sector, err)
 	}

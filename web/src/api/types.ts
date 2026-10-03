@@ -129,6 +129,8 @@ export interface DerivedMetric {
   value?: number;
   inputs_snapshot?: string; // JSON base64… solo informativo
   model_version: string;
+  /** B7/B15: presente desde 2.1.0; null en las filas históricas. */
+  parameter_set_id?: number | null;
   created_at: string;
 }
 
@@ -312,12 +314,54 @@ export interface ValuationResponse {
  * de §18), de modo que un cliente puede explicar por qué el score se renormalizó.
  */
 export interface ScoreDimension {
-  name: string; // graham | dcf | fundamentals | comparables | trend
+  /**
+   * graham | dcf | quality | relative | market_context  (score 2.1.0)
+   * graham | dcf | fundamentals | comparables | trend   (score 2.0.0)
+   *
+   * El NOMBRE depende de la revisión: la UI debe comprobar `model_version`
+   * antes de assuming el taxonomía de §18, porque 2.0.0 sigue sirviendo sus
+   * cinco dimensiones viejas y ambas son válidas a la vez (gate por versión).
+   */
+  name: string;
   score?: number; // 0-100 (ausente = inválida)
   valid: boolean;
-  weight: number; // 0.15 / 0.20 / 0.30 / 0.20 / 0.15
+  /** Peso CONFIGURADO. Alias de 2.0.0 conservado por compatibilidad M4b. */
+  weight: number;
+  /** Peso configurado de 2.1.0 (mismo valor que `weight`). */
+  weight_configured?: number;
   weight_used?: number;
   reason?: string;
+}
+
+/** Un sub-bloque de quality de §13 (D26/Az3: la UI los muestra, no un número). */
+export interface QualitySubBlock {
+  name: string; // profitability | growth | margins | stability | solvency
+  score?: number; // 0-100 (ausente = sub-bloque sin datos)
+  weight: number;
+  coverage: number; // 0-1
+  metrics?: Record<string, number | null>;
+}
+
+/** Bloque `quality` del score 2.1.0 (§13). */
+export interface QualityBlock {
+  score?: number;
+  coverage: number;
+  /** high | medium | low. Con `tax_rate_source: 'configured'` el tope es
+   *  `medium` por ADR D26: la UI no debe insinuar más confianza de la que hay. */
+  confidence: 'high' | 'medium' | 'low';
+  tax_rate_source?: string;
+  sub_scores?: Record<string, QualitySubBlock>;
+  reasons?: string[];
+}
+
+/** Bloque `relative` del score 2.1.0 (§16): los dos lados van SEPARADOS. */
+export interface RelativeBlock {
+  score?: number;
+  sector_score?: number;
+  historical_score?: number;
+  coverage: number;
+  confidence: 'high' | 'medium' | 'low';
+  reasons?: string[];
 }
 
 /** Señal del score tal como la sirve la API (es-ES, minúsculas). */
@@ -333,6 +377,8 @@ export interface ScoreRow {
   justification: string;
   inputs_snapshot?: string; // JSON base64 del snapshot de inputs (ADR-0004)
   model_version: string;
+  /** B7/B15: presente desde 2.1.0; null en las filas históricas. */
+  parameter_set_id?: number | null;
   created_at: string;
 }
 
@@ -344,12 +390,22 @@ export interface ScoreRow {
  * tendencia 15) — verificado contra la API real.
  */
 export interface ScoreResponse extends ScoreRow {
-  dimensions: ScoreDimension[];
+  /** AUSENTE en 1.1.0 (la revisión no tenía dimensiones) y presente en 2.0.0
+   *  y 2.1.0 con la taxonomía que le corresponde a `model_version`. */
+  dimensions?: ScoreDimension[];
   // §18: sumas de pesos (aditivos; ausentes si no hay dimensiones, p. ej. fila
   // de otra versión del modelo). weight_used < weight_configured ⇒ el score se
   // renormalizó sobre menos dimensiones.
   weight_configured?: number;
   weight_used?: number;
+  /** §26: identidad de la configuración que produjo el score (null = codes). */
+  parameter_set_id?: number | null;
+  /** Solo 2.1.0. */
+  quality?: QualityBlock;
+  /** Solo 2.1.0. */
+  relative?: RelativeBlock;
+  /** Layout del trace del que se decodificaron dimensions/quality/relative. */
+  trace_version?: string;
 }
 
 /** GET /scores?ticker= → historial de filas (orden as_of DESC); cada ítem

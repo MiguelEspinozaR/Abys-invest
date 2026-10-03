@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/miky/abys-invest/internal/storage"
+	"github.com/miky/abys-invest/internal/testsupport"
 )
 
 // Integration coverage of the Growth Engine against a real database: the SQL
@@ -25,6 +26,8 @@ func TestMain(m *testing.M) {
 	if dsn == "" {
 		os.Exit(0) // sin BD: suite de integración se omite (sin error)
 	}
+	// Validate and redact DSN before connecting (ADR D30)
+	redacted := testsupport.EnsureTestDSN(dsn)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -40,6 +43,7 @@ func TestMain(m *testing.M) {
 	if err := storage.RunMigrations(ctx, testPool, "../../migrations"); err != nil {
 		panic("growth integration: migraciones fallaron: " + err.Error())
 	}
+	_ = redacted // silence unused warning if not logged
 	os.Exit(m.Run())
 }
 

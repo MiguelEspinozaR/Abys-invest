@@ -297,6 +297,35 @@ M6b cablea los motores de M6a en las fórmulas y **revierte el consenso de M4b**
 - **Nota operativa (tester)**: el binario API lee **`API_PORT`**, no `PORT`; sin `API_PORT` cae al default **8080**. Para un smoke aislado hay que exportarlo explícitamente (el tester usó un puerto temporal), y `make run-api` deja procesos vivos en 8080/8082 si no se limpian: un `curl` a un puerto ocupado puede devolver el binario viejo y confundir el smoke.
 - **Vía soportada de integración**: `make integration` (con `TEST_DATABASE_URL` apuntando a una BD `*_test`). La vía directa `export TEST_DATABASE_URL && go test -tags=integration` **sigue en falso verde** porque los tests leen `DATABASE_URL` (hallazgo F1 del tester): ver la tabla de deuda.
 
+## M6c — Scoring engine 2.1.0 + configuración por parameter sets
+
+Motor de scoring 2.1.0 (5 dimensiones: graham, dcf, quality, relative, market_context) y capa de configuración por parameter sets.
+
+Pesos §18 (suma 0.90 deliberada, el décimo punto queda sin asignar):
+  graham .15 · dcf .20 · quality .35 · relative .15 · market_context .05
+  El score divide por el peso REALMENTE usado (weight_used), nunca por 1.00.
+
+Configuración en tres capas con precedencia: código < env < parameter set.
+  - Knobs por env (canónicos en .env.example); QUALITY_TAX_RATE es la única fuente de impuestos (NOPAT y Kd after-tax); WACC_TAX_RATE está deprecado y emite warning al usarse.
+  - Sets en parameter_sets: "base" y "conservative" (migraciones 015 + 016). El 016 actualiza el seed viejo de conservative de forma idempotente y solo si el JSON almacenado es exactamente el anterior (respeta ediciones del operador). Tras 016: conservative ≠ base (AAPL 43 → 50).
+
+Gates: /score/{t}?model_version= 1.1.0 | 2.0.0 | 2.1.0 (2.0.0 y 1.1.0 devuelven su layout histórico; una versión desconocida devuelve 400).
+
+Backtest / verificación (NO escribe nada, NO corre migraciones):
+  make run-backtest TICKERS=AAPL                     # replay del trace
+  make run-backtest TICKERS=AAPL PARAMETER_SET=conservative
+  ./bin/analytics -job backtest -tickers AAPL -full-chain [-json]
+  -full-chain recomputa growth→wacc→valuation desde los inputs_snapshot y TRAZA quality/relative/market_context del trace; -json expone computed_from con esa honestidad explícita. Por defecto solo se evalúa el max(as_of) por security: usa -as-of para ver filas de revisiones viejas.
+
+Verificación (requiere -p 1; sin él los tests de integración se deadloquean por TRUNCATE concurrente entre paquetes):
+  gofmt -l . && go vet ./... && go build ./...
+  go test ./... -count=1                       # 474 pass, 0 fail, 0 skip
+  make integration                             # 616 pass, 0 fail, 1 skip; log sin credenciales (Az10 b)
+
+NaN/Inf: todos los knobs de configuración rechazan valores no finitos con warning y usan el default (nunca fallan el job). Los guards de storage, score y betahistory protegen el lado de datos.
+
+Dato de cierre del hito: las filas de score 1.1.0/2.0.0 quedan intactas y se sirven con su layout histórico; las migraciones 015+016 son idempotentes.
+
 ---
 
 ## Requirements
@@ -1001,6 +1030,21 @@ M6c; mitigaciones: `beta_updated_at`, `beta_observed`, CHECK `(0,10]`, `COALESCE
 marcada); growth y wacc se persisten en la misma transacción **por security** pero en transacciones
 distintas entre securities (R9, aceptado: replica el contrato de error-por-security de
 `runMetricsJob`); los bloques `growth`/`wacc` todavía no se renderizan en el SPA (R6 → M6b/M6c).
+
+**Deuda conocida del hito (M6c)** — no bloquea la entrega:
+- (a) `internal/wacc/m6_integration_test.go:189` — `-p 1` obligatorio en integración (TRUNCATE deadlock 40P01).
+- (b) `Makefile:166` — regex de redacción evadible con `/`; usar `testsupport.RedactDSN`.
+- (c) migraciones 011:25 y 015:90 — CHECK beta>0/<=10 NaN-permeable; la barrera real es el guard Go.
+- (d) `internal/api/loader.go:387-403` — último lector de env NaN-aceptante (GROWTH_RATE_DEFAULT, DCF_DISCOUNT_RATE, DCF_TERMINAL_GROWTH, MARGIN_OF_SAFETY); delegar en modelcfg.
+- (e) `modelcfg.go:728` — KeyTaxRate del set independiente de KeyQualityTaxRate.
+- (f) `wacc.ConfigFromEnv()` — lee WACC_TAX_RATE sin warning si se llama directo.
+- (g) backtest `-full-chain` — recomputa growth con `growth.ConfigFromEnv()` (knobs RESERVED §28).
+- (h) `Trace21.MarginOfSafety` omitempty — filas 2.1.0 heredadas replayean con fallback 30.
+- (i) `web/src/api/types.ts` — frontend sin el string `parameter_set` (solo `parameter_set_id`).
+- (j) SPEC §12 "Total 100%" vs §18/API pesos 0.90 — nota de reconciliación pendiente.
+- (k) backtest — por defecto solo `max(as_of)` por security; usar `-as-of` para revisiones viejas.
+- (l) gitleaks ausente — escaneo de secretos advisory (T1).
+- (m) servicio API de producción :18080 corre binario anterior al árbol — reiniciar tras el deploy para ver `parameter_set`.
 
 ---
 

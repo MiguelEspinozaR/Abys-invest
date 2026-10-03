@@ -150,6 +150,13 @@ func newerFact(f, prev *CanonicalFact) bool {
 	if f.Priority != prev.Priority {
 		return f.Priority < prev.Priority
 	}
+	// Az9: un reescalado post-split de un hecho POR ACCIÓN no sustituye al
+	// original. Va ANTES que la comparación de fechas a propósito: el caso que
+	// rompe es precisamente "el filing es más nuevo", así que decidir por fecha
+	// primero lo dejaría pasar siempre.
+	if original, ok := splitPairOriginal(f, prev); ok {
+		return original == f
+	}
 	if f.FilingDate.After(prev.FilingDate) {
 		return true
 	}
@@ -248,4 +255,127 @@ func numTrace(f CanonicalFact) string {
 		return f.RawValue
 	}
 	return fmt.Sprintf("%v", f.Value)
+}
+
+// AZ9: unareexpresión POST-SPLIT de un hecho ya normalizado es un NO-OP.
+//
+// EL PROBLEMA
+// -----------
+// Una empresa que hace un split 4:1 reexpresa los hechos de los EJERCICIOS
+// ANTERIORES en el 10-K siguiente, y EDGAR guarda ese hecho con un filing_date
+// POSTERIOR. `newerFact` (que por defecto gana el filing más reciente) lo
+// aceptaría sin pestañear, y `eps_diluted` —una magnitud POR ACCIÓN— pasaría de
+// 6.40 a 1.60 sin que ningún código haya decidido nada: un hecho aritméticamente
+// nuevo y economicamente falso.
+//
+// LA REGLA
+// --------
+// El EPS tiene UNA SOLA FUENTE (Az1(b)): el hecho del PRIMER 10-K/10-Q que lo
+// reportó para ese periodo. Un hecho posterior del MISMO periodo sólo puede
+// sustituirlo cuando:
+//   - comparte el MISMO periodo y el mismo concepto canónico (eso ya lo exige el
+//     dedupe), y
+//   - es un RESTATEMENT REAL: cambia el periodo de presentación (start/end) o la
+//     unidad, y NO es un simple reescalado.
+//
+// Un reescalado (el cociente vale 2^n, n>=1 — 2:1, 4:1, 3:1 redondeado, 1:0.5
+// de una división) es la firma de un split, y una división no cambia el valor
+// económico por acción del ejercicio pasado: cambia las acciones. Por eso se
+// ignora, y por eso se ignora SIN WARN: no es un dato perdido, es el dato
+// correcto.
+//
+// Lo que NO hace esta función: validar que el valor original sea "correcto". No
+// hay forma de saberlo sin el documento; lo que sí hay forma de saberlo es que
+// el número que se acaba de cambiar era una división.
+func isPostSplitReexpression(prev, next *CanonicalFact) bool {
+	if prev.Canonical != next.Canonical {
+		return false
+	}
+	if periodKey(prev) != periodKey(next) {
+		return false
+	}
+	if prev.EndDate != next.EndDate {
+		return false
+	}
+	if !prev.HasValue || !next.HasValue || prev.Value == 0 || next.Value == 0 {
+		return false
+	}
+	if prev.Value == next.Value {
+		return false
+	}
+	// Un cambio de unidad o de ventana de presentación es un restatement, no un
+	// split: el valor nuevo es en otra escala y hay que conservarlo.
+	if prev.Unit != next.Unit {
+		return false
+	}
+	if (prev.StartDate == nil) != (next.StartDate == nil) {
+		return false
+	}
+	if prev.StartDate != nil && next.StartDate != nil && !prev.StartDate.Equal(*next.StartDate) {
+		return false
+	}
+	ratio := prev.Value / next.Value
+	if ratio <= 0 {
+		return false
+	}
+	// split k:1 → ratio ≈ k. Se acepta la razón entera Y su inversa (una
+	// división produce un EPS mayor, es decir ratio < 1).
+	for _, target := range []float64{ratio, 1 / ratio} {
+		for k := 2; k <= 8; k++ {
+			if relErr(target, float64(k)) < 1e-6 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func relErr(a, b float64) float64 {
+	d := a - b
+	if d < 0 {
+		d = -d
+	}
+	return d / b
+}
+
+// reexpressionAllowedFor says whether a later fact may replace an earlier one for
+// the same period. EVERY canonical concept goes through it, but only EPS-family
+// concepts are exempt: for el resto, "gana el filing más reciente" es la regla
+// correcta (una corrección de errores posterior ES el dato bueno).
+func reexpressionAllowedFor(canonical string) bool {
+	switch canonical {
+	case "eps_diluted", "eps_basic":
+		return false
+	default:
+		return true
+	}
+}
+
+// splitPairOriginal returns the fact of the pair that must be persisted, or
+// ok=false when the pair is not a post-split reexpression at all.
+//
+// It is SYMMETRIC on purpose, and that is not defensive coding but a bug that was
+// there: el dedupe itera en el orden del slice, así que una regla que sólo mira
+// "el que acaba de llegar es el nuevo" acierta la mitad de las veces — el mismo
+// par de hechos daba dos resultados según su posición. La prueba de Az9 lo caza
+// con `dedupeCanonical([]{restated, original})`.
+func splitPairOriginal(f, prev *CanonicalFact) (original *CanonicalFact, ok bool) {
+	if reexpressionAllowedFor(f.Canonical) && reexpressionAllowedFor(prev.Canonical) {
+		return nil, false
+	}
+	if !isPostSplitReexpression(prev, f) && !isPostSplitReexpression(f, prev) {
+		return nil, false
+	}
+	// El par ES post-split. El original es el de MENOS FilingDate; a igualdad de
+	// fecha, el de menor accession (el orden en que la compañía los publicó).
+	switch {
+	case f.FilingDate.Before(prev.FilingDate):
+		return f, true
+	case prev.FilingDate.Before(f.FilingDate):
+		return prev, true
+	case f.Accession <= prev.Accession:
+		return f, true
+	default:
+		return prev, true
+	}
 }

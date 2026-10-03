@@ -4,6 +4,7 @@ package yahoo
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/miky/abys-invest/internal/storage"
+	"github.com/miky/abys-invest/internal/testsupport"
 )
 
 // M6a integration coverage: price consistency (§22) y persistencia de la beta
@@ -175,6 +179,16 @@ func TestEnrichReferenceDataPersisteBeta(t *testing.T) {
 	if deref(got.Sector) != "Technology" {
 		t.Fatalf("sector: %q", deref(got.Sector))
 	}
+	// ADR D29: el job sector escribe TAMBIÉN la fila de beta_history, no solo la
+	// caché. Y el invariante "caché == última fila de la historia" debe cumplirse.
+	testsupport.AssertBetaCacheMatchesHistory(t, pool, got.ID)
+	obs, err := storage.GetLatestBetaObservation(ctx, pool, got.ID)
+	if err != nil {
+		t.Fatalf("GetLatestBetaObservation: %v", err)
+	}
+	if obs.Source != storage.BetaSourceYahoo {
+		t.Fatalf("source de la observación = %q, esperado %q", obs.Source, storage.BetaSourceYahoo)
+	}
 
 	// Security sin beta previa + "beta": null → NULL (no 1.0), y la fila de WACC
 	// que se escriba después tendrá que degradar a configured_fallback.
@@ -194,6 +208,10 @@ func TestEnrichReferenceDataPersisteBeta(t *testing.T) {
 	}
 	if got.Beta != nil {
 		t.Fatalf("beta null debe quedar NULL, got %v", *got.Beta)
+	}
+	// Una pasada sin beta no inventa una observación.
+	if _, err := storage.GetLatestBetaObservation(ctx, pool, got.ID); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("beta null no debe crear fila en beta_history: %v", err)
 	}
 
 	// Y la beta conocida NO se borra con una segunda pasada sin beta.

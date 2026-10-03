@@ -195,7 +195,7 @@ const renderScore = (data: ScoreResponse) => (
     <p className="mt-3 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
       {data.justification}
     </p>
-    {data.dimensions.length > 0 && (
+    {data.dimensions && data.dimensions.length > 0 && (
       <div className="mt-5 space-y-4">
         {data.dimensions.map((dim) => (
           <DimensionBar
@@ -218,6 +218,59 @@ const renderScore = (data: ScoreResponse) => (
               dimensiones sin dato no aportan).
             </p>
           )}
+      </div>
+    )}
+    {/* §13 (D26/Az3): los sub-bloques de quality son el PORQUÉ del número, no un
+        detalle. Sin ellos la UI muestra un 84 sin decir que ROIC pesa más que
+        márgenes. Sólo 2.1.0 los trae; 1.1.0/2.0.0 no los tienen y no se pintan. */}
+    {data.quality && (
+      <div className="mt-5 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+          Quality {data.quality.score != null ? fmtNumber(data.quality.score) : 'n/d'}/100
+          <span className="ml-2 font-normal text-xs text-slate-500">
+            cobertura {fmtPct(data.quality.coverage * 100)} · confianza {data.quality.confidence}
+            {data.quality.tax_rate_source
+              ? ` · tipo impositivo ${data.quality.tax_rate_source}`
+              : ''}
+          </span>
+        </h4>
+        {data.quality.sub_scores && (
+          <div className="mt-3 space-y-2">
+            {Object.values(data.quality.sub_scores).map((sub) => (
+              <div key={sub.name} className="flex items-center justify-between text-xs">
+                <span className="text-slate-600 dark:text-slate-300">
+                  {sub.name}
+                  <span className="ml-1 text-slate-400">
+                    peso {fmtPct(sub.weight * 100)} · cobertura {fmtPct(sub.coverage * 100)}
+                  </span>
+                </span>
+                <span className="font-medium text-slate-700 dark:text-slate-200">
+                  {sub.score != null ? fmtNumber(sub.score) : 'n/d'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )}
+    {/* §16: sector e historial van por separado; su desacuerdo es información. */}
+    {data.relative && (
+      <div className="mt-4 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+        <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+          Relative {data.relative.score != null ? fmtNumber(data.relative.score) : 'n/d'}/100
+          <span className="ml-2 font-normal text-xs text-slate-500">
+            cobertura {fmtPct(data.relative.coverage * 100)} · confianza {data.relative.confidence}
+          </span>
+        </h4>
+        <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600 dark:text-slate-300">
+          <span>
+            vs sector: {data.relative.sector_score != null ? fmtNumber(data.relative.sector_score) : 'n/d'}
+          </span>
+          <span>
+            vs historial:{' '}
+            {data.relative.historical_score != null ? fmtNumber(data.relative.historical_score) : 'n/d'}
+          </span>
+        </div>
       </div>
     )}
   </div>

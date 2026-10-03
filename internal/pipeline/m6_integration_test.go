@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/miky/abys-invest/internal/storage"
+	"github.com/miky/abys-invest/internal/testsupport"
 )
 
 // M6a integration coverage: the growth/wacc stage is wired into ALL FOUR entry
@@ -89,6 +90,9 @@ func seedM6Pipeline(t *testing.T, pool *pgxpool.Pool, ticker string, withBeta bo
 		if err := storage.UpdateSecurityReference(ctx, pool, ticker, ptrStr("Technology"), nil, &beta); err != nil {
 			t.Fatalf("UpdateSecurityReference: %v", err)
 		}
+		// ADR D29: la OBSERVACIÓN canónica, fechada en la última barra del fixture
+		// (con time.Now() el WACC la leería como beta_missing).
+		testsupport.SeedBetaAsOf(t, pool, sec.ID, prices[len(prices)-1].Date, beta)
 	}
 	return sec.ID
 }
@@ -259,7 +263,7 @@ func TestForceRefreshReportaPasoGrowth(t *testing.T) {
 		t.Fatalf("se esperaba 1 security objetivo, hay %d", len(securities))
 	}
 	var steps []string
-	g := runGrowthWaccJob(ctx, integPool, securities, false)
+	g := runGrowthWaccJob(ctx, integPool, securities, false, nil)
 	if g.Growth != 1 || g.WACC != 1 {
 		t.Fatalf("runGrowthWaccJob: %+v", g)
 	}
@@ -302,7 +306,7 @@ func TestWatchlistRefreshIncluyeGrowth(t *testing.T) {
 	if len(securities) != 1 {
 		t.Fatalf("se esperaba 1 security, hay %d", len(securities))
 	}
-	g := runGrowthWaccJob(ctx, integPool, securities, false)
+	g := runGrowthWaccJob(ctx, integPool, securities, false, nil)
 	if g.Growth != 1 || g.WACC != 1 {
 		t.Fatalf("growth en watchlist: %+v", g)
 	}

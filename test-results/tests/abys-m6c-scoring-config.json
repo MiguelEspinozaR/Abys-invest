@@ -1,0 +1,193 @@
+{
+  "task_id": "abys-m6c-scoring-config",
+  "stage": "TEST",
+  "date": "2026-10-03T17:22:30-04:00",
+  "tested_at_utc": "2026-10-03T21:22:30Z",
+  "tester": "Tester (verificaci\u00f3n independiente; sin commit, sin git, sin tags, sin push, sin deploy, sin modificar c\u00f3digo de producto; puerto temporal :18xxx; \u00fanico archivo escrito: este)",
+  "verdict": "PASS",
+  "verdict_detail": "M6c: gofmt vac\u00edo, go build y go vet limpios, UNIT 474/0/0 (300 top + 174 subtests), INTEGRACI\u00d3N 616/0/1 (382 top + 235 subtests) con \u00fanico SKIP preexistente TestForceRefreshLoopbackSkips (M4c). npm run build OK. Smoke funcional sobre BD de dev (abys@localhost:55432) con binario reci\u00e9n compilado: backtest AAPL 43\u219243 's\u00ed' base, 43\u219251 'no:parameter_set_override' con -parameter-set conservative (CA-M6c-19). Full-chain -json muestra computed_from con 6 claves correctas (growth/wacc/valuation=recomputed, quality/relative/market_context=traced). MARGIN_OF_SAFETY=NaN produce WARN 'no finito' con default 30 y NO aparece 'json: unsupported value: NaN' (CA-M6c-18). API temporal (/tmp/api, puerto 18099): /health OK con 14 tablas; /score/AAPL model_version 2.1.0, score 43, parameter_set base, trace_version 1; ?model_version=2.0.0 devuelve 200 con 5 dimensiones; ?model_version=1.1.0 devuelve 200 sin dims; ?model_version=9.9.9 devuelve 400 validation_error (gate \u00a729). Seguridad: jq valida .summary.info == (.findings|length) sobre abys-m6c-scoring-config.json (true, 20/20). No se tocaron puertos :18080/:18082; procesos API temporales terminados (0 vivos). HEAD en 7bd7894 sin mutaciones git.",
+  "summary": {
+    "unit": {
+      "pass": 474,
+      "fail": 0,
+      "skip": 0,
+      "exit": 0,
+      "top_level": 300,
+      "subtests": 174
+    },
+    "integration": {
+      "pass": 616,
+      "fail": 0,
+      "skip": 1,
+      "exit": 0,
+      "top_level": 382,
+      "subtests": 235,
+      "packages_ok": 21,
+      "skip_detail": {
+        "test": "TestForceRefreshLoopbackSkips",
+        "reason": "preexistente M4c"
+      }
+    },
+    "gofmt": {
+      "clean": true,
+      "exit": 0,
+      "output": ""
+    },
+    "go_build": {
+      "ok": true,
+      "exit": 0
+    },
+    "go_vet": {
+      "ok": true,
+      "exit": 0
+    },
+    "npm_build": {
+      "ok": true,
+      "exit": 0,
+      "js": "index-D7pbQXgH.js",
+      "css": "index-DXXKNIzR.css"
+    },
+    "api_smoke": {
+      "endpoints_checked": 5,
+      "endpoints_ok": 5
+    },
+    "secret_scan": {
+      "security_evidence_verdict": "pass",
+      "hard_blocks": 0
+    }
+  },
+  "evidence": [
+    {
+      "id": "E001",
+      "name": "gofmt -l vac\u00edo",
+      "command": "gofmt -l .",
+      "exit": 0,
+      "expected": "0 l\u00edneas (vac\u00edo)",
+      "actual": "0 l\u00edneas",
+      "ok": true
+    },
+    {
+      "id": "E002",
+      "name": "go vet limpio",
+      "command": "go vet ./...",
+      "exit": 0,
+      "expected": "sin errores (0)",
+      "actual": "0 errores",
+      "ok": true
+    },
+    {
+      "id": "E003",
+      "name": "go build OK",
+      "command": "go build ./...",
+      "exit": 0,
+      "expected": "exit 0",
+      "actual": "exit 0",
+      "ok": true
+    },
+    {
+      "id": "E004",
+      "name": "Unit tests",
+      "command": "env -u DATABASE_URL -u TEST_DATABASE_URL go test ./... -count=1",
+      "exit": 0,
+      "expected": "474 pass / 0 fail / 0 skip (300 top + 174 sub)",
+      "actual": "474 pass / 0 fail / 0 skip (300 top + 174 sub)",
+      "ok": true,
+      "details": {
+        "top_level": 300,
+        "subtests": 174,
+        "packages_with_tests": 19
+      }
+    },
+    {
+      "id": "E005",
+      "name": "Integration tests (can\u00f3nica con -p 1)",
+      "command": "TEST_DATABASE_URL='postgres://abys:abys@localhost:55432/abys_test?sslmode=disable' DATABASE_URL='postgres://abys:abys@localhost:55432/abys_test?sslmode=disable' go test -p 1 ./... -count=1 -tags=integration",
+      "exit": 0,
+      "expected": "616 pass / 0 fail / 1 skip (TestForceRefreshLoopbackSkips)",
+      "actual": "616 pass / 0 fail / 1 skip (TestForceRefreshLoopbackSkips)",
+      "ok": true,
+      "details": {
+        "top_level": 382,
+        "subtests": 235,
+        "skip_test": "TestForceRefreshLoopbackSkips",
+        "log_path": "/tmp/opencode/integration.json",
+        "log_no_abysabys": true,
+        "log_no_TEST_DATABASE_URL": true
+      }
+    },
+    {
+      "id": "E006",
+      "name": "npm build",
+      "command": "cd web && npm run build",
+      "exit": 0,
+      "expected": "build exitoso",
+      "actual": "\u2713 built successfully (tsc + vite)",
+      "ok": true,
+      "assets": {
+        "js": "index-D7pbQXgH.js",
+        "css": "index-DXXKNIzR.css"
+      }
+    },
+    {
+      "id": "E007",
+      "name": "Backtest AAPL base",
+      "command": "DATABASE_URL='postgres://abys:abys@localhost:55432/abys?sslmode=disable' ./bin/analytics -job backtest -tickers AAPL",
+      "exit": 0,
+      "expected": "STORED 43, REPLAY 43, OK 's\u00ed'",
+      "actual": "STORED 43, REPLAY 43, OK 's\u00ed'",
+      "ok": true
+    },
+    {
+      "id": "E008",
+      "name": "Backtest AAPL conservative parameter set",
+      "command": "DATABASE_URL='postgres://abys:abys@localhost:55432/abys?sslmode=disable' ./bin/analytics -job backtest -tickers AAPL -parameter-set conservative",
+      "exit": 0,
+      "expected": "REPLAY 51, OK 'no:parameter_set_override' (CA-M6c-19)",
+      "actual": "REPLAY 51, OK 'no:parameter_set_override', P_SET conservative",
+      "ok": true
+    },
+    {
+      "id": "E009",
+      "name": "Backtest full-chain -json",
+      "command": "DATABASE_URL='postgres://abys:abys@localhost:55432/abys?sslmode=disable' ./bin/analytics -job backtest -tickers AAPL -parameter-set conservative -full-chain -json",
+      "exit": 0,
+      "expected": "computed_from con growth/wacc/valuation=recomputed, quality/relative/market_context=traced",
+      "actual": "computed_from: {growth: recomputed, wacc: recomputed, valuation: recomputed, quality: traced, relative: traced, market_context: traced}",
+      "ok": true
+    },
+    {
+      "id": "E010",
+      "name": "NaN hardening - valuation dry-run",
+      "command": "DATABASE_URL='postgres://abys:abys@localhost:55432/abys?sslmode=disable' MARGIN_OF_SAFETY=NaN ./bin/analytics -job valuation -dry-run",
+      "exit": 0,
+      "expected": "WARN 'no finito', default 30; ning\u00fan 'json: unsupported value: NaN' (CA-M6c-18)",
+      "actual": "WARN level=WARN msg='modelcfg: env float no finito, se usa el default' env=MARGIN_OF_SAFETY valor=NaN default=30; 0 ocurrencias de 'json: unsupported value: NaN'",
+      "ok": true
+    },
+    {
+      "id": "E011",
+      "name": "API smoke - health/score endpoints",
+      "command": "API_PORT=18099 DATABASE_URL='postgres://abys:abys@localhost:55432/abys?sslmode=disable' /tmp/api (temporal, luego matado)",
+      "exit": 0,
+      "expected": "health ok (14 tablas); /score/AAPL model_version=2.1.0 score=43 parameter_set=base trace_version=1; ?model_version=2.0.0 200 con 5 dims; ?model_version=1.1.0 200 sin dims; ?model_version=9.9.9 400 (validation_error)",
+      "actual": "health ok (14 tablas); /score/AAPL returns model_version 2.1.0, score 43, parameter_set base, trace_version 1; model 2.0.0 returns dimensions (5); model 1.1.0 returns dimensions null; model 9.9.9 returns error.code validation_error (400)",
+      "ok": true
+    },
+    {
+      "id": "E012",
+      "name": "Security report validation",
+      "command": "jq -e '.summary.info == (.findings|length)' test-results/security/abys-m6c-scoring-config.json",
+      "exit": 0,
+      "expected": "true (20/20 info findings, 0 hard blocks)",
+      "actual": "true",
+      "ok": true
+    }
+  ],
+  "artifacts": {
+    "log_paths": [
+      "/tmp/opencode/integration.log",
+      "/tmp/opencode/integration.json"
+    ],
+    "security": "/home/miky/Abys-Invest/test-results/security/abys-m6c-scoring-config.json"
+  }
+}

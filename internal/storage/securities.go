@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const securityColumns = `id, ticker, cik, name, type, currency, status, exchange, sector, industry, beta, beta_updated_at, created_at, updated_at`
@@ -143,11 +145,49 @@ func escapeLike(s string) string {
 // configured_fallback. beta_updated_at uses a CASE: it only updates when a new
 // valid beta is provided. A beta outside (0, 10] is not a beta: it is stored as
 // NULL so the engine degrades explicitly.
+//
+// When beta is valid it is written TWICE, in the SAME transaction: the
+// securities.beta cache (what M6a reads) and the beta_history row (the canonical
+// series of ADR D29). One transaction, no third state: a crash can leave the pair
+// un-written, never half-written with a cache that contradicts the history.
+//
+// asOf defaults to today (the run date of the collector). Callers that must
+// reproduce a past run pass it explicitly.
 func UpdateSecurityReference(ctx context.Context, q DBTX, ticker string, sector, industry *string, beta *float64) error {
+	return UpdateSecurityReferenceAsOf(ctx, q, ticker, sector, industry, beta, time.Now().UTC())
+}
+
+// UpdateSecurityReferenceAsOf is UpdateSecurityReference with an explicit
+// observation date for the beta_history row.
+func UpdateSecurityReferenceAsOf(ctx context.Context, q DBTX, ticker string, sector, industry *string, beta *float64, asOf time.Time) error {
 	var storedBeta any
-	if beta != nil && *beta > 0 && *beta <= 10 {
+	validBeta := beta != nil && *beta > 0 && *beta <= 10
+	if validBeta {
 		storedBeta = *beta
 	}
+	asOfDay := asOf.UTC().Truncate(24 * time.Hour)
+
+	// A pool cannot give transaction guarantees, so when the caller hands us one we
+	// open the transaction here; when it hands us a tx we use it directly (the
+	// caller's transaction wins).
+	if pool, ok := q.(*pgxpool.Pool); ok {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("storage: begin update security reference %s: %w", ticker, err)
+		}
+		defer tx.Rollback(ctx) //nolint:errcheck
+		if err := updateSecurityReference(ctx, tx, ticker, sector, industry, storedBeta, validBeta, beta, asOfDay); err != nil {
+			return err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("storage: commit update security reference %s: %w", ticker, err)
+		}
+		return nil
+	}
+	return updateSecurityReference(ctx, q, ticker, sector, industry, storedBeta, validBeta, beta, asOfDay)
+}
+
+func updateSecurityReference(ctx context.Context, q DBTX, ticker string, sector, industry *string, storedBeta any, validBeta bool, beta *float64, asOfDay time.Time) error {
 	tag, err := q.Exec(ctx, `
 UPDATE securities
 SET sector          = $2,
@@ -162,7 +202,23 @@ WHERE ticker = $1`, ticker, sector, industry, storedBeta)
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("storage: update security reference %s: %w", ticker, pgx.ErrNoRows)
 	}
-	return nil
+	if !validBeta {
+		return nil
+	}
+	var securityID int64
+	if err := q.QueryRow(ctx, `SELECT id FROM securities WHERE ticker = $1`, ticker).Scan(&securityID); err != nil {
+		return fmt.Errorf("storage: resolve security id %s for beta history: %w", ticker, err)
+	}
+	obs := BetaObservation{
+		SecurityID: securityID,
+		AsOf:       asOfDay,
+		Beta:       *beta,
+		Source:     BetaSourceYahoo,
+	}
+	// The pgxpool case is already handled by the transaction branch above; any other
+	// DBTX here is the caller's own transaction or executor, which is fine: the
+	// cache and the history row travel in the SAME transaction either way.
+	return upsertBetaObservationExec(ctx, q, &obs)
 }
 
 type rowScanner interface {

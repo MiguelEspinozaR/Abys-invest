@@ -1,0 +1,207 @@
+{
+  "scan_id": "abys-m6c-final",
+  "timestamp": "2026-10-02T23:59:00-04:00",
+  "base_commit": "7bd7894",
+  "head_commit": "working-tree",
+  "tools": {
+    "gitleaks": "not_installed",
+    "regex_fallback": "advisory"
+  },
+  "summary": {
+    "total_findings": 20,
+    "hard_blocks": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "info": 20
+  },
+  "findings": [
+    {
+      "severity": "info",
+      "category": "secret_scan",
+      "file": "N/A",
+      "line": 0,
+      "rule": "gitleaks",
+      "message": "Gitleaks not installed; regex fallback used for advisory scan only",
+      "remediation": "Install gitleaks for production-grade secret scanning"
+    },
+    {
+      "severity": "info",
+      "category": "secret_scan",
+      "file": "N/A",
+      "line": 0,
+      "rule": "regex_fallback",
+      "message": "No hardcoded secrets detected in diff (regex advisory scan)",
+      "remediation": "None required"
+    },
+    {
+      "severity": "info",
+      "category": "H2_closure",
+      "file": "internal/modelcfg/env.go",
+      "line": 0,
+      "rule": "policy",
+      "message": "H2 closed: shared EnvFloat/EnvInt/EnvBool validators now used by growth, wacc, valuation, pipeline, modelcfg, storage, score, betahistory (8 packages)",
+      "remediation": "None required"
+    },
+    {
+      "severity": "info",
+      "category": "H3_closure",
+      "file": "internal/testsupport/dsn.go",
+      "line": 0,
+      "rule": "policy",
+      "message": "H3 closed: EnsureTestDSN added to all integration TestMains (api, growth, wacc) - DSN validation and redaction before connect",
+      "remediation": "None required"
+    },
+    {
+      "severity": "info",
+      "category": "SEC_M6c_001_closure",
+      "file": "cmd/analytics/main.go",
+      "line": 111,
+      "rule": "policy",
+      "message": "SEC-M6c-001 closed: RunMigrations now skipped for job=backtest (moved before migration call)",
+      "remediation": "None required"
+    },
+    {
+      "severity": "info",
+      "category": "NaN_hardening",
+      "file": "internal/growth/config.go",
+      "line": 68,
+      "rule": "policy",
+      "message": "NaN hardening REAL: growth.ConfigFromEnv now uses modelcfg.EnvFloatRange for GROWTH_EPS_WEIGHT, GROWTH_FCF_WEIGHT, GROWTH_DISCREPANCY_PP, GROWTH_MIN_RATE, GROWTH_MAX_RATE (lines 68-72)",
+      "remediation": "None required - verified: GROWTH_MIN_RATE=NaN produces warning 'no finito' and uses default -10"
+    },
+    {
+      "severity": "info",
+      "category": "NaN_hardening",
+      "file": "internal/wacc/config.go",
+      "line": 66,
+      "rule": "policy",
+      "message": "NaN hardening REAL: wacc.ConfigFromEnv now uses modelcfg.EnvFloatRange for WACC_TAX_RATE (line 66) and modelcfg.EnvFloat for all other WACC_* vars (lines 50, 56, 59, 63, 67, 68)",
+      "remediation": "None required"
+    },
+    {
+      "severity": "info",
+      "category": "NaN_hardening",
+      "file": "internal/pipeline/pipeline.go",
+      "line": 427,
+      "rule": "policy",
+      "message": "NaN hardening REAL: pipeline.envFloatCfg now uses modelcfg.EnvFloat for MARGIN_OF_SAFETY (line 427)",
+      "remediation": "None required"
+    },
+    {
+      "severity": "info",
+      "category": "full_chain_observable",
+      "file": "internal/backtest/scorereplay.go",
+      "line": 62,
+      "rule": "policy",
+      "message": "FullChain observable: ReplayResult now includes optional ChainSteps *ChainSteps and ComputedFrom map[string]string fields (lines 81-82). ReplayScores returns full chain data when FullChain=true (lines 155-172)",
+      "remediation": "None required - verified: TestReplayFullChain passes with ComputedFrom={\"growth\":\"recomputed\",\"wacc\":\"recomputed\",\"valuation\":\"recomputed\",\"quality\":\"traced\",\"relative\":\"traced\",\"market_context\":\"traced\"}"
+    },
+    {
+      "severity": "info",
+      "category": "round_trip_tests",
+      "file": "internal/growth/growth_test.go",
+      "line": 440,
+      "rule": "policy",
+      "message": "Round-trip test added: TestParseSnapshotRoundTrip verifies Snapshot() → ParseSnapshot() preserves Inputs/Config/Result with float tolerance (determinism §27)",
+      "remediation": "None required"
+    },
+    {
+      "severity": "info",
+      "category": "round_trip_tests",
+      "file": "internal/wacc/wacc_test.go",
+      "line": 289,
+      "rule": "policy",
+      "message": "Round-trip test added: TestParseSnapshotRoundTrip verifies Snapshot() → ParseSnapshot() preserves Inputs/Config/Result with float tolerance (determinism §27)",
+      "remediation": "None required"
+    },
+    {
+      "severity": "info",
+      "category": "round_trip_tests",
+      "file": "internal/valuation/valuation_test.go",
+      "line": 625,
+      "rule": "policy",
+      "message": "Round-trip test added: TestParseSnapshotRoundTrip verifies MarshalSnapshot() → ParseSnapshot() preserves Inputs/Config/Result with float tolerance (determinism §27)",
+      "remediation": "None required"
+    },
+    {
+      "severity": "info",
+      "category": "full_chain_integration_test",
+      "file": "internal/backtest/m6_integration_test.go",
+      "line": 355,
+      "rule": "policy",
+      "message": "FullChain integration test added: TestReplayFullChain configures fixtures with snapshots (growth+wacc+valuation+score trace), executes ReplayOptions{FullChain:true}, asserts ComputedFrom declares recomputed/traced consistent with seeded data, and verifies no nil-deref with trace without market_context",
+      "remediation": "None required"
+    },
+    {
+      "severity": "info",
+      "category": "P3_pending",
+      "file": "internal/score/score21.go",
+      "line": 191,
+      "rule": "documentation",
+      "message": "Trace21.MarginOfSafety fallback documented: missing/zero defaults to 30 in calculateScore21",
+      "remediation": "None required - documented in code"
+    },
+    {
+      "severity": "info",
+      "category": "P3_pending",
+      "file": "internal/score/score21.go",
+      "line": 574,
+      "rule": "documentation",
+      "message": "RecomputeWithWeights semantics documented: reproduces with new weights but preserves trace's MarginOfSafety",
+      "remediation": "None required - documented in code"
+    },
+    {
+      "severity": "info",
+      "category": "P3_pending",
+      "file": "migrations/015_create_parameter_sets_and_beta_history.sql",
+      "line": 86,
+      "rule": "documentation",
+      "message": "CHECK (beta > 0 AND beta <= 10) noted as NaN-permeable; Go guard in UpdateSecurityReference is the actual barrier",
+      "remediation": "None required - noted in migration comment"
+    },
+    {
+      "severity": "info",
+      "category": "P3_pending",
+      "file": "Makefile",
+      "line": 1,
+      "rule": "documentation",
+      "message": "Regex s#(://)[^/@]*@# in Makefile evadible with / in password; testsupport.RedactDSN is the proper fix (gitleaks not available for hard block)",
+      "remediation": "Accepted debt: use testsupport.RedactDSN in CI when gitleaks installed"
+    },
+    {
+      "severity": "info",
+      "category": "P3_pending",
+      "file": "internal/wacc/m6_integration_test.go",
+      "line": 189,
+      "rule": "documentation",
+      "message": "Deadlock on TRUNCATE with parallel tests (-p > 1): integration tests require -p 1 to avoid 40P01 deadlock; documented as CI requirement",
+      "remediation": "Run integration tests with -p 1 (verified: make integration works)"
+    },
+    {
+      "severity": "info",
+      "category": "P3_pending",
+      "file": "web/src/api/types.ts",
+      "line": 1,
+      "rule": "documentation",
+      "message": "Frontend parameter_set string not yet wired through API (web/src/api/types.ts missing parameter_set field)",
+      "remediation": "Accepted debt: frontend update needed for parameter set display"
+    },
+    {
+      "severity": "info",
+      "category": "P3_pending",
+      "file": "internal/score/score21.go",
+      "line": 1,
+      "rule": "documentation",
+      "message": "Trace21.MOS omitempty: MarginOfSafety omitted from JSON when 0; §18 weight calculation is independent of MOS — only the Graham/DCF bands use the 30% fallback",
+      "remediation": "Accepted debt: consider explicit zero vs omitempty semantics"
+    }
+  ],
+  "closures": {
+    "H2": "closed - shared validators in modelcfg/env.go used by growth, wacc, valuation, pipeline, modelcfg, storage, score, betahistory (8 packages)",
+    "H3": "closed - EnsureTestDSN in api/growth/wacc TestMains",
+    "T1": "accepted_debt - gitleaks NOT installed; regex advisory only; would be required for production",
+    "H4": "closed - parameter sets seeded via migration 015/016",
+    "SEC_M6c_001": "closed - backtest no longer runs migrations"
+  }
+}

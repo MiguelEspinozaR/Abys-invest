@@ -15,6 +15,7 @@ import (
 
 	"github.com/miky/abys-invest/internal/api"
 	"github.com/miky/abys-invest/internal/storage"
+	"github.com/miky/abys-invest/internal/testsupport"
 	"github.com/miky/abys-invest/internal/valuation"
 )
 
@@ -40,6 +41,8 @@ func TestMain(m *testing.M) {
 	if dsn == "" {
 		os.Exit(0) // sin BD: suite de integración se omite (sin error)
 	}
+	// Validate and redact DSN before connecting (ADR D30)
+	redacted := testsupport.EnsureTestDSN(dsn)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -55,6 +58,7 @@ func TestMain(m *testing.M) {
 	if err := storage.RunMigrations(ctx, pool, "../../migrations"); err != nil {
 		panic("M3 integration: migraciones fallaron: " + err.Error())
 	}
+	_ = redacted // silence unused warning if not logged
 	os.Exit(m.Run())
 }
 

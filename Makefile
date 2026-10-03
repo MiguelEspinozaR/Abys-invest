@@ -25,7 +25,7 @@ MARGIN_SAFETY    ?= 30
 DCF_DISCOUNT     ?= 10
 COMP_MIN_SEC     ?= 5
 
-.PHONY: build build-web build-all deploy-local test lint vet docker-up docker-down migrate air-install dev-api run-api run-collector run-prices run-macro run-sector run-growth run-valuation run-analytics run-scores run-all-data integration integration-run clean
+.PHONY: build build-web build-all deploy-local test lint vet docker-up docker-down migrate air-install dev-api run-api run-collector run-prices run-macro run-sector run-growth run-valuation run-analytics run-scores run-quality run-relative run-backtest run-all-data integration integration-run clean
 
 ## build: compila api, collector y analytics en bin/
 build:
@@ -126,6 +126,30 @@ run-scores:
 		DCF_DISCOUNT_RATE=$(DCF_DISCOUNT) COMPARABLES_MIN_SECURITIES=$(COMP_MIN_SEC) \
 		go run ./cmd/analytics -job scores -tickers $(TICKERS)
 
+## run-quality: evalúa el motor de quality §13 (no persiste: su forma durable es
+## el trace del score). Diagnóstico tras un backfill de fundamentals.
+run-quality:
+	DATABASE_URL=$(DATABASE_URL) GROWTH_RATE_DEFAULT=$(G) \
+		go run ./cmd/analytics -job quality -tickers $(TICKERS)
+
+## run-relative: igual que run-quality para el motor de relative §16.
+run-relative:
+	DATABASE_URL=$(DATABASE_URL) GROWTH_RATE_DEFAULT=$(G) \
+		COMPARABLES_MIN_SECURITIES=$(COMP_MIN_SEC) \
+		go run ./cmd/analytics -job relative -tickers $(TICKERS)
+
+## run-backtest: replay de §28 — reproduce cada score 2.1.0 desde su trace y mide
+## los retornos forward 20d/60d/365d sobre daily_prices.adjusted_close.
+## NO persiste nada (no hay tablas de resultados). Variables:
+##   TICKERS=         vacío = todos los tickers con score
+##   BACKTEST_AS_OF=  vacío = el último score de cada ticker
+##   PARAMETER_SET=   vacío = reproducción exacta (pesos del trace)
+##   BACKTEST_JSON=1  salida JSON
+run-backtest:
+	DATABASE_URL=$(DATABASE_URL) go run ./cmd/analytics -job backtest \
+		-tickers "$(TICKERS)" -as-of "$(BACKTEST_AS_OF)" \
+		-parameter-set "$(PARAMETER_SET)" $(if $(BACKTEST_JSON),-json,)
+
 ## run-all-data: pipeline E2E M3 + M6a + M6b (migrate → ingesta → sector →
 ## growth/wacc → valuation → métricas → score). El orden NO es cosmético:
 ## cada etapa consume la fila persistida por la anterior (M6b C2).
@@ -139,11 +163,11 @@ run-all-data:
 ## apuntar a una BD con sufijo *_test). Si apunta a la BD de producción
 ## (p. ej. /abys o /5432/abys) se aborta para no truncar datos reales.
 integration:
-	@sh -c 'case "$(TEST_DATABASE_URL)" in */*_test?*) echo "==> integración contra BD de test: $(TEST_DATABASE_URL)";; *) echo "ERROR: TEST_DATABASE_URL debe apuntar a una BD *_test (no a la de producción): $(TEST_DATABASE_URL)" 1>&2; exit 1;; esac'
-	TEST_DATABASE_URL='$(TEST_DATABASE_URL)' $(MAKE) integration-run
+	@sh -c 'redact() { printf "%s" "$$1" | sed -E "s#(://)[^/@]*@#\1***@#"; }; 	case "$(TEST_DATABASE_URL)" in 		*/*_test?*) echo "==> integración contra BD de test: $$(redact "$(TEST_DATABASE_URL)")";; 		*) echo "ERROR: TEST_DATABASE_URL debe apuntar a una BD *_test (no a la de producción); sufijo detectado: $$(printf "%s" "$(TEST_DATABASE_URL)" | sed -E "s#.*/##")" 1>&2; exit 1;; 	esac'
+	@TEST_DATABASE_URL='$(TEST_DATABASE_URL)' $(MAKE) integration-run
 
 integration-run:
-	DATABASE_URL=$(TEST_DATABASE_URL) go test -p 1 ./... -count=1 -tags=integration
+	@DATABASE_URL=$(TEST_DATABASE_URL) go test -p 1 ./... -count=1 -tags=integration
 
 clean:
 	rm -rf $(BIN_DIR)

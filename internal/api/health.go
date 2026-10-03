@@ -41,14 +41,18 @@ type HealthResponse struct {
 // healthTableNames: esquema público de main_tables (SPEC §6 M5.2 + M6a + M6b).
 // Fuente única de verdad en Go: alimenta el SQL de conteos y el test de
 // integración que lo compara con information_schema (anti-deriva, riesgo R2).
-// Las tablas de M6a (growth_metrics, wacc_metrics) y la de M6b
-// (valuation_results) entran en la lista: si faltaran, /health seguiría
+// Las tablas de M6a (growth_metrics, wacc_metrics), la de M6b
+// (valuation_results) y las de M6c entran en la lista: si faltaran, /health seguiría
 // respondiendo ok mientras etapas del pipeline escriben en tablas que nadie
 // vigila, y el conteo de la respuesta mentiría sobre la base real.
+// Las de M6c (parameter_sets, beta_history) entran por el mismo motivo que las de
+// M6a/M6b: son tablas que el pipeline ESCRIBE, y una tabla que nadie cuenta es una
+// tabla cuyo fallo nadie ve.
 var healthTableNames = []string{
 	"securities", "daily_prices", "fundamentals", "derived_metrics",
 	"scores", "growth_metrics", "wacc_metrics", "valuation_results",
 	"watchlist", "macro_series", "edgar_staging", "xbrl_concept_map",
+	"parameter_sets", "beta_history",
 }
 
 // healthTimeout es el presupuesto de tiempo de TODO el handler (ping + las 2

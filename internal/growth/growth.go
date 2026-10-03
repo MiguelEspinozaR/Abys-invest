@@ -14,8 +14,12 @@ package growth
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
+	"strings"
 	"time"
+
+	"github.com/miky/abys-invest/internal/modelcfg"
 )
 
 // ModelVersion is the revision of the growth formula persisted in
@@ -313,3 +317,52 @@ func (r Result) Snapshot(in Inputs, cfg Config) ([]byte, error) {
 func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 
 func ptr(v float64) *float64 { return &v }
+
+// SnapshotData is the structure used for JSON unmarshaling of a growth snapshot.
+type SnapshotData struct {
+	Ticker       string    `json:"ticker"`
+	AsOf         time.Time `json:"as_of"`
+	Series       Series    `json:"series"`
+	Config       Config    `json:"config"`
+	Result       Result    `json:"result"`
+	ModelVersion string    `json:"model_version"`
+}
+
+// ParseSnapshot decodes a growth snapshot and validates it has the required
+// fields for replay (ADR D27, B12). It is tolerant of unknown fields (future-
+// proofing) but strict on required fields.
+func ParseSnapshot(raw []byte) (Inputs, Config, Result, error) {
+	if len(raw) == 0 {
+		return Inputs{}, Config{}, Result{}, fmt.Errorf("%w: snapshot vacío", modelcfg.ErrSnapshotIncomplete)
+	}
+	var probe struct {
+		ModelVersion string `json:"model_version"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return Inputs{}, Config{}, Result{}, fmt.Errorf("growth: parse snapshot: %w", err)
+	}
+	if strings.TrimSpace(probe.ModelVersion) == "" {
+		return Inputs{}, Config{}, Result{}, fmt.Errorf("%w: growth: falta model_version", modelcfg.ErrSnapshotIncomplete)
+	}
+	if probe.ModelVersion != ModelVersion {
+		return Inputs{}, Config{}, Result{}, fmt.Errorf("%w: %q (soportada: %q)", modelcfg.ErrUnsupportedModelVersion, probe.ModelVersion, ModelVersion)
+	}
+	var data SnapshotData
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return Inputs{}, Config{}, Result{}, fmt.Errorf("growth: parse snapshot: %w", err)
+	}
+	if data.Ticker == "" {
+		return Inputs{}, Config{}, Result{}, fmt.Errorf("%w: growth: falta ticker", modelcfg.ErrSnapshotIncomplete)
+	}
+	// Unknown fields are ignored on purpose: a future writer may add fields.
+	return data.Inputs(data.Series, data.Ticker, data.AsOf), data.Config, data.Result, nil
+}
+
+// Inputs reconstructs the growth.Inputs from the snapshot data.
+func (s SnapshotData) Inputs(series Series, ticker string, asOf time.Time) Inputs {
+	return Inputs{
+		Ticker: ticker,
+		AsOf:   asOf,
+		Series: series,
+	}
+}

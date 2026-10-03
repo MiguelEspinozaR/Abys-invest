@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -101,4 +102,25 @@ func scanGrowthMetric(row rowScanner, g *GrowthMetric) error {
 		&g.RevenueDiscrepancy, &g.InputsSnapshot, &g.ModelVersion,
 		&g.CalculationTimestamp, &g.CreatedAt,
 	)
+}
+
+// GetGrowthMetricAsOf returns the growth row of the security AT OR BEFORE asOf.
+//
+// NO LOOK-AHEAD (ADR D14): the quality engine reads the CAGRs from
+// growth_metrics, and `latest` would let a score dated 2026-08-20 consume the
+// CAGRs computed for a later date. The row is read with the same
+// (security_id, as_of) discipline as every other reader of M6c, so a replayed
+// score is the score that was written.
+func GetGrowthMetricAsOf(ctx context.Context, q DBTX, securityID int64, asOf time.Time) (*GrowthMetric, error) {
+	row := q.QueryRow(ctx, `SELECT `+growthMetricColumns+` FROM growth_metrics
+		WHERE security_id = $1 AND as_of <= $2
+		ORDER BY as_of DESC, model_version DESC, id DESC LIMIT 1`, securityID, asOf)
+	g := &GrowthMetric{}
+	if err := scanGrowthMetric(row, g); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, pgx.ErrNoRows
+		}
+		return nil, fmt.Errorf("storage: get growth metric as of %s for security %d: %w", asOf.Format("2006-01-02"), securityID, err)
+	}
+	return g, nil
 }

@@ -3,7 +3,9 @@ package wacc
 import (
 	"math"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 )
 
 func f(v float64) *float64 { return &v }
@@ -242,3 +244,147 @@ func TestWACCConfigFromEnv(t *testing.T) {
 		t.Fatalf("env inválida debe conservar los defaults: %+v", cfg)
 	}
 }
+
+// TestParseSnapshotModelVersionGate verifies the model_version gate rejects
+// empty versions, unknown versions and accepts the supported one.
+func TestParseSnapshotModelVersionGate(t *testing.T) {
+	validSnap := `{"inputs":{"ticker":"AAPL","equity_value":100,"debt_value":40,"beta":1.2},"config":{},"result":{"model_version":"1.0.0"},"model_version":"1.0.0"}`
+
+	// Correct version → OK
+	_, _, _, err := ParseSnapshot([]byte(validSnap))
+	if err != nil {
+		t.Fatalf("versión soportada debe parsear: %v", err)
+	}
+
+	// Empty version → ErrSnapshotIncomplete
+	emptyVer := `{"inputs":{"ticker":"AAPL","equity_value":100,"debt_value":40,"beta":1.2},"config":{},"result":{},"model_version":""}`
+	_, _, _, err = ParseSnapshot([]byte(emptyVer))
+	if err == nil || !strings.Contains(err.Error(), "falta model_version") {
+		t.Fatalf("versión vacía debe dar ErrSnapshotIncomplete, got: %v", err)
+	}
+
+	// Unsupported version → ErrUnsupportedModelVersion
+	unsupported := `{"inputs":{"ticker":"AAPL","equity_value":100,"debt_value":40,"beta":1.2},"config":{},"result":{},"model_version":"9.9.9"}`
+	_, _, _, err = ParseSnapshot([]byte(unsupported))
+	if err == nil || !strings.Contains(err.Error(), "no soportada") {
+		t.Fatalf("versión no soportada debe dar ErrUnsupportedModelVersion, got: %v", err)
+	}
+
+	// Empty snapshot → ErrSnapshotIncomplete
+	_, _, _, err = ParseSnapshot([]byte{})
+	if err == nil || !strings.Contains(err.Error(), "snapshot vacío") {
+		t.Fatalf("snapshot vacío debe dar ErrSnapshotIncomplete, got: %v", err)
+	}
+
+	// Missing ticker → ErrSnapshotIncomplete
+	noTicker := `{"inputs":{"equity_value":100,"debt_value":40,"beta":1.2},"config":{},"result":{"model_version":"1.0.0"},"model_version":"1.0.0"}`
+	_, _, _, err = ParseSnapshot([]byte(noTicker))
+	if err == nil || !strings.Contains(err.Error(), "falta ticker") {
+		t.Fatalf("falta ticker debe dar ErrSnapshotIncomplete, got: %v", err)
+	}
+}
+
+// TestParseSnapshotRoundTrip verifies that Snapshot() → ParseSnapshot() preserves
+// Inputs, Config and Result with float tolerance (determinism §27).
+func TestParseSnapshotRoundTrip(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RiskFreeRate = 4.25
+	cfg.EquityRiskPremium = 5.75
+	cfg.BetaAssumed = 1.15
+	cfg.CostOfDebt = 6.5
+	cfg.TaxRate = 23.0
+	cfg.Fallback = 8.5
+
+	in := Inputs{
+		Ticker:      "AAPL",
+		AsOf:        time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC),
+		EquityValue: f(100e9),
+		DebtValue:   f(40e9),
+		Beta:        f(1.25),
+		BetaAsOf:    ptrTime(time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)),
+		BetaSource:  BetaSourceHistory,
+		Reasons:     []string{"beta_history"},
+	}
+
+	res := Calculate(in, cfg)
+	snap, err := res.Snapshot(in, cfg)
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+
+	parsedIn, parsedCfg, parsedRes, err := ParseSnapshot(snap)
+	if err != nil {
+		t.Fatalf("ParseSnapshot: %v", err)
+	}
+
+	// Verify Inputs
+	if parsedIn.Ticker != in.Ticker {
+		t.Errorf("Ticker: got %q, want %q", parsedIn.Ticker, in.Ticker)
+	}
+	if !parsedIn.AsOf.Equal(in.AsOf) {
+		t.Errorf("AsOf: got %v, want %v", parsedIn.AsOf, in.AsOf)
+	}
+	if (parsedIn.EquityValue == nil) != (in.EquityValue == nil) {
+		t.Errorf("EquityValue nil mismatch")
+	}
+	if parsedIn.EquityValue != nil && in.EquityValue != nil && math.Abs(*parsedIn.EquityValue-*in.EquityValue) > 1e-6 {
+		t.Errorf("EquityValue: got %v, want %v", *parsedIn.EquityValue, *in.EquityValue)
+	}
+	if (parsedIn.DebtValue == nil) != (in.DebtValue == nil) {
+		t.Errorf("DebtValue nil mismatch")
+	}
+	if parsedIn.DebtValue != nil && in.DebtValue != nil && math.Abs(*parsedIn.DebtValue-*in.DebtValue) > 1e-6 {
+		t.Errorf("DebtValue: got %v, want %v", *parsedIn.DebtValue, *in.DebtValue)
+	}
+	if (parsedIn.Beta == nil) != (in.Beta == nil) {
+		t.Errorf("Beta nil mismatch")
+	}
+	if parsedIn.Beta != nil && in.Beta != nil && math.Abs(*parsedIn.Beta-*in.Beta) > 1e-6 {
+		t.Errorf("Beta: got %v, want %v", *parsedIn.Beta, *in.Beta)
+	}
+	if parsedIn.BetaSource != in.BetaSource {
+		t.Errorf("BetaSource: got %q, want %q", parsedIn.BetaSource, in.BetaSource)
+	}
+
+	// Verify Config
+	if math.Abs(parsedCfg.RiskFreeRate-cfg.RiskFreeRate) > 1e-9 {
+		t.Errorf("RiskFreeRate: got %v, want %v", parsedCfg.RiskFreeRate, cfg.RiskFreeRate)
+	}
+	if math.Abs(parsedCfg.EquityRiskPremium-cfg.EquityRiskPremium) > 1e-9 {
+		t.Errorf("EquityRiskPremium: got %v, want %v", parsedCfg.EquityRiskPremium, cfg.EquityRiskPremium)
+	}
+	if math.Abs(parsedCfg.BetaAssumed-cfg.BetaAssumed) > 1e-9 {
+		t.Errorf("BetaAssumed: got %v, want %v", parsedCfg.BetaAssumed, cfg.BetaAssumed)
+	}
+	if math.Abs(parsedCfg.CostOfDebt-cfg.CostOfDebt) > 1e-9 {
+		t.Errorf("CostOfDebt: got %v, want %v", parsedCfg.CostOfDebt, cfg.CostOfDebt)
+	}
+	if math.Abs(parsedCfg.TaxRate-cfg.TaxRate) > 1e-9 {
+		t.Errorf("TaxRate: got %v, want %v", parsedCfg.TaxRate, cfg.TaxRate)
+	}
+	if math.Abs(parsedCfg.Fallback-cfg.Fallback) > 1e-9 {
+		t.Errorf("Fallback: got %v, want %v", parsedCfg.Fallback, cfg.Fallback)
+	}
+
+	// Verify Result
+	if (parsedRes.WACC == nil) != (res.WACC == nil) {
+		t.Errorf("WACC nil mismatch")
+	}
+	if parsedRes.WACC != nil && res.WACC != nil && math.Abs(*parsedRes.WACC-*res.WACC) > 1e-6 {
+		t.Errorf("WACC: got %v, want %v", *parsedRes.WACC, *res.WACC)
+	}
+	if parsedRes.Source != res.Source {
+		t.Errorf("Source: got %q, want %q", parsedRes.Source, res.Source)
+	}
+	if parsedRes.Confidence != res.Confidence {
+		t.Errorf("Confidence: got %q, want %q", parsedRes.Confidence, res.Confidence)
+	}
+	if parsedRes.ModelVersion != res.ModelVersion {
+		t.Errorf("ModelVersion: got %q, want %q", parsedRes.ModelVersion, res.ModelVersion)
+	}
+	if parsedRes.BetaObserved != res.BetaObserved {
+		t.Errorf("BetaObserved: got %v, want %v", parsedRes.BetaObserved, res.BetaObserved)
+	}
+}
+
+func ptrTime(t time.Time) *time.Time { return &t }

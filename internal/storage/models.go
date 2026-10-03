@@ -112,6 +112,30 @@ type DerivedMetric struct {
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 }
 
+// ParameterSet is a named, persisted bundle of configuration overrides
+// (SPEC §26, ADR D20/D28). Precedence is code < env < parameter set, and
+// `parameters = {}` means "no overrides at all", NOT "empty configuration".
+type ParameterSet struct {
+	ID           int64     `json:"id" db:"id"`
+	Name         string    `json:"name" db:"name"`
+	ModelVersion string    `json:"model_version" db:"model_version"`
+	Parameters   []byte    `json:"parameters" db:"parameters"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+}
+
+// BetaObservation is one row of beta_history (ADR D29): the canonical series of
+// beta observations. securities.beta is only the CACHE of the most recent row;
+// the invariant "cache == last history row" is maintained by
+// UpdateSecurityReference in one transaction and has its own test.
+type BetaObservation struct {
+	ID         int64     `json:"id" db:"id"`
+	SecurityID int64     `json:"security_id" db:"security_id"`
+	AsOf       time.Time `json:"as_of" db:"as_of"`
+	Beta       float64   `json:"beta" db:"beta"`
+	Source     string    `json:"source" db:"source"`
+	FetchedAt  time.Time `json:"fetched_at" db:"fetched_at"`
+}
+
 // WatchlistItem is one row of the personal watchlist (migrations/010) joined
 // with the catalog detail the UI needs. There is exactly one row per security
 // (uq_watchlist_security).
@@ -153,6 +177,11 @@ type Score struct {
 	Justification  string    `json:"justification" db:"justification"`
 	InputsSnapshot []byte    `json:"inputs_snapshot,omitempty" db:"inputs_snapshot"`
 	ModelVersion   string    `json:"model_version" db:"model_version"`
+	// ParameterSetID is NULL for every score written before M6c (1.1.0/2.0.0):
+	// they predate parameter sets and are NOT rewritten (§26). From 2.1.0 on it
+	// is NOT NULL, and it is part of the row identity (uq_scores, 4 columns), so
+	// two sets coexist in the same as_of instead of overwriting each other.
+	ParameterSetID *int64    `json:"parameter_set_id,omitempty" db:"parameter_set_id"`
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 }
 
@@ -236,6 +265,9 @@ type ValuationResult struct {
 	ID         int64     `json:"id" db:"id"`
 	SecurityID int64     `json:"security_id" db:"security_id"`
 	AsOf       time.Time `json:"as_of" db:"as_of"`
+	// ParameterSetID stays NULL for the three 2.0.0 rows: they were computed
+	// before parameter sets existed and M6c does not recalculate them (§9).
+	ParameterSetID *int64 `json:"parameter_set_id,omitempty" db:"parameter_set_id"`
 	// AvailableAt is the max(filing_date) of the facts actually used (SPEC §4),
 	// NOT the growth/wacc one: this row owns its provenance (deuda M6a-F1).
 	AvailableAt      *time.Time `json:"available_at,omitempty" db:"available_at"`

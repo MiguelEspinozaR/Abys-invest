@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/miky/abys-invest/internal/storage"
+	"github.com/miky/abys-invest/internal/testsupport"
 )
 
 // Integración del pipeline M4c (B4): RefreshMetricsAndScores recalcula y
@@ -30,22 +31,24 @@ func TestMain(m *testing.M) {
 	if dsn == "" {
 		os.Exit(0) // sin BD: suite de integración se omite (sin error)
 	}
+	// Validate and redact DSN before connecting (ADR D30)
+	redacted := testsupport.EnsureTestDSN(dsn)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	var err error
 	integPool, err = storage.Connect(ctx, dsn)
 	if err != nil {
-		panic("pipeline integration: Connect falló: " + err.Error())
+		panic("pipeline integration: Connect falló: " + redacted)
 	}
 	defer integPool.Close()
 	if err := storage.EnsureTestDatabase(ctx, integPool); err != nil {
-		panic("pipeline integration: guard de BD de test falló (no se debe tocar producción): " + err.Error())
+		panic("pipeline integration: guard de BD de test falló (no se debe tocar producción): " + redacted)
 	}
 	if err := storage.RunMigrations(ctx, integPool, "../../migrations"); err != nil {
-		panic("pipeline integration: migraciones fallaron: " + err.Error())
+		panic("pipeline integration: migraciones fallaron: " + redacted)
 	}
-	_ = integPool
+	_ = redacted // silence unused warning if not logged
 	os.Exit(m.Run())
 }
 
@@ -155,17 +158,29 @@ func TestRefreshMetricsAndScoresPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetLatestMetrics: %v", err)
 	}
-	if len(mts) != 8 {
-		t.Fatalf("se esperaban 8 métricas derivadas persistidas, hay %d: %+v", len(mts), mts)
-	}
-	seen := map[string]bool{}
+	// M6c B4: derived_metrics now holds BOTH revisions — the 8 of 1.0.0 untouched
+	// and the 12 of 2.0.0 — and the fixture has no interest_expense (M6c-T1), so
+	// the only 2.0.0 row that MUST exist is interest_coverage with a NULL value.
+	seen := map[string]string{}
 	for _, m := range mts {
-		seen[m.Metric] = true
+		seen[m.Metric] = m.ModelVersion
 	}
 	for _, name := range []string{"eps", "pe_ratio", "pb_ratio", "pcf_ratio", "peg_ratio", "roe", "de_ratio", "fcf_yield"} {
-		if !seen[name] {
-			t.Errorf("métrica %q ausente en derived_metrics", name)
+		if seen[name] != "1.0.0" {
+			t.Errorf("métrica %q ausente de la revisión 1.0.0 (vista como %q)", name, seen[name])
 		}
+	}
+	if seen["interest_coverage"] != "2.0.0" {
+		t.Errorf("interest_coverage debe emitirse en 2.0.0 incluso sin interest_expense (M6c-T1), vista como %q", seen["interest_coverage"])
+	}
+	var icValue *float64
+	for _, m := range mts {
+		if m.Metric == "interest_coverage" {
+			icValue = m.Value
+		}
+	}
+	if icValue != nil {
+		t.Errorf("interest_coverage sin interest_expense debe quedar NULL, es %v", *icValue)
 	}
 
 	score, err := storage.GetLatestScore(ctx, integPool, pipelineTestTicker)
@@ -191,8 +206,11 @@ func TestRefreshMetricsAndScoresPersists(t *testing.T) {
 	if err := integPool.QueryRow(ctx, `SELECT count(*) FROM scores WHERE security_id=$1`, sec.ID).Scan(&nScores); err != nil {
 		t.Fatalf("count scores: %v", err)
 	}
-	if nMetrics != 8 || nScores != 1 {
-		t.Fatalf("idempotencia rota: metrics=%d (esperado 8), scores=%d (esperado 1)", nMetrics, nScores)
+	// 8 (1.0.0) + interest_coverage (2.0.0, NULL por M6c-T1): la segunda corrida
+	// debe seguir dejando exactamente las mismas filas (idempotencia por
+	// (security, as_of, model_version, metric)).
+	if nMetrics != 9 || nScores != 1 {
+		t.Fatalf("idempotencia rota: metrics=%d (esperado 9), scores=%d (esperado 1)", nMetrics, nScores)
 	}
 }
 

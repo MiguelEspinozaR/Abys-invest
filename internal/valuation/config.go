@@ -1,9 +1,7 @@
 package valuation
 
 import (
-	"log/slog"
-	"os"
-	"strconv"
+	"github.com/miky/abys-invest/internal/modelcfg"
 )
 
 // Defaults of the valuation engine (SPEC v2 §6-§11, §19-§21, plan M6b D2/D6).
@@ -124,22 +122,22 @@ func DefaultConfig() Config {
 //     unconditional and unmarked, exactly as M3/M6a behave today.
 func ConfigFromEnv() Config {
 	cfg := DefaultConfig()
-	cfg.BearGrowthDelta = envFloat("VALUATION_BEAR_GROWTH_DELTA", cfg.BearGrowthDelta)
-	cfg.BullGrowthDelta = envFloat("VALUATION_BULL_GROWTH_DELTA", cfg.BullGrowthDelta)
-	cfg.BearWACCDelta = envFloat("VALUATION_BEAR_WACC_DELTA", cfg.BearWACCDelta)
-	cfg.BullWACCDelta = envFloat("VALUATION_BULL_WACC_DELTA", cfg.BullWACCDelta)
-	cfg.BearTerminalDelta = envFloat("VALUATION_BEAR_TERMINAL_DELTA", cfg.BearTerminalDelta)
-	cfg.BullTerminalDelta = envFloat("VALUATION_BULL_TERMINAL_DELTA", cfg.BullTerminalDelta)
-	cfg.Transition = envBool("VALUATION_GROWTH_TRANSITION", cfg.Transition)
-	cfg.TransitionCapPP = envFloat("VALUATION_GROWTH_TRANSITION_CAP", cfg.TransitionCapPP)
-	cfg.SensitivitySteps = envInt("VALUATION_SENSITIVITY_STEPS", cfg.SensitivitySteps)
+	cfg.BearGrowthDelta = modelcfg.EnvFloat("VALUATION_BEAR_GROWTH_DELTA", cfg.BearGrowthDelta)
+	cfg.BullGrowthDelta = modelcfg.EnvFloat("VALUATION_BULL_GROWTH_DELTA", cfg.BullGrowthDelta)
+	cfg.BearWACCDelta = modelcfg.EnvFloat("VALUATION_BEAR_WACC_DELTA", cfg.BearWACCDelta)
+	cfg.BullWACCDelta = modelcfg.EnvFloat("VALUATION_BULL_WACC_DELTA", cfg.BullWACCDelta)
+	cfg.BearTerminalDelta = modelcfg.EnvFloat("VALUATION_BEAR_TERMINAL_DELTA", cfg.BearTerminalDelta)
+	cfg.BullTerminalDelta = modelcfg.EnvFloat("VALUATION_BULL_TERMINAL_DELTA", cfg.BullTerminalDelta)
+	cfg.Transition = modelcfg.EnvBool("VALUATION_GROWTH_TRANSITION", cfg.Transition)
+	cfg.TransitionCapPP = modelcfg.EnvFloat("VALUATION_GROWTH_TRANSITION_CAP", cfg.TransitionCapPP)
+	cfg.SensitivitySteps = modelcfg.EnvInt("VALUATION_SENSITIVITY_STEPS", cfg.SensitivitySteps)
 
-	cfg.TargetMOS = envFloat("MARGIN_OF_SAFETY", cfg.TargetMOS)
-	cfg.HorizonYears = envInt("DCF_HORIZON_YEARS", cfg.HorizonYears)
-	cfg.TerminalGrowth = envFloat("DCF_TERMINAL_GROWTH", cfg.TerminalGrowth)
-	cfg.DiscountFallback = envFloat("DCF_DISCOUNT_RATE", cfg.DiscountFallback)
-	cfg.GrowthFallback = envFloat("GROWTH_RATE_DEFAULT", cfg.GrowthFallback)
-	cfg.WACCFallback = envFloat("WACC_FALLBACK", cfg.WACCFallback)
+	cfg.TargetMOS = modelcfg.EnvFloat("MARGIN_OF_SAFETY", cfg.TargetMOS)
+	cfg.HorizonYears = modelcfg.EnvInt("DCF_HORIZON_YEARS", cfg.HorizonYears)
+	cfg.TerminalGrowth = modelcfg.EnvFloat("DCF_TERMINAL_GROWTH", cfg.TerminalGrowth)
+	cfg.DiscountFallback = modelcfg.EnvFloat("DCF_DISCOUNT_RATE", cfg.DiscountFallback)
+	cfg.GrowthFallback = modelcfg.EnvFloat("GROWTH_RATE_DEFAULT", cfg.GrowthFallback)
+	cfg.WACCFallback = modelcfg.EnvFloat("WACC_FALLBACK", cfg.WACCFallback)
 
 	if cfg.HorizonYears <= 0 {
 		cfg.HorizonYears = DefaultHorizonYears
@@ -148,49 +146,4 @@ func ConfigFromEnv() Config {
 		cfg.SensitivitySteps = 1
 	}
 	return cfg
-}
-
-// envFloat reads a float env var; unparseable → default + warning (§27: the
-// engine never fails because of configuration).
-func envFloat(key string, def float64) float64 {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		slog.Warn("valoración: env inválido, usando default", "env", key, "value", v, "default", def)
-		return def
-	}
-	return f
-}
-
-// envInt reads an int env var; unparseable → default + warning.
-func envInt(key string, def int) int {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	i, err := strconv.Atoi(v)
-	if err != nil {
-		slog.Warn("valoración: env inválido, usando default", "env", key, "value", v, "default", def)
-		return def
-	}
-	return i
-}
-
-// envBool reads a 1/true/yes/on flag; anything else → default + warning.
-func envBool(key string, def bool) bool {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	switch v {
-	case "1", "true", "TRUE", "yes", "on":
-		return true
-	case "0", "false", "FALSE", "no", "off":
-		return false
-	}
-	slog.Warn("valoración: env booleano inválido, usando default", "env", key, "value", v, "default", def)
-	return def
 }

@@ -29,6 +29,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/miky/abys-invest/internal/modelcfg"
 	"github.com/miky/abys-invest/internal/storage"
 )
 
@@ -98,18 +99,23 @@ func RefreshMetricsAndScores(ctx context.Context, pool *pgxpool.Pool, growth flo
 	}
 
 	// growth ANTES de valuation: la valoración USA el growth ya persistido.
-	g := runGrowthWaccJob(ctx, pool, securities, dryRun)
+	mc, err := resolveScoreConfig(ctx, pool)
+	if err != nil {
+		return ScoresResult{}, err
+	}
+	g := runGrowthWaccJob(ctx, pool, securities, dryRun, &mc)
 	// valuation ANTES de metrics/scores: los scores leen valuation_results y,
 	// sin fila, renormalizan sus pesos sin las dimensiones de valoración.
 	v := runValuationJob(ctx, pool, securities, dryRun)
 
+	// mc already resolved above, reuse it
 	return ScoresResult{
 		Tickers:   len(securities),
 		Growth:    g.Growth,
 		WACC:      g.WACC,
 		Valuation: v.Inserted,
 		Metrics:   runMetricsJob(ctx, pool, securities, growth, dryRun),
-		Scores:    runScoresJob(ctx, pool, securities, growth, dryRun),
+		Scores:    runScoresJob(ctx, pool, securities, growth, dryRun, mc),
 	}, nil
 }
 
@@ -197,7 +203,11 @@ func ForceRefreshWithProgress(ctx context.Context, pool *pgxpool.Pool, companies
 		return res, nil
 	}
 	res.Tickers = len(securities)
-	g := runGrowthWaccJob(ctx, pool, securities, dryRun)
+	mc, err := resolveScoreConfig(ctx, pool)
+	if err != nil {
+		return res, err
+	}
+	g := runGrowthWaccJob(ctx, pool, securities, dryRun, &mc)
 	res.Growth, res.WACC = g.Growth, g.WACC
 	res.Steps["growth"] = g.Growth
 	report("growth", g.Growth)
@@ -206,7 +216,10 @@ func ForceRefreshWithProgress(ctx context.Context, pool *pgxpool.Pool, companies
 	res.Steps["valuation"] = v.Inserted
 	report("valuation", v.Inserted)
 	res.Metrics = runMetricsJob(ctx, pool, securities, growth, dryRun)
-	res.Scores = runScoresJob(ctx, pool, securities, growth, dryRun)
+	res.Steps["metrics"] = res.Metrics
+	report("metrics", res.Metrics)
+	// mc already resolved above at line 206, reuse it
+	res.Scores = runScoresJob(ctx, pool, securities, growth, dryRun, mc)
 	res.Steps["metrics"] = res.Metrics
 	res.Steps["scores"] = res.Scores
 	report("metrics", res.Metrics)
@@ -277,7 +290,11 @@ func WatchlistRefresh(ctx context.Context, pool *pgxpool.Pool, tickers []string,
 		slog.Warn("sin securities objetivo tras la ingesta")
 		return res, nil
 	}
-	g := runGrowthWaccJob(ctx, pool, securities, dryRun)
+	mc, err := resolveScoreConfig(ctx, pool)
+	if err != nil {
+		return res, err
+	}
+	g := runGrowthWaccJob(ctx, pool, securities, dryRun, &mc)
 	res.Growth, res.WACC = g.Growth, g.WACC
 	res.Steps["growth"] = g.Growth
 	res.Tickers = len(securities)
@@ -406,14 +423,9 @@ func parseScoreParams(growth float64) scoreParams {
 	}
 }
 
-// envFloatCfg reads a float env var with default.
+// envFloatCfg reads a float env var with default, rejecting NaN/±Inf.
 func envFloatCfg(key string, def float64) float64 {
-	if v := os.Getenv(key); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			return f
-		}
-	}
-	return def
+	return modelcfg.EnvFloat(key, def)
 }
 
 func envIntCfg(key string, def int) int {
