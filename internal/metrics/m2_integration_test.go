@@ -12,12 +12,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/miky/abys-invest/internal/storage"
+	"github.com/miky/abys-invest/internal/testsupport"
 )
 
 // E2E integration of the metrics engine against the real PostgreSQL store:
 // fundamentals + price -> derived_metrics (CA-3, CA-4, CA-8).
 
 var testPool *pgxpool.Pool
+
+// metricsRelease unlocks the shared integration advisory lock (see
+// testsupport.LockIntegrationDB). Held for the whole suite because the suite
+// TRUNCATEs tables shared with the other integration packages.
+var metricsRelease func()
 
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("DATABASE_URL")
@@ -26,16 +32,32 @@ func TestMain(m *testing.M) {
 		pool, err := storage.Connect(ctx, dsn)
 		cancel()
 		if err == nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			if err := storage.EnsureTestDatabase(ctx, pool); err == nil {
+			ctx2, cancel2 := context.WithTimeout(context.Background(), 15*time.Second)
+			if err := storage.EnsureTestDatabase(ctx2, pool); err == nil {
+				// Waiting for the shared lock can take as long as the other
+				// suites ahead in the queue, so it gets its OWN generous
+				// context: the setup timeout above is not a lock timeout.
+				lockCtx, lockCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+				release, lerr := testsupport.LockIntegrationDB(lockCtx, pool)
+				lockCancel()
+				if lerr != nil {
+					// LOUD, never a silent skip: a suite that cannot take the
+					// lock would otherwise report "skipped" and the whole
+					// package would look green while testing nothing.
+					panic("metrics integration: no se pudo tomar el advisory lock: " + lerr.Error())
+				}
+				metricsRelease = release
 				testPool = pool
 			} else {
 				pool.Close()
 			}
-			cancel()
+			cancel2()
 		}
 	}
 	code := m.Run()
+	if release := metricsRelease; release != nil {
+		release()
+	}
 	if testPool != nil {
 		testPool.Close()
 	}

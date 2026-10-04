@@ -45,10 +45,18 @@ func TestMain(m *testing.M) {
 	if err := storage.EnsureTestDatabase(ctx, integPool); err != nil {
 		panic("pipeline integration: guard de BD de test falló (no se debe tocar producción): " + redacted)
 	}
+	// Serialise the database phase of the integration suites (shared TRUNCATEs),
+	// which is what lets them run WITHOUT `-p 1`.
+	lockCtx, lockCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	releaseLock, err := testsupport.LockIntegrationDB(lockCtx, integPool)
+	lockCancel()
+	if err != nil {
+		panic("pipeline integration: no se pudo tomar el advisory lock: " + err.Error())
+	}
+	defer releaseLock()
 	if err := storage.RunMigrations(ctx, integPool, "../../migrations"); err != nil {
 		panic("pipeline integration: migraciones fallaron: " + redacted)
 	}
-	_ = redacted // silence unused warning if not logged
 	os.Exit(m.Run())
 }
 

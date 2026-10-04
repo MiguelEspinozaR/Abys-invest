@@ -27,7 +27,8 @@ func TestMain(m *testing.M) {
 		os.Exit(0) // sin BD: suite de integración se omite (sin error)
 	}
 	// Validate and redact DSN before connecting (ADR D30)
-	redacted := testsupport.EnsureTestDSN(dsn)
+	// Validate the DSN targets a test DB; only its redacted form is ever logged (ADR D30).
+	testsupport.EnsureTestDSN(dsn)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -40,10 +41,18 @@ func TestMain(m *testing.M) {
 	if err := storage.EnsureTestDatabase(ctx, testPool); err != nil {
 		panic("growth integration: guard de BD de test falló (no se debe tocar producción): " + err.Error())
 	}
+	// Serialise the database phase of the integration suites (shared TRUNCATEs),
+	// which is what lets them run WITHOUT `-p 1`.
+	lockCtx, lockCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	releaseLock, err := testsupport.LockIntegrationDB(lockCtx, testPool)
+	lockCancel()
+	if err != nil {
+		panic("growth integration: no se pudo tomar el advisory lock: " + err.Error())
+	}
+	defer releaseLock()
 	if err := storage.RunMigrations(ctx, testPool, "../../migrations"); err != nil {
 		panic("growth integration: migraciones fallaron: " + err.Error())
 	}
-	_ = redacted // silence unused warning if not logged
 	os.Exit(m.Run())
 }
 

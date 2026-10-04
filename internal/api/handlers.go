@@ -403,7 +403,9 @@ func handleComparables(w http.ResponseWriter, r *http.Request, pool *pgxpool.Poo
 		writeError(w, http.StatusInternalServerError, CodeInternal, "error al calcular comparables")
 		return
 	}
-	writeJSON(w, http.StatusOK, res)
+	if err := writeJSONChecked(w, http.StatusOK, res); err != nil {
+		writeError(w, http.StatusInternalServerError, CodeInternal, "error al serializar respuesta")
+	}
 }
 
 // handleHistory: GET /compare/history?ticker=&years=
@@ -427,7 +429,9 @@ func handleHistory(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool) {
 		writeError(w, http.StatusInternalServerError, CodeInternal, "error al leer histórico")
 		return
 	}
-	writeJSON(w, http.StatusOK, res)
+	if err := writeJSONChecked(w, http.StatusOK, res); err != nil {
+		writeError(w, http.StatusInternalServerError, CodeInternal, "error al serializar respuesta")
+	}
 }
 
 // handleBacktest: GET /backtest/{strategy}?ticker=&fast=&slow=&initial_capital=
@@ -472,13 +476,16 @@ func handleCompareAssets(w http.ResponseWriter, r *http.Request, pool *pgxpool.P
 	}
 
 	res := compare.CompareAssets(all, from, to, rf)
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"tickers":                tickers,
 		"from":                   dateOrEmpty(from),
 		"to":                     dateOrEmpty(to),
 		"normalized_performance": res.NormalizedPerformance,
 		"risk_metrics":           res.RiskMetrics,
-	})
+	}
+	if err := writeJSONChecked(w, http.StatusOK, resp); err != nil {
+		writeError(w, http.StatusInternalServerError, CodeInternal, "error al serializar respuesta")
+	}
 }
 
 // backtestParams mirrors the SMA configuration in the response envelope.
@@ -557,13 +564,16 @@ func handleBacktest(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, 
 		}
 		results[t] = res
 	}
-	writeJSON(w, http.StatusOK, backtestResponse{
+	resp := backtestResponse{
 		Strategy: strategy,
 		Params:   backtestParams{Fast: fast, Slow: slow},
 		From:     dateOrEmpty(from),
 		To:       dateOrEmpty(to),
 		Results:  results,
-	})
+	}
+	if err := writeJSONChecked(w, http.StatusOK, resp); err != nil {
+		writeError(w, http.StatusInternalServerError, CodeInternal, "error al serializar respuesta")
+	}
 }
 
 // parseDateRange parses ?from=/?to= (YYYY-MM-DD) with defaults; returning an

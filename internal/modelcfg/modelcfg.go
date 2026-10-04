@@ -652,12 +652,19 @@ func Resolve(ctx context.Context, q DBTX, name string) (ParameterSet, ModelConfi
 //     about and IGNORED, keeping the layer below. A parameter set written for a
 //     newer model version must not be able to zero a parameter of the current
 //     one (the "no silent zero-fill" rule);
-//   - an ABSENT key never becomes zero: it keeps env/default.
+//   - an ABSENT key never becomes zero: it keeps env/default;
+//   - `tax_rate` is a DEPRECATED ALIAS of `quality_tax_rate` (see
+//     resolveTaxRateAlias), resolved before any override is applied.
 func (mc ModelConfig) WithParameters(params map[string]any) ModelConfig {
 	out := mc.Clone()
 	if len(params) == 0 {
 		return out // `{}` = no overrides (the `base` seed)
 	}
+
+	// One tax rate, one source: a set carrying the deprecated `tax_rate` is
+	// normalised to `quality_tax_rate` BEFORE the loop, so applyParameter never
+	// has two ways to set the same invariant.
+	params = resolveTaxRateAlias(params, out.ParameterSetName)
 
 	// Deterministic order: the canonical key list first (so two runs log the
 	// same warnings in the same order), then any unknown key sorted.
@@ -675,6 +682,60 @@ func (mc ModelConfig) WithParameters(params map[string]any) ModelConfig {
 		slog.Warn("modelcfg: clave desconocida en el parameter set, se ignora",
 			"clave", k, "origen", out.ParameterSetName)
 	}
+
+	// One tax rate, ONE field: the env layer collapses TaxRate into
+	// QualityTaxRate, so the set layer must not leave them apart. internal/wacc
+	// reads mc.TaxRate (after-tax Kd) while internal/quality reads
+	// mc.QualityTaxRate (NOPAT/ROIC): if a set moved only one of them, the same
+	// company would be taxed at two different rates in one score. Re-collapsing
+	// here makes divergence unrepresentable for both layers.
+	out.TaxRate = out.QualityTaxRate
+	return out
+}
+
+// resolveTaxRateAlias normalises the DEPRECATED `tax_rate` key of a parameter
+// set into its canonical name, `quality_tax_rate`.
+//
+// `tax_rate` exists because the CAPM knobs arrived before the quality block
+// (Az1a), and it used to write ModelConfig.TaxRate while `quality_tax_rate`
+// wrote ModelConfig.QualityTaxRate — TWO fields for ONE invariant. The env layer
+// already collapsed them (`mc.TaxRate = mc.QualityTaxRate`), but the SET layer
+// could still reintroduce the divergence: a set with `tax_rate: 25` and no
+// `quality_tax_rate` produced a config where the tax applied to the WACC's
+// after-tax Kd was 25% and the one applied to NOPAT/ROIC was whatever the layer
+// below said. Two numbers, one knob, silent disagreement.
+//
+// The rules are the ones a deprecated alias needs, and they are decided HERE
+// (the only place that can see the whole set) rather than in applyParameter:
+//
+//   - only `tax_rate`         → deprecated alias: its value becomes
+//     `quality_tax_rate` (TaxRate mirrors it downstream), with a warning;
+//   - both keys               → conflict: `quality_tax_rate` WINS and
+//     `tax_rate` is dropped, with a warning, because the canonical key is the
+//     one the rest of the model reads;
+//   - only `quality_tax_rate` → untouched, no warning.
+//
+// The returned map is a SHALLOW copy and is never mutated in place: params comes
+// from the DB JSONB and callers may reuse it.
+func resolveTaxRateAlias(params map[string]any, setName string) map[string]any {
+	raw, ok := params[KeyTaxRate]
+	if !ok {
+		return params
+	}
+	out := make(map[string]any, len(params)+1)
+	for k, v := range params {
+		out[k] = v
+	}
+	if _, hasCanonical := out[KeyQualityTaxRate]; hasCanonical {
+		delete(out, KeyTaxRate)
+		slog.Warn("modelcfg: tax_rate y quality_tax_rate están ambos en el parameter set; gana quality_tax_rate",
+			"origen", setName, "ignorada", KeyTaxRate)
+		return out
+	}
+	slog.Warn("modelcfg: tax_rate está deprecado en el parameter set, use quality_tax_rate",
+		"origen", setName, "usado_como", KeyQualityTaxRate)
+	out[KeyQualityTaxRate] = raw
+	delete(out, KeyTaxRate)
 	return out
 }
 
@@ -725,8 +786,6 @@ func applyParameter(mc *ModelConfig, key string, raw any) {
 		mc.RelativeAdvantagePct = paramFloat(mc, key, raw, mc.RelativeAdvantagePct, 0.01, 1)
 	case KeyComparablesMinSecurities:
 		mc.ComparablesMinSecurities = paramInt(mc, key, raw, mc.ComparablesMinSecurities, 1, 1000)
-	case KeyTaxRate:
-		mc.TaxRate = paramFloat(mc, key, raw, mc.TaxRate, 0, 50)
 	case KeyBetaAssumed:
 		mc.BetaAssumed = paramFloat(mc, key, raw, mc.BetaAssumed, 0, 10)
 	case KeyQualitySubWeights:

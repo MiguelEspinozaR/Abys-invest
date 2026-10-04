@@ -336,11 +336,16 @@ type Trace21 struct {
 	// It is persisted so that a replay with a different parameter set can show
 	// the MOS that was actually applied (P0-2: H-2 root cause).
 	//
-	// FALLBACK: when the trace is unmarshaled, a missing or zero MarginOfSafety
-	// defaults to 30 (the SPEC §11 default) in calculateScore21. This field is
-	// therefore always effective for replay even if the original row was written
-	// before this field existed or with an empty value.
-	MarginOfSafety float64 `json:"margin_of_safety,omitempty"`
+	// NO `omitempty`: 0 is a MEANINGFUL value (MOS desactivado) and with
+	// omitempty a row written with MOS=0 persisted no field at all, so the
+	// replay could not distinguish "MOS desactivado" from "campo ausente" and
+	// had to invent the 30 default. Writing it always makes the trace explicit.
+	//
+	// FALLBACK (rows written BEFORE this field existed): a missing or zero
+	// MarginOfSafety defaults to 30 (the SPEC §11 default) in
+	// calculateScore21, so those old rows keep replaying to the same score.
+	// Migración 017 hace explícito ese 30 en las filas 2.1.0 ya existentes.
+	MarginOfSafety float64 `json:"margin_of_safety"`
 }
 
 // MarketContextDetail is the §17 block of the trace (SMA50/SMA200/momentums).

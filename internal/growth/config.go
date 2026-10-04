@@ -82,6 +82,33 @@ func envInt(key string, def int) int {
 	return def
 }
 
+// ConfigFromModelConfig builds a growth Config tied to a RESOLVED ModelConfig,
+// the way wacc.ConfigFromModelConfig already does.
+//
+// It exists so the full-chain replay (internal/backtest.scorereplay) does not
+// read the environment for ONE step while every other step of the same chain
+// uses the parameter set: a chain replayed with `--parameter-set conservative`
+// recomputed growth from whatever GROWTH_* the process happened to have, so the
+// step that "recomputes" was in fact reading something else. That is the shape
+// of a reproducibility bug waiting for the day growth knobs move into the set
+// (§28 RESERVED).
+//
+// Today ModelConfig carries NO growth knob, so this is deliberately equivalent
+// to ConfigFromEnv: it is the ANCHOR, not new behaviour. When a growth knob is
+// added to ModelConfig, it is applied HERE and every consumer of a resolved
+// config (pipeline and replay) inherits it at once, instead of one of them
+// being forgotten. No functional change today, which is what keeps the replay
+// fixtures (B13) green.
+func ConfigFromModelConfig(mc modelcfg.ModelConfig) Config {
+	cfg := ConfigFromEnv()
+	// Kept explicit (and currently empty) so the derivation from mc is visible
+	// where it belongs. Any ModelConfig field that becomes a growth knob is
+	// applied here with the same precedence the other engines use:
+	// code defaults < env < parameter set.
+	_ = mc
+	return cfg
+}
+
 // canonicalWindows enforces the ONLY two windows the persisted contract can
 // represent (deuda M6b F2).
 //

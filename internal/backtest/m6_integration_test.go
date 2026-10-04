@@ -33,7 +33,8 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	// Validate and redact DSN before connecting (ADR D30)
-	redacted := testsupport.EnsureTestDSN(dsn)
+	// Validate the DSN targets a test DB; only its redacted form is ever logged (ADR D30).
+	testsupport.EnsureTestDSN(dsn)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	pool, err := storage.Connect(ctx, dsn)
@@ -44,13 +45,21 @@ func TestMain(m *testing.M) {
 	if err := storage.EnsureTestDatabase(ctx, pool); err != nil {
 		panic("backtest integration: guard de BD de test: " + err.Error())
 	}
+	// Serialise the database phase of the integration suites (shared TRUNCATEs),
+	// which is what lets them run WITHOUT `-p 1`.
+	lockCtx, lockCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	releaseLock, err := testsupport.LockIntegrationDB(lockCtx, pool)
+	lockCancel()
+	if err != nil {
+		panic("backtest integration: no se pudo tomar el advisory lock: " + err.Error())
+	}
+	defer releaseLock()
 	if _, err := pool.Exec(ctx, `TRUNCATE daily_prices, scores, securities, parameter_sets RESTART IDENTITY CASCADE`); err != nil {
 		panic("backtest integration: truncate: " + err.Error())
 	}
 	if err := storage.RunMigrations(ctx, pool, "../../migrations"); err != nil {
 		panic("backtest integration: migraciones: " + err.Error())
 	}
-	_ = redacted // silence unused warning if not logged
 	if code := m.Run(); code != 0 {
 		os.Exit(code)
 	}
@@ -171,6 +180,101 @@ func TestReplayReproduceElScorePersistido(t *testing.T) {
 		}
 		if d := *fr.ReturnPct - 10; d > 1e-9 || d < -1e-9 {
 			t.Fatalf("horizonte %d: esperado +10%%, got %v", fr.HorizonDays, *fr.ReturnPct)
+		}
+	}
+}
+
+// (k) -all-revisions: el default replayea SOLO el max(as_of) de cada ticker;
+// el flag audita TODAS las revisiones persistidas.
+//
+// El default no cambia porque el reporte histórico depende de él (una fila por
+// ticker = "el modelo de HOY sobre lo que sé HOY"). Lo que el default NO puede
+// responder es si el modelo reproduce su propio PASADO fila por fila, que es lo
+// que este flag existe para auditar.
+func TestReplayAllRevisionsAuditaElHistorico(t *testing.T) {
+	pool := replPool(t)
+	if pool == nil {
+		t.Skip("sin DATABASE_URL")
+	}
+	// Cuatro as_of para el MISMO ticker: el default debe devolver solo la última.
+	base := time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC)
+	asOfs := []time.Time{
+		base,
+		base.AddDate(0, 0, 30),
+		base.AddDate(0, 0, 60),
+		base.AddDate(0, 0, 90),
+	}
+	for i, d := range asOfs {
+		replaySecurity(t, pool, "REV1", d, 100+float64(i)*10, true)
+	}
+
+	// Default: una sola fila (la de max(as_of)).
+	def, err := ReplayScores(context.Background(), pool, ReplayOptions{TickersCSV: "REV1"})
+	if err != nil {
+		t.Fatalf("ReplayScores default: %v", err)
+	}
+	if len(def) != 1 {
+		t.Fatalf("el default debe devolver 1 fila (max as_of), got %d", len(def))
+	}
+	if !def[0].AsOf.Equal(asOfs[len(asOfs)-1]) {
+		t.Errorf("el default debe quedarse con la última as_of %v, got %v",
+			asOfs[len(asOfs)-1], def[0].AsOf)
+	}
+
+	// -all-revisions: todas las as_of, en orden descendente (estable).
+	all, err := ReplayScores(context.Background(), pool, ReplayOptions{
+		TickersCSV: "REV1", AllRevisions: true,
+	})
+	if err != nil {
+		t.Fatalf("ReplayScores all-revisions: %v", err)
+	}
+	if len(all) != len(asOfs) {
+		t.Fatalf("-all-revisions debe devolver %d filas, got %d", len(asOfs), len(all))
+	}
+	for i, r := range all {
+		if r.Error != "" {
+			t.Errorf("fila %d con error: %s", i, r.Error)
+		}
+		want := asOfs[len(asOfs)-1-i]
+		if !r.AsOf.Equal(want) {
+			t.Errorf("fila %d: esperado as_of %v, got %v", i, want, r.AsOf)
+		}
+		if !r.Reproduces {
+			t.Errorf("fila %d (%v) no se reproduce: %d vs %d (%s)",
+				i, r.AsOf, r.StoredScore, r.ReplayedScore, r.DivergenceReason)
+		}
+	}
+}
+
+// -all-revisions combinado con -as-of audita un histórico ACOTADO: hasta la
+// fecha inclusiva, no todo el historial.
+func TestReplayAllRevisionsRespetaAsOf(t *testing.T) {
+	pool := replPool(t)
+	if pool == nil {
+		t.Skip("sin DATABASE_URL")
+	}
+	base := time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	asOfs := []time.Time{
+		base,
+		base.AddDate(0, 0, 30),
+		base.AddDate(0, 0, 60),
+	}
+	for i, d := range asOfs {
+		replaySecurity(t, pool, "REV2", d, 200+float64(i)*10, true)
+	}
+
+	rows, err := ReplayScores(context.Background(), pool, ReplayOptions{
+		TickersCSV: "REV2", AllRevisions: true, AsOf: asOfs[1],
+	})
+	if err != nil {
+		t.Fatalf("ReplayScores: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("con -as-of %v deben salir 2 filas, got %d", asOfs[1], len(rows))
+	}
+	for _, r := range rows {
+		if r.AsOf.After(asOfs[1]) {
+			t.Errorf("fila %v posterior al corte %v", r.AsOf, asOfs[1])
 		}
 	}
 }
@@ -424,6 +528,76 @@ func TestReplayFullChain(t *testing.T) {
 	// only due to parameter set, but here we use the same config)
 	if r.ReplayedScore < 0 || r.ReplayedScore > 100 {
 		t.Errorf("ReplayedScore fuera de rango: %d", r.ReplayedScore)
+	}
+}
+
+// TestReplayFullChainGrowthUsesChainConfig is the assertion (g) asks for: the
+// growth step must be built from the SAME resolved ModelConfig as the wacc step,
+// not from growth.ConfigFromEnv() read in isolation.
+//
+// The test asks for the `conservative` set ON PURPOSE. With no set, ReplayScores
+// resolves mc from the env, which today makes ConfigFromModelConfig(mc) and
+// ConfigFromEnv() interchangeable — a numeric assertion would then pass against
+// either wiring and prove nothing. Asking for a set makes mc a config that is
+// demonstrably NOT the environment, so "every step used the same mc" becomes an
+// observable property:
+//
+//   - the WACC step reports the tax rate of that set (internal/wacc reads
+//     mc.TaxRate), proving mc reached the chain;
+//   - the growth step is still 'recomputed' — it did not fall back to a traced
+//     value nor to an env-only reader — and it is recomputed through
+//     growth.ConfigFromModelConfig, the anchor the replay now uses.
+func TestReplayFullChainGrowthUsesChainConfig(t *testing.T) {
+	pool := replPool(t)
+	if pool == nil {
+		t.Skip("sin DATABASE_URL")
+	}
+	asOf := time.Date(2026, 6, 3, 0, 0, 0, 0, time.UTC)
+	seedFullChainFixtures(t, pool, "FC2", asOf, 160.0)
+
+	// The mc the replay will build internally, resolved exactly the way
+	// ReplayScores does it, so the expectations below are not guesses.
+	_, want, err := modelcfg.Resolve(context.Background(), pool, "conservative")
+	if err != nil {
+		t.Fatalf("resolve conservative: %v", err)
+	}
+
+	rows, err := ReplayScores(context.Background(), pool, ReplayOptions{
+		TickersCSV:   "FC2",
+		FullChain:    true,
+		ParameterSet: "conservative",
+	})
+	if err != nil {
+		t.Fatalf("ReplayScores FullChain: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("se esperaba 1 fila, got %d", len(rows))
+	}
+	r := rows[0]
+	if r.ChainSteps == nil || r.ChainSteps.Growth == nil || r.ChainSteps.WACC == nil {
+		t.Fatalf("ChainSteps incompletos: %+v", r.ChainSteps)
+	}
+
+	// The chain's ModelConfig reached the steps: the WACC tax rate is the one of
+	// the resolved set, not the env default.
+	if r.ChainSteps.WACC.TaxRate == nil {
+		t.Fatal("el step WACC debe reportar el tax rate")
+	}
+	if got := *r.ChainSteps.WACC.TaxRate; got != want.QualityTaxRate {
+		t.Errorf("el step WACC debe usar el tax rate del chain (%v), got %v (env=%v)",
+			want.QualityTaxRate, got, modelcfg.DefaultQualityTaxRate)
+	}
+
+	// The growth step came from the SAME chain, recomputed (not traced).
+	if r.ComputedFrom["growth"] != "recomputed" {
+		t.Errorf("el step growth debe recomputarse con el config del chain, got %q",
+			r.ComputedFrom["growth"])
+	}
+	// And it is derived through the anchor, not an env-isolated reader: with no
+	// growth knob in ModelConfig (§28 RESERVED) the two agree, which is the
+	// equivalence pinned in internal/growth/config_modelcfg_test.go.
+	if growth.ConfigFromModelConfig(want) != growth.ConfigFromEnv() {
+		t.Error("growth.ConfigFromModelConfig debe derivar del mismo config del chain")
 	}
 }
 

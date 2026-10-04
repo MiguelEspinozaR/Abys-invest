@@ -27,43 +27,38 @@ import (
 //	postgres://user:pass/word@host:5432/db -> postgres://***@host:5432/db
 //	postgres://user@host:5432/db -> postgres://***@host:5432/db
 //	host=localhost user=abys password=secret dbname=test -> host=localhost user=*** password=*** dbname=test
+//	postgres://user:pass@host:5432/db?password=secret -> postgres://***@host:5432/db
 func RedactDSN(dsn string) string {
 	// URL format: postgres://[user[:password]@]host[:port]/dbname
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
 		parsed, err := url.Parse(dsn)
 		if err != nil {
 			// Fallback to regex if parsing fails (e.g. password with / confuses parser)
-			re := regexp.MustCompile(`^(postgres(?:ql)?://)[^@]*@`)
-			return re.ReplaceAllString(dsn, "${1}***@")
+			// Match scheme://userinfo@host/path?query and rebuild without userinfo and query
+			re := regexp.MustCompile(`^(postgres(?:ql)?://)[^@]*@([^/?#]+)(/[^?#]*)(\?[^#]*)?`)
+			return re.ReplaceAllString(dsn, "${1}***@${2}${3}")
 		}
 		// If parsing succeeded but user info is empty (edge case), fall back to regex
 		if parsed.User != nil && parsed.User.Username() == "" {
-			re := regexp.MustCompile(`^(postgres(?:ql)?://)[^@]*@`)
-			return re.ReplaceAllString(dsn, "${1}***@")
+			re := regexp.MustCompile(`^(postgres(?:ql)?://)[^@]*@([^/?#]+)(/[^?#]*)(\?[^#]*)?`)
+			return re.ReplaceAllString(dsn, "${1}***@${2}${3}")
 		}
 		// Rebuild URL manually to avoid URL encoding of ***
 		scheme := parsed.Scheme + "://"
 		host := parsed.Host
 		path := parsed.Path
-		rawQuery := parsed.RawQuery
+		// Discard query string entirely to avoid leaking credentials via ?password=... etc.
 		if parsed.User != nil {
 			// Redact user info entirely
-			return scheme + "***@" + host + path + rawQuerySuffix(rawQuery)
+			return scheme + "***@" + host + path
 		}
-		return scheme + host + path + rawQuerySuffix(rawQuery)
+		return scheme + host + path
 	}
 	// Key=value format: key1=val1 key2=val2 ...
 	// Match password, user, username followed by = and value (until space or end)
 	// For values with spaces, we match greedily until the next key= or end
 	re := regexp.MustCompile(`\b(password|user|username)=([^\s]+)`)
 	return re.ReplaceAllString(dsn, "${1}=***")
-}
-
-func rawQuerySuffix(rawQuery string) string {
-	if rawQuery == "" {
-		return ""
-	}
-	return "?" + rawQuery
 }
 
 // EnsureTestDSN validates that the DSN points to a test database (name ends with

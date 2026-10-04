@@ -5,6 +5,7 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -42,7 +43,8 @@ func TestMain(m *testing.M) {
 		os.Exit(0) // sin BD: suite de integración se omite (sin error)
 	}
 	// Validate and redact DSN before connecting (ADR D30)
-	redacted := testsupport.EnsureTestDSN(dsn)
+	// Validate the DSN targets a test DB; only its redacted form is ever logged (ADR D30).
+	testsupport.EnsureTestDSN(dsn)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -55,10 +57,18 @@ func TestMain(m *testing.M) {
 	if err := storage.EnsureTestDatabase(ctx, pool); err != nil {
 		panic("M3 integration: guard de BD de test falló (no se debe tocar producción): " + err.Error())
 	}
+	// Serialise the database phase of the integration suites (shared TRUNCATEs),
+	// which is what lets them run WITHOUT `-p 1`.
+	lockCtx, lockCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	releaseLock, err := testsupport.LockIntegrationDB(lockCtx, pool)
+	lockCancel()
+	if err != nil {
+		panic("M3 integration: no se pudo tomar el advisory lock: " + err.Error())
+	}
+	defer releaseLock()
 	if err := storage.RunMigrations(ctx, pool, "../../migrations"); err != nil {
 		panic("M3 integration: migraciones fallaron: " + err.Error())
 	}
-	_ = redacted // silence unused warning if not logged
 	os.Exit(m.Run())
 }
 
@@ -377,6 +387,177 @@ func TestM3Endpoints(t *testing.T) {
 		}
 		if errCode(t, body) != "unsupported" {
 			t.Fatalf("error code inesperado: %v", body)
+		}
+	})
+
+	// Validación de NaN/Inf en parámetros float (fix reviewer finding)
+	t.Run("compare-rf-NaN-rechazado", func(t *testing.T) {
+		rec, body := do(t, router, http.MethodGet, "/compare?tickers="+m3Tick+","+m3PeerA+"&rf=NaN")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("esperado 400 para rf=NaN, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if errCode(t, body) != "validation_error" {
+			t.Fatalf("error code esperado validation_error, got: %v", body)
+		}
+	})
+
+	t.Run("compare-rf-Infinity-rechazado", func(t *testing.T) {
+		rec, body := do(t, router, http.MethodGet, "/compare?tickers="+m3Tick+","+m3PeerA+"&rf=Infinity")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("esperado 400 para rf=Infinity, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if errCode(t, body) != "validation_error" {
+			t.Fatalf("error code esperado validation_error, got: %v", body)
+		}
+	})
+
+	t.Run("compare-rf-neg-Infinity-rechazado", func(t *testing.T) {
+		rec, body := do(t, router, http.MethodGet, "/compare?tickers="+m3Tick+","+m3PeerA+"&rf=-Infinity")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("esperado 400 para rf=-Infinity, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if errCode(t, body) != "validation_error" {
+			t.Fatalf("error code esperado validation_error, got: %v", body)
+		}
+	})
+
+	t.Run("compare-rf-valido", func(t *testing.T) {
+		rec, body := do(t, router, http.MethodGet, "/compare?tickers="+m3Tick+","+m3PeerA+"&rf=0.02")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("esperado 200 para rf=0.02, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if body["risk_metrics"] == nil {
+			t.Fatalf("risk_metrics ausente en respuesta válida: %v", body)
+		}
+	})
+
+	t.Run("backtest-initial_capital-NaN-rechazado", func(t *testing.T) {
+		rec, body := do(t, router, http.MethodGet, "/backtest/sma?ticker="+m3Tick+"&initial_capital=NaN")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("esperado 400 para initial_capital=NaN, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if errCode(t, body) != "validation_error" {
+			t.Fatalf("error code esperado validation_error, got: %v", body)
+		}
+	})
+
+	t.Run("backtest-initial_capital-Infinity-rechazado", func(t *testing.T) {
+		rec, body := do(t, router, http.MethodGet, "/backtest/sma?ticker="+m3Tick+"&initial_capital=Infinity")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("esperado 400 para initial_capital=Infinity, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if errCode(t, body) != "validation_error" {
+			t.Fatalf("error code esperado validation_error, got: %v", body)
+		}
+	})
+
+	t.Run("backtest-initial_capital-valido", func(t *testing.T) {
+		rec, body := do(t, router, http.MethodGet, "/backtest/sma?ticker="+m3Tick+"&initial_capital=10000")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("esperado 200 para initial_capital=10000, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if body["results"] == nil {
+			t.Fatalf("results ausente en respuesta válida: %v", body)
+		}
+	})
+
+	// --- NaN serialization guards (reviewer round 8, items 2a/2b) ---
+
+	// ZZNAN: fixture with a NaN adjusted_close to trigger marshal failure in /compare/history
+	const zznanTicker = "ZZNAN"
+
+	t.Run("compare-history-NaN-adjusted_close-500", func(t *testing.T) {
+		// Seed a security with one NaN adjusted_close price
+		ctx := context.Background()
+		sector := "Test"
+		sec := &storage.Security{Ticker: zznanTicker, CIK: "999999999", Name: "NaN Test", Type: "stock", Currency: "USD", Status: "active", Sector: &sector}
+		if _, err := storage.UpsertSecurity(ctx, pool, sec); err != nil {
+			t.Fatalf("upsert ZZNAN: %v", err)
+		}
+		// Get the security ID
+		sec, err := storage.GetSecurityByTicker(ctx, pool, zznanTicker)
+		if err != nil {
+			t.Fatalf("get security ZZNAN: %v", err)
+		}
+		id := sec.ID
+
+		// Insert prices: one normal, one with NaN adjusted_close
+		prices := []storage.DailyPrice{
+			{SecurityID: id, Date: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), Close: 100, AdjustedClose: 100, Source: "test"},
+			{SecurityID: id, Date: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), Close: 101, AdjustedClose: math.NaN(), Source: "test"},
+		}
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			t.Fatalf("begin: %v", err)
+		}
+		if err := storage.UpsertDailyPrices(ctx, tx, prices); err != nil {
+			t.Fatalf("upsert prices: %v", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			t.Fatalf("commit: %v", err)
+		}
+
+		// Request history - should get 500 with JSON error envelope
+		rec, body := do(t, router, http.MethodGet, "/compare/history?ticker="+zznanTicker)
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("esperado 500 para NaN en adjusted_close, got %d: %s", rec.Code, rec.Body.String())
+		}
+		if errCode(t, body) != "internal_error" {
+			t.Fatalf("error code esperado internal_error, got: %v", body)
+		}
+		// Body must be valid JSON with error envelope
+		if body["error"] == nil {
+			t.Fatalf("cuerpo debe tener envelope error: %v", body)
+		}
+
+		// Cleanup: remove the test security and its prices
+		tx, err = pool.Begin(ctx)
+		if err != nil {
+			t.Fatalf("begin cleanup: %v", err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM daily_prices WHERE security_id = $1`, id); err != nil {
+			t.Fatalf("cleanup prices: %v", err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM securities WHERE id = $1`, id); err != nil {
+			t.Fatalf("cleanup security: %v", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			t.Fatalf("commit cleanup: %v", err)
+		}
+	})
+
+	t.Run("compare-comparables-sin-datos-200", func(t *testing.T) {
+		// Security without sector, no peers → should return 200 with empty peers
+		ctx := context.Background()
+		sec := &storage.Security{Ticker: "ZZEMPTY", CIK: "999999998", Name: "Empty Test", Type: "stock", Currency: "USD", Status: "active", Sector: nil}
+		if _, err := storage.UpsertSecurity(ctx, pool, sec); err != nil {
+			t.Fatalf("upsert ZZEMPTY: %v", err)
+		}
+		sec, err := storage.GetSecurityByTicker(ctx, pool, "ZZEMPTY")
+		if err != nil {
+			t.Fatalf("get security ZZEMPTY: %v", err)
+		}
+		id := sec.ID
+
+		rec, body := do(t, router, http.MethodGet, "/compare/comparables?ticker=ZZEMPTY")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("esperado 200 para security sin sector, got %d: %s", rec.Code, rec.Body.String())
+		}
+		peers, _ := body["peers"].([]any)
+		if peers != nil && len(peers) != 0 {
+			t.Fatalf("peers esperado vacío, got: %v", body)
+		}
+
+		// Cleanup
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			t.Fatalf("begin cleanup: %v", err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM securities WHERE id = $1`, id); err != nil {
+			t.Fatalf("cleanup security: %v", err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			t.Fatalf("commit cleanup: %v", err)
 		}
 	})
 }

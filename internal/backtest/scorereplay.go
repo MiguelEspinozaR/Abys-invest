@@ -121,6 +121,16 @@ type ReplayOptions struct {
 	// (default), only the score trace is replayed (fast path). When true, the
 	// entire chain is re-derived from the stored snapshots.
 	FullChain bool
+	// AllRevisions replays EVERY persisted score row of each ticker (all as_of,
+	// and every model_version) instead of only the latest one.
+	//
+	// Default false keeps the historical report intact: one row per ticker is
+	// "how does the model I am running TODAY score what I know NOW", which is the
+	// question the §28 reproducibility gate asks. Auditing the HISTORY — did the
+	// model reproduce its own past scores, row by row, across revisions? — is a
+	// different question that the default cannot answer, because it silently
+	// drops every as_of but the last.
+	AllRevisions bool
 }
 
 // ReplayScores replays the scores of §28: it re-reads each persisted trace,
@@ -197,14 +207,35 @@ func replayCandidates(ctx context.Context, pool *pgxpool.Pool, opts ReplayOption
 	      FROM scores sc
 	      JOIN securities s ON s.id = sc.security_id`
 	args := []any{}
-	if opts.AsOf.IsZero() {
+	// hasWhere tracks whether a WHERE clause was already emitted. It CANNOT be
+	// inferred from len(args): the max(as_of) branch adds a WHERE with no
+	// placeholder at all, and a second WHERE would be a syntax error.
+	hasWhere := false
+	switch {
+	case opts.AllRevisions:
+		// No as_of filter at all: every persisted revision of every selected
+		// ticker is a candidate. Ordering below keeps the output stable.
+		if !opts.AsOf.IsZero() {
+			// -as-of still means "up to and including this date" when combined
+			// with -all-revisions: the audit is bounded, not the history.
+			q += ` WHERE sc.as_of <= $1`
+			args = append(args, opts.AsOf)
+			hasWhere = true
+		}
+	case opts.AsOf.IsZero():
 		q += ` WHERE sc.as_of = (SELECT max(as_of) FROM scores WHERE security_id = sc.security_id)`
-	} else {
+		hasWhere = true
+	default:
 		q += ` WHERE sc.as_of <= $1`
 		args = append(args, opts.AsOf)
+		hasWhere = true
 	}
 	if t := tickerList(opts.TickersCSV); len(t) > 0 {
-		q += ` AND s.ticker = ANY($` + fmt.Sprint(len(args)+1) + `)`
+		if hasWhere {
+			q += ` AND s.ticker = ANY($` + fmt.Sprint(len(args)+1) + `)`
+		} else {
+			q += ` WHERE s.ticker = ANY($1)`
+		}
 		args = append(args, t)
 	}
 	q += ` ORDER BY s.ticker, sc.as_of DESC`
@@ -403,9 +434,12 @@ func replayFullChain(ctx context.Context, pool *pgxpool.Pool, r scoredRow, mc mo
 	if err != nil {
 		return res, fmt.Errorf("growth parse: %w", err)
 	}
-	// Recompute growth with the parameter set's growth config (from mc if any, else env)
-	// Note: growth config doesn't come from ModelConfig currently, so use env
-	gCfgReplay := growth.ConfigFromEnv()
+	// Recompute growth from the SAME resolved ModelConfig the rest of the chain
+	// uses, instead of reading GROWTH_* in isolation. No functional change today
+	// (ModelConfig carries no growth knob yet, §28 RESERVED), but the replay no
+	// longer has a step that silently ignores the parameter set the caller asked
+	// for: when a growth knob does land, this step picks it up with the chain.
+	gCfgReplay := growth.ConfigFromModelConfig(mc)
 	gResReplay := growth.Calculate(gIn, gCfgReplay)
 	res.ChainSteps.Growth = &gResReplay
 	computedFrom["growth"] = "recomputed"

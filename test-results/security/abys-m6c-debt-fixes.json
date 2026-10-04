@@ -1,0 +1,127 @@
+{
+  "scan_id": "abys-m6c-debt-fixes",
+  "timestamp": "2026-10-03T22:15:59-04:00",
+  "range": {
+    "base_commit": "dfc2db6",
+    "head_commit": "dfc2db6",
+    "scope": "working-tree",
+    "changed_files_tracked": 24,
+    "untracked_files_reviewed": 12,
+    "files_scanned": 36,
+    "added_lines_scanned": 1851,
+    "note": "HEAD == dfc2db6 (working tree sobre HEAD). Rango de commit vacío; el escaneo cubre las líneas añadidas del diff dfc2db6 (working tree) más los ficheros no versionados de la iteración. Sin credenciales reales en este artefacto."
+  },
+  "summary": {
+    "total_findings": 7,
+    "hard_blocks": 0,
+    "info": 4,
+    "low": 3,
+    "medium": 0,
+    "high": 0
+  },
+  "findings": [
+    {
+      "id": "SEC-M6C-DEBT-001",
+      "severity": "info",
+      "category": "secret_scan",
+      "file": "N/A",
+      "line": 0,
+      "description": "Gitleaks primario sobre el rango dfc2db6..HEAD: 0 commits escaneados (HEAD == dfc2db6) y 0 leaks. Sin secretos en el historial del rango.",
+      "recommendation": "Ninguna",
+      "status": "open"
+    },
+    {
+      "id": "SEC-M6C-DEBT-002",
+      "severity": "info",
+      "category": "secret_scan",
+      "file": "N/A",
+      "line": 0,
+      "description": "Gitleaks primario sobre el working tree de la iteración (36 ficheros: 24 modificados + 12 no versionados, incluidos cmd/redactdsn/, internal/testsupport/lock.go, .gitleaks.toml, migrations/017 y docs/): 0 leaks con .gitleaks.toml del proyecto y 0 leaks también con las reglas por defecto de gitleaks, lo que demuestra que la allowlist no está enmascarando nada en este diff. Barrido adicional sobre docs/ y el binario suelto redactdsn: 0 leaks.",
+      "recommendation": "Ninguna",
+      "status": "open"
+    },
+    {
+      "id": "SEC-M6C-DEBT-003",
+      "severity": "info",
+      "category": "secret_scan",
+      "file": "N/A",
+      "line": 0,
+      "description": "Fallback regex (advisory, no prueba) sobre las 1851 líneas añadidas: 0 coincidencias de API keys, tokens, claves privadas, DSN con credenciales no-placeholder ni patrones password= con valor de alta entropía. Los únicos literales con credenciales son placeholders de localhost/documentación (abys, user:pass@host:5432, 2001:db8::1) y todos los hosts clasificados como local/doc; ninguna ruta, host remoto ni clave con entropía.",
+      "recommendation": "Ninguna (advisory; gitleaks es el primario)",
+      "status": "open"
+    },
+    {
+      "id": "SEC-M6C-DEBT-004",
+      "severity": "info",
+      "category": "config_review",
+      "file": ".gitleaks.toml",
+      "line": 32,
+      "description": "Allowlist de .gitleaks.toml verificada como segura: NO contiene allowlist de rutas, commits ni repos (no enmascara ubicaciones, incluido test-results/ ni web/dist/), solo excepciones de VALOR. Los hosts referenciados son localhost y host:5432; no hay host de producción, .internal, .com/.io ni rangos RFC1918. La nota de mantenimiento prohíbe explícitamente añadir excepciones para hallazgos reales.",
+      "recommendation": "Ninguna",
+      "status": "open"
+    },
+    {
+      "id": "SEC-M6C-DEBT-005",
+      "severity": "low",
+      "category": "log_leak_path",
+      "file": "Makefile",
+      "line": 169,
+      "description": "La rama de error del guard de `make integration` sigue imprimiendo el DSN con `sed -E \"s#.*/##\"`. Para un DSN en formato key=value (sin '/'), ese sed no recorta nada y escribe el DSN COMPLETO en stderr, incluida la contraseña. Verificado con un DSN sintético: la contraseña aparece en la salida. La línea es preexistente en HEAD (no introducida por este diff) pero vive en la receta que el diff reescribe, y es exactamente la clase de fuga que cmd/redactdsn elimina en la rama de éxito. Solo alcanzable con TEST_DATABASE_URL mal configurado.",
+      "recommendation": "Envolver también la rama de error con $(BIN_DIR)/redactdsn (o imprimir solo el sufijo de base de datos con una extracción robusta) en una iteración posterior; no bloquea este diff porque no expone un secreto versionado.",
+      "status": "closed"
+    },
+    {
+      "id": "SEC-M6C-DEBT-006",
+      "severity": "low",
+      "category": "log_leak_path",
+      "file": "internal/testsupport/dsn.go",
+      "line": 51,
+      "description": "testsupport.RedactDSN (preexistente, no modificado por este diff) redacciona el userinfo de la URL pero preserva la query string verbatim mediante rawQuerySuffix. Un DSN con credenciales en la query (p. ej. ?password=...) se imprimiría sin redactar en el log de `make integration`, que ahora usa redactdsn. Verificado con un DSN sintético: la credencial de query sobrevive a la redacción. Riesgo acotado: libpq no usa esa forma y el resto del(userinfo queda correctamente redactado.",
+      "recommendation": "Extender rawQuerySuffix para redactar también password/passfile/secret en la query, o declarar explícitamente que la forma key=value/URL con credenciales en query no está soportada.",
+      "status": "closed"
+    },
+    {
+      "id": "SEC-M6C-DEBT-007",
+      "severity": "low",
+      "category": "supply_chain_hygiene",
+      "file": "redactdsn",
+      "line": 0,
+      "description": "Binario compilado redactdsn (ELF x86-64, 5 MB, modo 755) sin versionar en la raíz del repo. NO está cubierto por .gitignore (que solo excluye /bin/ y /analytics), por lo que `git add -A` lo incluiría en el historial de producto. No contiene secretos: gitleaks sobre el binario da 0 leaks y 0 cadenas con forma de credencial. La receta correcta del Makefile compila en $(BIN_DIR)/redactdsn (bin/), luego este artefacto es un resto de una compilación manual.",
+      "recommendation": "Eliminar el binario de la raíz y añadirlo a .gitignore (o ampliar la regla a binarios en la raíz) antes de commitear; no implica rotación de credenciales.",
+      "status": "closed"
+    }
+  ],
+  "closures": {
+    "writeJSONChecked_500": "Verificado en internal/api/errors.go:54. json.Marshal ocurre ANTES de WriteHeader, así que un fallo de marshal (NaN/Inf) devuelve el error sin haber escrito nada y el handler emite writeError(500, CodeInternal). Los 4 handlers migrados (handleComparables, handleHistory, handleCompareAssets, handleBacktest) pasan un mensaje estático 'error al serializar respuesta': no se filtra ni el payload ni el error de marshal al cliente. Sin regresión de datos.",
+    "validate_nan_inf_guard": "Verificado en internal/api/validate.go:88. parseFloatQuery rechaza NaN/Inf además de negativos y de error de parseo. Los mensajes de validación solo reflejan el parámetro de query recibido por el cliente (nunca una credencial, DSN ni valor de configuración del servidor); errValidationf no interpola datos sensibles.",
+    "redactdsn": "Verificado en cmd/redactdsn/main.go. Sin credenciales hardcoded; delega en testsupport.RedactDSN (implementación única y auditada). STDIN tiene prioridad sobre argv para no exponer el DSN en la tabla de procesos, con límite de 64 KiB. Cobertura comprobada con DSN sintéticos: contraseña con '/', con '@', percent-encoded y DSN malformado (fallback regex) -> todos redactados a ***. Sin escrituras a log del lado del comando (solo stdout; errores a stderr sin el DSN).",
+    "lock": "Verificado en internal/testsupport/lock.go. Solo advisory lock de sesión con clave constante compartida ('abys_integration_lock', hashtext) sobre conexión dedicada; sin secretos, sin DSN y sin efecto de esquema. La copia inline en internal/storage/db_test.go usa la MISMA clave (evita el ciclo de importación). Los fallos de lock hacen panic en vez de un skip silencioso.",
+    "gitleaks_verde": "Verde. Gitleaks v8.30.1 (github.com/zricethezav/gitleaks/v8 v8.30.1, binario en ~/go/bin/gitleaks): 0 leaks en el rango dfc2db6..HEAD y 0 leaks sobre el working tree completo de la iteración, tanto con .gitleaks.toml como con las reglas por defecto. 0 hard blocks.",
+    "makefile_integration_log": "Verificado. La rama de éxito delega en $(BIN_DIR)/redactdsn, no en sed. Con un DSN sintético en formato URL y contraseña con '/': el log imprime postgres://***@localhost:55432/abys_test y el recuento de coincidencias de '://[^@]*@' con credenciales no-placeholder es 0. Pendiente solo el residuo de la rama de error (SEC-M6C-DEBT-005) y de la query string (SEC-M6C-DEBT-006).",
+    "modelcfg_wacc_deprecation": "Sin cambios en datos sensibles. resolveTaxRateAlias (internal/modelcfg/modelcfg.go) normaliza el alias deprecado tax_rate -> quality_tax_rate y registra advertencias con el NOMBRE del parameter set y las claves, nunca con valores de credenciales ni datos de negocio sensibles. La aviso de WACC_TAX_RATE en internal/wacc/config.go:66 solo comprueba la presencia de las variables de entorno, sin imprimir su valor. Es una normalización de configuración, no un cambio de esquema ni de secretos.",
+    "web_src": "Solo tipos y presentación. web/src/api/types.ts añade el campo opcional parameter_set?: string y web/src/pages/TickerDetailPage.tsx lo pinta como chip cuando viene. Sin secretos, sin nuevos endpoints, sin cambios de autorización ni de CORS.",
+    "permisos_y_config": "Sin regresiones. El diff no contiene cambios de modo de fichero (0 old mode/new mode). Todos los ficheros nuevos están en 0644 (código, SQL, .gitleaks.toml, docs), sin bits ejecutables ni de setuid. La migración 017 no contiene GRANT, ALTER OWNER, CREATE ROLE, COPY PROGRAM ni acceso a ficheros del servidor.",
+    "SEC-M6C-DEBT-005": "Cerrado. Makefile:169 — Rama de error del guard ahora usa $(BIN_DIR)/redactdsn en lugar de sed. Probado con DSN key=value sintético (password=supersecret): log muestra 'host=localhost user=*** password=*** dbname=notatest sslmode=disable' (0 matches de la password). Probado con DSN URL con '/' en password: log muestra 'postgres://***@localhost:55432/notatest' (query string también descartada).",
+    "SEC-M6C-DEBT-006": "Cerrado. internal/testsupport/dsn.go:51 — RedactDSN ahora descarta la query string completamente (tanto en path exitoso de url.Parse como en fallback regex). Casos de prueba añadidos en dsn_test.go: URL con ?password=secret&sslmode=disable -> 'postgres://***@host:5432/db'; URL con ?sslmode=disable (inocua) -> 'postgres://***@host:5432/db'; URL sin auth con query -> 'postgres://host:5432/db'. Binario redactdsn verificado con DSN sintético: 0 credenciales en salida.",
+    "SEC-M6C-DEBT-007": "Cerrado. .gitignore ampliado con '/redactdsn' (binario en raíz) además de '/bin/' existente. Verificado: git check-ignore bin/redactdsn -> 0 (ignorado); git check-ignore redactdsn -> 0 (ignorado). Binario suelto en raíz eliminado del working tree (no versionado)."
+  },
+  "tool": {
+    "gitleaks": {
+      "version": "8.30.1",
+      "module": "github.com/zricethezav/gitleaks/v8 v8.30.1",
+      "path": "~/go/bin/gitleaks",
+      "status": "green",
+      "commands": [
+        "gitleaks detect --no-banner --log-opts=dfc2db6..HEAD (0 commits, 0 leaks)",
+        "gitleaks dir --no-banner <worktree-copy> -c .gitleaks.toml (0 leaks)",
+        "gitleaks dir --no-banner <worktree-copy> con reglas por defecto (0 leaks, baseline de la allowlist)",
+        "gitleaks dir sobre docs/ y redactdsn (0 leaks)"
+      ]
+    },
+    "regex_fallback": "advisory",
+    "other": [
+      "go build ./... -> ok",
+      "go vet ./cmd/redactdsn/... ./internal/testsupport/... -> ok"
+    ]
+  }
+}

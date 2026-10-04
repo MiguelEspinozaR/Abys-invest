@@ -1031,20 +1031,34 @@ marcada); growth y wacc se persisten en la misma transacción **por security** p
 distintas entre securities (R9, aceptado: replica el contrato de error-por-security de
 `runMetricsJob`); los bloques `growth`/`wacc` todavía no se renderizan en el SPA (R6 → M6b/M6c).
 
-**Deuda conocida del hito (M6c)** — no bloquea la entrega:
-- (a) `internal/wacc/m6_integration_test.go:189` — `-p 1` obligatorio en integración (TRUNCATE deadlock 40P01).
-- (b) `Makefile:166` — regex de redacción evadible con `/`; usar `testsupport.RedactDSN`.
-- (c) migraciones 011:25 y 015:90 — CHECK beta>0/<=10 NaN-permeable; la barrera real es el guard Go.
-- (d) `internal/api/loader.go:387-403` — último lector de env NaN-aceptante (GROWTH_RATE_DEFAULT, DCF_DISCOUNT_RATE, DCF_TERMINAL_GROWTH, MARGIN_OF_SAFETY); delegar en modelcfg.
-- (e) `modelcfg.go:728` — KeyTaxRate del set independiente de KeyQualityTaxRate.
-- (f) `wacc.ConfigFromEnv()` — lee WACC_TAX_RATE sin warning si se llama directo.
-- (g) backtest `-full-chain` — recomputa growth con `growth.ConfigFromEnv()` (knobs RESERVED §28).
-- (h) `Trace21.MarginOfSafety` omitempty — filas 2.1.0 heredadas replayean con fallback 30.
-- (i) `web/src/api/types.ts` — frontend sin el string `parameter_set` (solo `parameter_set_id`).
-- (j) SPEC §12 "Total 100%" vs §18/API pesos 0.90 — nota de reconciliación pendiente.
-- (k) backtest — por defecto solo `max(as_of)` por security; usar `-as-of` para revisiones viejas.
-- (l) gitleaks ausente — escaneo de secretos advisory (T1).
-- (m) servicio API de producción :18080 corre binario anterior al árbol — reiniciar tras el deploy para ver `parameter_set`.
+**Deuda técnica M6c — resuelta (a)–(m)**
+
+(a) Lock de integración ........... RESUELTO · advisory lock de SESIÓN sobre conexión DEDICADA (testsupport.LockIntegrationDB), no -p 1. 10 TestMains: panic si no se puede tomar, release con defer. La suite corre `go test -tags=integration ./...` SIN -p 1 (2 corridas verdes).
+(b) Redacción de DSN .............. RESUELTO · cmd/redactdsn → testsupport.RedactDSN (URL), no sed (evadible con '/' en el password). STDIN gana al argv; Makefile usa el binario compilado.
+(c) CHECK beta FINITO ............. RESUELTO (migración 017) · los CHECK de Postgres son NaN-permeables; ahora exigen `beta = beta`. Idempotente.
+(d) Parámetros del API ............ RESUELTO · loader.go usa los validadores de modelcfg; MARGIN_OF_SAFETY=NaN avisa y usa 30 sin romper el JSON.
+(e) Un solo tax rate .............. RESUELTO · tax_rate es alias de quality_tax_rate (gana quality_tax_rate); TaxRate se re-colapsa tras aplicar el set → la divergencia NOPAT/Kd es irrepresentable.
+(f) Aviso de WACC_TAX_RATE ........ RESUELTO · avisa del deprecado y del conflicto (manda QUALITY_TAX_RATE); se mantiene como fallback documentado.
+(g) Full-chain set-aware .......... RESUELTO · la cadena usa el ModelConfig del set. growth.ConfigFromModelConfig es punto de extensión (growth sigue RESERVED §28).
+(h) margin_of_safety explícito .... RESUELTO · sin omitempty (0 = desactivado); 017 pone 30 en las filas 2.1.0 que no lo tenían.
+(i) parameter_set en frontend ..... RESUELTO · types.ts + chip en el detalle.
+(k) -all-revisions ................ RESUELTO · replayea TODAS las revisiones (con -as-of acota por fecha). Default intacto.
+(l) gitleaks ...................... RESUELTO · v8.30.1 del MÓDULO zricethezav/gitleaks/v8 (el path "gitleaks/gitleaks" no existe). Comprobación MANUAL, NO gate de CI. Allowlist solo de valores de dev/test, nunca de rutas.
+(m) Operativo de usuario .......... RESUELTO · documentado en esta sección.
+
+**Delta de validación y serialización (misma iteración)**
+
+parseFloatQuery (NaN/Inf en query) ......... CERRADO
+    validate.go rechaza no-finitos (math.IsNaN / math.IsInf) además de negativos y texto: ?rf= y ?initial_capital= → 400 ANTES de tocar la BD. Antes un NaN en query llegaba al marshal y devolvía 200 vacío (indistinguible del éxito).
+
+writeJSONChecked + 4 rutas migradas ......... CERRADO
+    /compare, /compare/history, /compare/comparables y /backtest/{strategy} serializan con json.Marshal ANTES de comprometer el status; si el marshal falla responden 500 "error al serializar respuesta" con envelope JSON.
+
+**Deuda residual (follow-up; NO bloquea)**
+
+1. Ingest-boundary NaN: internal/collect/edgar/companyfacts.go:133, macro/bls.go:69,93 y yahoo/quote.go:91 aceptan "NaN" de fuentes externas (solo comprueban err != nil). Impacto contenido aguas abajo (storage/betahistory.go:102, score21.go:247,264), pero el sitio correcto para rechazarlo es la ingesta.
+2. Lección de marshal defensivo: un guard que escribe el status ANTES de saber si el marshal funciona no protege nada (convierte el error en 200). Todo handler que devuelva floats computados debe serializar a buffer y responder 500 si falla.
+3. storage-lock inline duplicado: internal/storage/db_test.go mantiene su propio lock de integración en lugar de testsupport.LockIntegrationDB. No rompe nada (advisory lock compartido a nivel BD) pero duplica lógica: unificar en el helper.
 
 ---
 

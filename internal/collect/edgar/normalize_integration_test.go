@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/miky/abys-invest/internal/storage"
+	"github.com/miky/abys-invest/internal/testsupport"
 )
 
 // Integration tests for the normalization pipeline (internal/collect/edgar).
@@ -20,6 +21,11 @@ import (
 
 var normPool *pgxpool.Pool
 
+// normRelease unlocks the shared integration advisory lock (see
+// testsupport.LockIntegrationDB). Held for the whole suite because the suite
+// TRUNCATEs tables shared with the other integration packages.
+var normRelease func()
+
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn != "" {
@@ -27,10 +33,32 @@ func TestMain(m *testing.M) {
 		pool, err := storage.Connect(ctx, dsn)
 		cancel()
 		if err == nil {
-			normPool = pool
+			ctx2, cancel2 := context.WithTimeout(context.Background(), 15*time.Second)
+			if err := storage.EnsureTestDatabase(ctx2, pool); err == nil {
+				// Waiting for the shared lock can take as long as the other
+				// suites ahead in the queue, so it gets its OWN generous
+				// context: the setup timeout above is not a lock timeout.
+				lockCtx, lockCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+				release, lerr := testsupport.LockIntegrationDB(lockCtx, pool)
+				lockCancel()
+				if lerr != nil {
+					// LOUD, never a silent skip: a suite that cannot take the
+					// lock would otherwise report "skipped" and the whole
+					// package would look green while testing nothing.
+					panic("edgar integration: no se pudo tomar el advisory lock: " + lerr.Error())
+				}
+				normRelease = release
+				normPool = pool
+			} else {
+				pool.Close()
+			}
+			cancel2()
 		}
 	}
 	code := m.Run()
+	if normRelease != nil {
+		normRelease()
+	}
 	if normPool != nil {
 		normPool.Close()
 	}

@@ -19,6 +19,11 @@ import (
 
 var testPool *pgxpool.Pool
 
+// testLockConn holds the session that owns the shared integration advisory
+// lock for the whole suite: this suite is the one that TRUNCATEs the shared
+// tables, so the lock must outlive any pooled connection.
+var testLockConn *pgxpool.Conn
+
 func TestMain(m *testing.M) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -26,12 +31,43 @@ func TestMain(m *testing.M) {
 	if dsn != "" {
 		pool, err := Connect(ctx, dsn)
 		if err == nil && EnsureTestDatabase(ctx, pool) == nil {
-			testPool = pool
+			// The shared integration advisory lock, INLINED because this suite
+			// lives in package storage and internal/testsupport imports storage
+			// (an import cycle would be the other way). Same contract as
+			// testsupport.LockIntegrationDB: a DEDICATED connection owns the
+			// lock, because a session advisory lock taken through the pool
+			// belongs to a connection the pool may destroy mid-suite — which
+			// would release the lock silently and let a second suite truncate
+			// the same tables.
+			lockCtx, lockCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			conn, cerr := pool.Acquire(lockCtx)
+			if cerr == nil {
+				if _, lerr := conn.Exec(lockCtx,
+					`SELECT pg_advisory_lock(hashtext('abys_integration_lock'))`); lerr == nil {
+					testLockConn = conn
+					testPool = pool
+				} else {
+					conn.Release()
+					// LOUD, never a silent skip: a suite that cannot take
+					// the lock would report "skipped" and the package would
+					// look green while testing nothing.
+					panic("storage integration: no se pudo tomar el advisory lock: " + lerr.Error())
+				}
+			} else {
+				pool.Close()
+				panic("storage integration: no se pudo adquirir la conexión del lock: " + cerr.Error())
+			}
+			lockCancel()
 		} else if err == nil {
 			pool.Close()
 		}
 	}
 	code := m.Run()
+	if testLockConn != nil {
+		_, _ = testLockConn.Exec(context.Background(),
+			`SELECT pg_advisory_unlock(hashtext('abys_integration_lock'))`)
+		testLockConn.Release()
+	}
 	if testPool != nil {
 		testPool.Close()
 	}

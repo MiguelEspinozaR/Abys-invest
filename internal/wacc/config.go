@@ -1,6 +1,9 @@
 package wacc
 
 import (
+	"log/slog"
+	"os"
+
 	"github.com/miky/abys-invest/internal/modelcfg"
 )
 
@@ -60,6 +63,19 @@ func ConfigFromEnv() Config {
 		cfg.CostOfDebt = modelcfg.EnvFloat("WACC_COST_OF_DEBT", cfg.CostOfDebt)
 	}
 
+	// WACC_TAX_RATE is DEPRECATED (alias of QUALITY_TAX_RATE): the tax rate has
+	// ONE canonical name so that NOPAT (quality/ROIC) and after-tax Kd cannot be
+	// taxed at two different rates in one score. The value is still read as a
+	// documented fallback (compat), but saying so out loud is the point: before
+	// this warning, a deployment could set WACC_TAX_RATE, see it work, and never
+	// learn that the quality block was using a different number.
+	if os.Getenv("WACC_TAX_RATE") != "" {
+		if os.Getenv("QUALITY_TAX_RATE") != "" {
+			slog.Warn("WACC_TAX_RATE y QUALITY_TAX_RATE están ambos definidos; QUALITY_TAX_RATE manda")
+		} else {
+			slog.Warn("WACC_TAX_RATE deprecated, use QUALITY_TAX_RATE")
+		}
+	}
 	cfg.TaxRate = modelcfg.EnvFloatRange("WACC_TAX_RATE", cfg.TaxRate, 0, 50)
 	cfg.BetaAssumed = modelcfg.EnvFloat("WACC_BETA_ASSUMED", cfg.BetaAssumed)
 	cfg.Fallback = modelcfg.EnvFloat("WACC_FALLBACK", cfg.Fallback)

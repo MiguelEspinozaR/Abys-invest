@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/miky/abys-invest/internal/modelcfg"
 	"github.com/miky/abys-invest/internal/storage"
 	"github.com/miky/abys-invest/internal/valuation"
 )
@@ -56,15 +55,22 @@ type Parameters struct {
 }
 
 // LoadParameters reads the valuation/score parameters from the environment.
+//
+// It delegates to modelcfg.EnvFloat/EnvInt (the validating helpers shared with
+// the four engines, plan M6c B1/B16, ADR D20) instead of a private copy: the
+// local helpers were NOT validators, so `MARGIN_OF_SAFETY=NaN` parsed fine and
+// the NaN reached the response body, where encoding/json failed with
+// "unsupported value: NaN" — turning a mistyped knob into a 500. Now a bad
+// value warns and falls back to the default, as everywhere else.
 func LoadParameters() Parameters {
 	return Parameters{
-		GrowthRate:        envFloat(envGrowthRate, defaultGrowthRate),
-		DiscountRate:      envFloat(envDiscountRate, defaultDiscountRate),
-		Horizon:           envInt(envHorizon, defaultHorizon),
-		TerminalGrowth:    envFloat(envTerminalGrowth, defaultTerminalGrowth),
-		MarginOfSafety:    envFloat(envMarginOfSafety, defaultMarginSafety),
-		CompMinSecurities: envInt(envCompMinSecurities, defaultCompMinSec),
-		CompHistoryYears:  envInt(envCompHistoryYears, defaultCompHistYears),
+		GrowthRate:        modelcfg.EnvFloat(envGrowthRate, defaultGrowthRate),
+		DiscountRate:      modelcfg.EnvFloat(envDiscountRate, defaultDiscountRate),
+		Horizon:           modelcfg.EnvInt(envHorizon, defaultHorizon),
+		TerminalGrowth:    modelcfg.EnvFloat(envTerminalGrowth, defaultTerminalGrowth),
+		MarginOfSafety:    modelcfg.EnvFloat(envMarginOfSafety, defaultMarginSafety),
+		CompMinSecurities: modelcfg.EnvInt(envCompMinSecurities, defaultCompMinSec),
+		CompHistoryYears:  modelcfg.EnvInt(envCompHistoryYears, defaultCompHistYears),
 	}
 }
 
@@ -382,22 +388,4 @@ func confidenceOf(c *string) valuation.Confidence {
 		return ""
 	}
 	return valuation.Confidence(*c)
-}
-
-func envFloat(key string, def float64) float64 {
-	if v := os.Getenv(key); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			return f
-		}
-	}
-	return def
-}
-
-func envInt(key string, def int) int {
-	if v := os.Getenv(key); v != "" {
-		if i, err := strconv.Atoi(v); err == nil {
-			return i
-		}
-	}
-	return def
 }

@@ -1,6 +1,7 @@
 # Binaries
 /bin/
 /analytics
+/redactdsn
 
 # Local environment / secrets (values never committed)
 .env

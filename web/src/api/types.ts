@@ -400,6 +400,11 @@ export interface ScoreResponse extends ScoreRow {
   weight_used?: number;
   /** §26: identidad de la configuración que produjo el score (null = codes). */
   parameter_set_id?: number | null;
+  /** §26: NOMBRE del parameter set que produjo el score (2.1.0; ausente si la
+   *  fila es de codes o de una revisión que no lo emitía). La API ya lo envía
+   *  (`parameter_set`): sin él, dos scores de la misma empresa no se pueden
+   *  distinguir en la UI y el número no es auditable. */
+  parameter_set?: string;
   /** Solo 2.1.0. */
   quality?: QualityBlock;
   /** Solo 2.1.0. */

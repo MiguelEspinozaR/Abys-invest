@@ -1,0 +1,52 @@
+# gitleaks — configuración del repo (ítem (l) del plan abys-m6c-debt-fixes).
+#
+# Uso (NO bloquea nada: es una comprobación manual, no un gate de CI):
+#   gitleaks detect --no-banner --source .
+#   gitleaks detect --no-banner --source . --no-git   # además el working tree
+#
+# Con las reglas por defecto el repositorio sale limpio (0 hallazgos en el
+# historial y en el working tree en el momento de escribir este fichero). Este
+# fichero fija la lista de EXCEPCIONES para los placeholders convencionales del
+# repo, de modo que añadir un fixture de prueba no produzca un falso positivo que
+# alguien termine silenciando con un `--no-verify` global.
+#
+# Regla de la allowlist: SOLO credenciales de desarrollo local sobre localhost y
+# fixtures de test. Cualquier cosa que huela a secreto real (host remoto, clave
+# con entropía, token) NO está aquí a propósito: si aparece, es un hallazgo real.
+
+title = "abys-invest gitleaks config"
+
+[extend]
+# Se usan las reglas por defecto + las específicas de la configuración, sin
+# deshabilitar ninguna.
+useDefault = true
+
+[allowlist]
+description = "Placeholders de desarrollo local y fixtures de test del repo"
+
+# Solo EXCEPCIONES DE VALOR. No se excluye ningún directorio: `test-results/`,
+# `web/dist/` y los fixtures se siguen escaneando, porque un artefacto generado
+# puede contener un secreto pegado por accidente y eso también hay que verlo.
+# La allowlist de rutas se deja deliberadamente vacía.
+
+regexes = [
+  # postgres/postgresql DSN de desarrollo local (host y puerto del repo).
+  '''postgres(?:ql)?://abys:abys@localhost:55432/abys(?:_test)?''',
+  # Placeholders genéricos de los fixtures de testsupport (ADR D30) y docs.
+  '''postgres(?:ql)?://user:pass(?:word)?@host:5432/\w+''',
+  '''postgres(?:ql)?://abys:abys@localhost:5432/abys(?:_test)?''',
+  # DSN key=value de desarrollo local (el formato que acepta libpq).
+  '''(?i)\bpassword=abys\b''',
+  '''(?i)\bpassword=secret\b''',
+  '''(?i)\bpassword=abc=def\b''',
+  '''(?i)\buser:pass@host:5432\b''',
+  # Placeholders de usuario/contraseña usados en la documentación del
+  # Makefile, los tests de integración y los ejemplos de README.
+  '''(?i)\b(USER|USERNAME)=admin\b''',
+  '''(?i)\b(password|passwd|pwd)=\*{3,}''',
+]
+
+# NOTA (para quien mantenga esto): si un hallazgo real aparece en el informe,
+# la respuesta correcta es ROTAR el secreto y revisar el commit, NUNCA añadir una
+# excepción aquí. Las excepciones de arriba son valores de desarrollo sin
+# acceso fuera de localhost.

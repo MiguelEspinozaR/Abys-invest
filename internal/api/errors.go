@@ -45,3 +45,19 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// writeJSONChecked emits a JSON payload and returns an error if marshaling
+// fails (e.g., NaN/Inf in float fields). Callers should check the error and
+// respond with writeError (500) instead of writing a 200 with empty body.
+// Key fix: marshal BEFORE committing the status so a marshal failure can
+// still yield a proper 500 via writeError.
+func writeJSONChecked(w http.ResponseWriter, status int, v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err // nothing written yet
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, err = w.Write(b)
+	return err
+}

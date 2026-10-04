@@ -73,10 +73,15 @@ func main() {
 	var parameterSet string
 	var jsonOut bool
 	var fullChain bool
+	var allRevisions bool
 	flag.StringVar(&asOf, "as-of", "", "fecha del replay AAAA-MM-DD (vacío = último score de cada ticker)")
 	flag.StringVar(&parameterSet, "parameter-set", "", "parameter set con el que RE-puntuar el trace (vacío = reproducción exacta)")
 	flag.BoolVar(&jsonOut, "json", false, "salida JSON en vez de tabla")
 	flag.BoolVar(&fullChain, "full-chain", false, "replay completo growth→wacc→valuation→quality→relative→score desde snapshots (B13)")
+	// -all-revisions audita el HISTORIAL: todas las filas de score (todas las
+	// as_of, todas las revisiones) en vez de solo el max(as_of) por ticker.
+	// El default (false) deja intacto el reporte: una fila por ticker.
+	flag.BoolVar(&allRevisions, "all-revisions", false, "replay de TODAS las revisiones persistidas (todas las as_of) en vez de solo la última por ticker")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -116,7 +121,7 @@ func main() {
 	// de verificación que modifica el esquema de la BD a la que apunta es la forma
 	// más rápida de convertir una comprobación en un incidente.
 	if job == jobBacktest {
-		if err := runBacktest(ctx, pool, tickersCSV, asOf, parameterSet, jsonOut, fullChain); err != nil {
+		if err := runBacktest(ctx, pool, tickersCSV, asOf, parameterSet, jsonOut, fullChain, allRevisions); err != nil {
 			slog.Error("job backtest falló", "error", err)
 			os.Exit(1)
 		}
@@ -135,8 +140,11 @@ func main() {
 }
 
 // runBacktest is B14: replay + retornos forward, en tabla o JSON.
-func runBacktest(ctx context.Context, pool *pgxpool.Pool, tickersCSV, asOf, parameterSet string, jsonOut bool, fullChain bool) error {
-	opts := backtest.ReplayOptions{TickersCSV: tickersCSV, ParameterSet: parameterSet, FullChain: fullChain}
+func runBacktest(ctx context.Context, pool *pgxpool.Pool, tickersCSV, asOf, parameterSet string, jsonOut bool, fullChain bool, allRevisions bool) error {
+	opts := backtest.ReplayOptions{
+		TickersCSV: tickersCSV, ParameterSet: parameterSet,
+		FullChain: fullChain, AllRevisions: allRevisions,
+	}
 	if asOf != "" {
 		d, err := time.Parse("2006-01-02", asOf)
 		if err != nil {

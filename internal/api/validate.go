@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -84,7 +85,7 @@ func parseFloatQuery(raw string, def float64) (float64, error) {
 		return def, nil
 	}
 	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
-	if err != nil || v < 0 {
+	if err != nil || v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
 		return 0, errValidationf("parámetro numérico inválido: %q", raw)
 	}
 	return v, nil

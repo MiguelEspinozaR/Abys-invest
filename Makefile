@@ -157,17 +157,24 @@ run-all-data:
 	$(MAKE) migrate run-collector run-prices run-macro run-sector run-growth run-valuation run-analytics run-scores
 
 ## integration: tests de integración end-to-end (requiere BD de pruebas).
-## Se usan -p 1 (secuencial): los paquetes comparten la misma BD de tests y
-## el suite storage trunca las tablas de datos en cada ejecución.
+## Sin -p 1: la fase de BD de cada TestMain se serializa con un
+## pg_advisory_lock de sesión (clave compartida 'abys_integration_lock'), de modo
+## que los TRUNCATE compartidos no se deadlockean al correr paquetes en paralelo.
 ## Guard de seguridad: se ejecuta SIEMPRE contra TEST_DATABASE_URL (que debe
 ## apuntar a una BD con sufijo *_test). Si apunta a la BD de producción
 ## (p. ej. /abys o /5432/abys) se aborta para no truncar datos reales.
-integration:
-	@sh -c 'redact() { printf "%s" "$$1" | sed -E "s#(://)[^/@]*@#\1***@#"; }; 	case "$(TEST_DATABASE_URL)" in 		*/*_test?*) echo "==> integración contra BD de test: $$(redact "$(TEST_DATABASE_URL)")";; 		*) echo "ERROR: TEST_DATABASE_URL debe apuntar a una BD *_test (no a la de producción); sufijo detectado: $$(printf "%s" "$(TEST_DATABASE_URL)" | sed -E "s#.*/##")" 1>&2; exit 1;; 	esac'
+## El DSN se redacta con cmd/redactdsn (testsupport.RedactDSN), NO con un `sed`:
+## el patrón `://[^/@]*@` era evadible con un `/` en la contraseña.
+integration: $(BIN_DIR)/redactdsn
+	@sh -c 'case "$(TEST_DATABASE_URL)" in */*_test?*) echo "==> integración contra BD de test: $$($(BIN_DIR)/redactdsn "$(TEST_DATABASE_URL)")";; *) echo "ERROR: TEST_DATABASE_URL debe apuntar a una BD *_test (no a la de producción); DSN: $$($(BIN_DIR)/redactdsn "$(TEST_DATABASE_URL)")" 1>&2; exit 1;; esac'
 	@TEST_DATABASE_URL='$(TEST_DATABASE_URL)' $(MAKE) integration-run
 
 integration-run:
-	@DATABASE_URL=$(TEST_DATABASE_URL) go test -p 1 ./... -count=1 -tags=integration
+	@DATABASE_URL=$(TEST_DATABASE_URL) go test ./... -count=1 -tags=integration
+
+$(BIN_DIR)/redactdsn:
+	@mkdir -p $(BIN_DIR)
+	go build -o $(BIN_DIR)/redactdsn ./cmd/redactdsn
 
 clean:
 	rm -rf $(BIN_DIR)

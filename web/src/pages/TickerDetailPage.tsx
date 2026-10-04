@@ -191,6 +191,19 @@ const renderScore = (data: ScoreResponse) => (
       <p className="text-sm text-slate-500 dark:text-slate-400">
         <span>{fmtNumber(data.score)}/100</span> · {fmtDate(data.as_of)}
       </p>
+      {/* §26: el parameter set es la CONFIGURACIÓN que produjo este número. Sin
+          verlo, dos scores de la misma empresa (base vs conservative) son el
+          mismo número sin explicación, y comparar "el score" entre páginas no
+          significa nada. La API ya lo envía (`parameter_set`); sólo se pinta
+          cuando viene (filas de codes o de revisiones anteriores no lo tienen). */}
+      {data.parameter_set && (
+        <span
+          className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+          title="Parameter set con el que se calculó este score (§26)"
+        >
+          parameter set: {data.parameter_set}
+        </span>
+      )}
     </div>
     <p className="mt-3 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
       {data.justification}

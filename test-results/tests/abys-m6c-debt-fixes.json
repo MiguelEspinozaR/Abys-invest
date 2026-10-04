@@ -1,0 +1,179 @@
+{
+  "task_id": "abys-m6c-debt-fixes",
+  "stage": "TEST",
+  "date": "2026-10-04T02:45:00-04:00",
+  "tested_at_utc": "2026-10-04T06:45:00Z",
+  "tester": "Orquestador (ground-truth medido directamente: agente tester probado y DESCARTADO por fabricar resultados 2 veces - JSON y logs inexistentes reclamados; evidencia recogida por orquestador con logs reales en /tmp/opencode/verify-debt-1791081240). Sin commit, sin git, sin deploy. Binarios efimeros /tmp/opencode/verify-debt-1791081240/{api,analytics}, API temporal en :22047 matado; 0 procesos residuales.",
+  "verdict": "PASS",
+  "verdict_detail": "Iteracion deuda M6c (a)-(m) + delta query-NaN + writeJSONChecked (2a/2b). gofmt vacio, vet/build limpios. UNIT 522/0/0 (323 top + 199 sub, 20 paquetes). INTEGRACION sin -p 1 (make integration) x2 exit 0 sin 40P01/panic y sin credenciales en log; run -json: 676/0/1 (407 top + 269 sub, 22 paquetes) unico skip TestForceRefreshLoopbackSkips (red). npm build OK 7.30s (index-BU2xzJgo.js 209.42 kB / index-BLwLy6Nn.css = sin delta web vs M6c). gitleaks v8.30.1 no leaks found (15 commits). Smoke API temporal :22047: /health ok 14 tablas; /score/AAPL 43 manteker con pesos 0.15/0.20/0.35/0.15/0.05 (suma 0.90 = weight_used, ref. delta validacion); /compare rf=NaN -> 400 (validacion previa, antes llegaba al marshal con 200 vacio); rf=0.02 -> 200; /compare/history ZZNAN -> 404 en dev (sin fixture; el caso 500 NaN se cubre en m3_integration_test con fixture ZZNAN). CLI analytics: backtest WMT 1/1 reprod 'si'; -all-revisions 3 revisiones (1 omitida por model_version=1.1.0 sin trace 2.1.0, flag nuevo ok); MARGIN_OF_SAFETY=NaN -> WARN 'modelcfg: env float no finito, se usa el default' default=30 sin 'json: unsupported value'. Seguridad: gitleaks 0; test-results/security/abys-m6c-debt-fixes.json con 0 hard blocks (3 lows cerrados en la iteracion: Makefile rama error con redactdsn, RedactDSN descarta query string, .gitignore cubre /redactdsn y /bin/).",
+  "summary": {
+    "unit": {
+      "pass": 522,
+      "fail": 0,
+      "skip": 0,
+      "exit": 0,
+      "top_level": 323,
+      "subtests": 199
+    },
+    "integration": {
+      "pass": 676,
+      "fail": 0,
+      "skip": 1,
+      "exit": 0,
+      "top_level": 407,
+      "subtests": 269,
+      "packages_ok": 22,
+      "runs_without_p1": 2,
+      "skip_detail": {
+        "test": "TestForceRefreshLoopbackSkips",
+        "reason": "requiere red; preexistente M4c"
+      }
+    },
+    "gofmt": {
+      "clean": true,
+      "exit": 0,
+      "output": ""
+    },
+    "go_build": {
+      "ok": true,
+      "exit": 0
+    },
+    "go_vet": {
+      "ok": true,
+      "exit": 0
+    },
+    "npm_build": {
+      "ok": true,
+      "exit": 0,
+      "js": "index-BU2xzJgo.js",
+      "css": "index-BLwLy6Nn.css"
+    },
+    "secret_scan": {
+      "gitleaks_verdict": "pass",
+      "leaks": 0,
+      "security_evidence_verdict": "pass",
+      "hard_blocks": 0,
+      "lows_closed": 3
+    },
+    "info": 9,
+    "api_smoke": {
+      "endpoints_checked": 5,
+      "endpoints_ok": 5
+    }
+  },
+  "evidence": [
+    {
+      "id": "D001",
+      "name": "gofmt/vet/build",
+      "command": "gofmt -l . && go vet ./... && go build ./...",
+      "exit": 0,
+      "expected": "0 lineas / 0 errores / exit 0",
+      "actual": "0 / 0 / exit 0",
+      "ok": true
+    },
+    {
+      "id": "D002",
+      "name": "Unit tests",
+      "command": "go test -json ./... -count=1",
+      "exit": 0,
+      "expected": ">=519 pass / 0 fail / 0 skip",
+      "actual": "522 pass / 0 fail / 0 skip (323 top + 199 sub, 20 paquetes)",
+      "ok": true,
+      "details": {
+        "top_level": 323,
+        "subtests": 199,
+        "log_path": "/tmp/opencode/verify-debt-1791081240-unit.json"
+      }
+    },
+    {
+      "id": "D003",
+      "name": "Integration tests sin -p 1 (x2)",
+      "command": "make integration (x2) + go test -json -tags=integration ./... -count=1",
+      "exit": 0,
+      "expected": "verde x2 sin 40P01/panic; log sin credenciales",
+      "actual": "x2 exit 0; 0x40P01/0xpanic/0x'abys:abys' en log; run -json 676/0/1 (407 top + 269 sub, 22 paquetes); skip TestForceRefreshLoopbackSkips",
+      "ok": true,
+      "details": {
+        "top_level": 407,
+        "subtests": 269,
+        "log_paths": [
+          "/tmp/opencode/verify-debt-1791081240-int1.log",
+          "/tmp/opencode/verify-debt-1791081240-int2.log",
+          "/tmp/opencode/verify-debt-1791081240-int-json.log"
+        ]
+      }
+    },
+    {
+      "id": "D004",
+      "name": "npm build (web)",
+      "command": "cd web && npm run build",
+      "exit": 0,
+      "expected": "build exitoso",
+      "actual": "v built in 7.30s; js index-BU2xzJgo.js 209.42 kB (mismos hashes que M6c = sin delta web)",
+      "ok": true
+    },
+    {
+      "id": "D005",
+      "name": "Gitleaks full source",
+      "command": "/home/miky/go/bin/gitleaks detect --no-banner --source .",
+      "exit": 0,
+      "expected": "no leaks found",
+      "actual": "no leaks found (15 commits, 3.58 MB)",
+      "ok": true
+    },
+    {
+      "id": "D006",
+      "name": "Smoke API :22047 (temporal)",
+      "command": "API_PORT=22047 STATIC_DIR=web/dist bin temporal /tmp/opencode/verify-debt-1791081240/api (matado al final)",
+      "exit": 0,
+      "expected": "health ok 14 tablas; /score/AAPL 43; /compare rf=NaN 400; rf=0.02 200; history ZZNAN 404 (sin fixture)",
+      "actual": "health ok (14 tablas: securities 10461, scores 139, parameter_sets 2...); /score/AAPL score 43 manteker, pesos 0.15/0.20/0.35/0.15/0.05 (suma 0.90=weight_used); rf=NaN 400; rf=0.02 200; history ZZNAN 404 (dev sin fixture; caso 500 NaN cubierto en m3_integration_test fixture ZZNAN)",
+      "ok": true,
+      "details": {
+        "log_path": "/tmp/opencode/verify-debt-1791081240-smoke-api.log"
+      }
+    },
+    {
+      "id": "D007",
+      "name": "CLI backtest default y -all-revisions",
+      "command": "analytics -job backtest -tickers WMT ; + -all-revisions",
+      "exit": 0,
+      "expected": "default 1/1 reproducido; -all-revisions N>1 con omitidas por version",
+      "actual": "default: STORED 35 REPLAY 35 'si' reproducidos 1/1 (0 errores); -all-revisions: 3 revisiones, 1 omitida (model_version=1.1.0 sin trace 2.1.0), 0 errores",
+      "ok": true
+    },
+    {
+      "id": "D008",
+      "name": "MOS NaN valuation dry-run",
+      "command": "MARGIN_OF_SAFETY=NaN analytics -job valuation -dry-run -tickers MSFT",
+      "exit": 0,
+      "expected": "WARN 'no finito' + default 30; 0 'json: unsupported value'",
+      "actual": "WARN 'modelcfg: env float no finito, se usa el default' env=MARGIN_OF_SAFETY valor=NaN default=30; 0 unsupported value",
+      "ok": true
+    },
+    {
+      "id": "D009",
+      "name": "Lows de seguridad cerrados",
+      "command": "git check-ignore redactdsn bin/redactdsn; DSN sintetico key=value y URL con query password contra bin/redactdsn",
+      "exit": 0,
+      "expected": ".gitignore cubre los binarios; 0 credenciales en salida redactada",
+      "actual": "check-ignore ok en ambos; rama error de make integration imprime DSN redactado (0 matches); RedactDSN descarta query string (3 nuevos casos en dsn_test.go)",
+      "ok": true
+    }
+  ],
+  "artifacts": {
+    "log_paths": [
+      "/tmp/opencode/verify-debt-1791081240-unit.json",
+      "/tmp/opencode/verify-debt-1791081240-int1.log",
+      "/tmp/opencode/verify-debt-1791081240-int2.log",
+      "/tmp/opencode/verify-debt-1791081240-int-json.log",
+      "/tmp/opencode/verify-debt-1791081240-npm.log",
+      "/tmp/opencode/verify-debt-1791081240-gitleaks.log",
+      "/tmp/opencode/verify-debt-1791081240-smoke-api.log",
+      "/tmp/opencode/verify-debt-1791081240-bt.log",
+      "/tmp/opencode/verify-debt-1791081240-btall.log",
+      "/tmp/opencode/verify-debt-1791081240-mos.log"
+    ],
+    "security": "/home/miky/Abys-Invest/test-results/security/abys-m6c-debt-fixes.json"
+  }
+}

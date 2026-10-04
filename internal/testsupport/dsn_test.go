@@ -60,6 +60,21 @@ func TestRedactDSN(t *testing.T) {
 			input:    "host=localhost password=abc=def dbname=test",
 			expected: "host=localhost password=*** dbname=test",
 		},
+		{
+			name:     "URL with query string containing password (discards entire query)",
+			input:    "postgres://user:pass@host:5432/db?password=secret&sslmode=disable",
+			expected: "postgres://***@host:5432/db",
+		},
+		{
+			name:     "URL with innocuous query string (discards entire query)",
+			input:    "postgres://user:pass@host:5432/db?sslmode=disable",
+			expected: "postgres://***@host:5432/db",
+		},
+		{
+			name:     "URL no auth with query string (discards entire query)",
+			input:    "postgres://host:5432/db?sslmode=disable",
+			expected: "postgres://host:5432/db",
+		},
 	}
 
 	for _, tt := range tests {
@@ -73,9 +88,9 @@ func TestRedactDSN(t *testing.T) {
 }
 
 func TestEnsureTestDSN(t *testing.T) {
-	// Valid test DB URL
+	// Valid test DB URL (query string is discarded by RedactDSN)
 	redacted := EnsureTestDSN("postgres://user:pass@localhost:5432/abys_test?sslmode=disable")
-	if redacted != "postgres://***@localhost:5432/abys_test?sslmode=disable" {
+	if redacted != "postgres://***@localhost:5432/abys_test" {
 		t.Errorf("EnsureTestDSN valid: got %q", redacted)
 	}
 
