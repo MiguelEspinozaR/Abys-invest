@@ -1,0 +1,107 @@
+{
+  "scan_id": "abys-finviz-unescape",
+  "timestamp": "2026-10-05T00:00:00-04:00",
+  "range": {
+    "base_commit": "f0d9eba",
+    "head_commit": "f0d9eba",
+    "scope": "working-tree",
+    "changed_files_tracked": 3,
+    "untracked_files_reviewed": 0,
+    "files_scanned": 4,
+    "added_lines_scanned": 123,
+    "note": "Working tree sobre commit f0d9eba (task abys-finviz-unescape). Diff incluye 3 archivos modificados: internal/collect/finviz/client.go, internal/collect/finviz/client_test.go, migrations/018_fix_finviz_html_entities.sql y README.md."
+  },
+  "summary": {
+    "total_findings": 6,
+    "hard_blocks": 0,
+    "info": 4,
+    "low": 2,
+    "medium": 0,
+    "high": 0
+  },
+  "findings": [
+    {
+      "id": "SEC-FINVIZ-001",
+      "severity": "info",
+      "category": "secret_scan",
+      "file": "N/A",
+      "line": 0,
+      "description": "Gitleaks primario sobre el working tree del rango dfc2db6..HEAD (sobre el working tree de la iteración): 0 leaks. No hay secretos ni credenciales expuestas en ningún archivo modificado, ni en los fixtures de test. El scanner pasó tanto con .gitleaks.toml del proyecto como con reglas por defecto.",
+      "recommendation": "Ninguna",
+      "status": "open"
+    },
+    {
+      "id": "SEC-FINVIZ-002",
+      "severity": "info",
+      "category": "sql_safety",
+      "file": "migrations/018_fix_finviz_html_entities.sql",
+      "line": 0,
+      "description": "La migración usa cadenas literales replace() anidadas sin concatenación de input humano. El WHERE replica el mismo conjunto cerrado de entidades con regex `&(amp|lt|gt|quot|apos|nbsp|#39;)`, lo que garantiza que solo filas con entidades conocidas se tocan. No hay vectores de inyección SQL por concatenación, pero un posible advisory: si Finviz emitiera una entidad nueva no incluida en la cadena, esa fila no se descodificaría (fallo suave, no corrupción).",
+      "recommendation": "Ninguna (diseño intencional; si aparecen nuevas entidades, añadir al test de W1 y a la cadena replace).",
+      "status": "open"
+    },
+    {
+      "id": "SEC-FINVIZ-003",
+      "severity": "info",
+      "category": "data_integrity",
+      "file": "migrations/018_fix_finviz_html_entities.sql",
+      "line": 0,
+      "description": "La WHERE no coincide con NULLs (IS NULL no satisface el regex de entidades), por lo que los NULLs se dejan intactos. El mismo riesgo de 'falso positivo' existe si un ticker o símbolo legitimamente contara con `&` en su nombre, pero en práctica los tickers no contienen entidades HTML. La operación es reversible teóricamente (reemplazar '&' por '&'), pero hacerlo reintroduciría el bug original; el dato bueno es el des-escapado. No hay backup/rollback documentado en el repo para migraciones de datos, lo que es un advisory de operativa, no un bloqueo duro.",
+      "recommendation": "Considerar añadir un rollback script o documentar la reversibilidad en la cabecera de la migración; no es un hard block para este diff.",
+      "status": "open"
+    },
+    {
+      "id": "SEC-FINVIZ-004",
+      "severity": "low",
+      "category": "parser_security",
+      "file": "internal/collect/finviz/client.go",
+      "line": 0,
+      "description": "El parser usa html.UnescapeString + strings.TrimSpace sobre regex FindSubmatch sobre HTML de terceros (Finviz). La regex es precompilada y opera sobre bloques acotados; no hay bucles recursivos ni patrones que puedan causar ReDoS. El cuerpo HTML se lee como []byte de la respuesta HTTP; no hay límite de tamaño explícito en el código, pero las respuestas reales de Finviz están ordenados de varios KB a ~100 KB, bien por debajo de cualquier umbral de DoS. La regex FindSubmatch es O(n) sobre la entrada acotada. No se detecta ReDoS ni backtracking catastrófico.",
+      "recommendation": "Ninguna (el diseño es seguro; si se añaden rutas de entrada no acotadas en el futuro, añadir límite de bloqueo).",
+      "status": "open"
+    },
+    {
+      "id": "SEC-FINVIZ-005",
+      "severity": "info",
+      "category": "dependency_review",
+      "file": "go.mod",
+      "line": 0,
+      "description": "No hay cambios en go.mod o go.sum con este diff. Las dependencias permanecen inalteradas, por lo que no hay nuevas vulnerabilidades introducidas por actualizaciones de paquetes.",
+      "recommendation": "Ninguna",
+      "status": "open"
+    },
+    {
+      "id": "SEC-FINVIZ-006",
+      "severity": "info",
+      "category": "secret_analysis",
+      "file": "internal/collect/finviz/client_test.go",
+      "line": 0,
+      "description": "Los fixtures de test HTML usan nombres de entidad sintéticos (\"Oil & Gas E&P\", \"Producer's Goods\", \"Consumer & Retail\" etc.) y no contienen credenciales, tokens ni datos reales de producción. Gitleaks sobre el archivo da 0 leaks. El test cubre los casos de des-escape sin exponer información sensible.",
+      "recommendation": "Ninguna",
+      "status": "open"
+    }
+  ],
+  "closures": {
+    "gitleaks_verde": "Verificado. Gitleaks v8.30.1 sobre el working tree completo: 0 leaks con .gitleaks.toml del proyecto y 0 leaks con reglas por defecto. No hay secretos expuestos en ningún archivo modificado ni en fixtures.",
+    "sql_safety_cadena_literal": "Confirmado. La migración 018 usa replace() literal sin concatenación de input; el WHERE con regex de conjunto cerrado evita UPDATE masivo sobre filas sin entidad. No hay vector de inyección.",
+    "parser_sin_redos": "Confirmado. Las regex sectorLinkRe/industryLinkRe son FindSubmatch precompiladas; operan sobre bloques acotados. No hay ReDoS posible con patrones lineales sobre entrada finita.",
+    "sin_go_mod_changes": "Confirmado. go.mod/go.sum sin modificaciones; ninguna nueva dependencia que revisar."
+  },
+  "tool": {
+    "gitleaks": {
+      "version": "8.30.1",
+      "module": "github.com/zricethezav/gitleaks/v8 v8.30.1",
+      "path": "/home/miky/go/bin/gitleaks",
+      "status": "green",
+      "commands": [
+        "gitleaks detect --no-banner --source /home/miky/Abys-Invest -c .gitleaks.toml (0 leaks, working tree)",
+        "gitleaks detect --no-banner --source /home/miky/Abys-Invest (0 leaks, default rules)"
+      ]
+    },
+    "regex_fallback": "advisory",
+    "other": [
+      "go build ./... -> ok",
+      "go vet ./internal/collect/finviz/... -> ok"
+    ]
+  }
+}

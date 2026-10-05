@@ -1,0 +1,149 @@
+{
+  "task_id": "abys-finviz-unescape",
+  "stage": "TEST",
+  "date": "2026-10-05",
+  "tested_at_utc": "2026-10-05T12:55:35Z",
+  "tester": "orquestador (medicion directa; el agente tester fue descartado en M6c por fabricar resultados dos veces)",
+  "verdict": "PASS",
+  "verdict_detail": "Fix del parser (html.UnescapeString) y migracion 018 verificados con medicion propia: suite unit 534/0, integracion 689/0/1, 10 subcasos nuevos del parser en verde, 018 aplicada en dev (11 filas -> 0 entidades, 2a pasada UPDATE 0) y API sin entidades. Reviewer APROBATE (0 P0/P1); security scanner 0 hard blocks.",
+  "summary": {
+    "unit": {
+      "pass": 534,
+      "fail": 0,
+      "skip": 0,
+      "top_level": 325,
+      "subtests": 209,
+      "packages_resolved": 24,
+      "delta_vs_m6c": "+12 resultados (10 subcasos + 2 tests top-level nuevos de esta tarea)"
+    },
+    "integration": {
+      "pass": 688,
+      "fail": 0,
+      "skip": 1,
+      "top_level": 409,
+      "subtests": 279,
+      "packages_resolved": 25,
+      "panic_or_40p01": 0,
+      "skip_detail": {
+        "test": "TestForceRefreshLoopbackSkips",
+        "reason": "requiere red; preexistente de M4c"
+      },
+      "delta_vs_m6c": "+13 resultados"
+    },
+    "gofmt": { "clean": true, "output": "" },
+    "go_vet": { "ok": true, "exit": 0 },
+    "go_build": { "ok": true, "exit": 0 },
+    "gitleaks": { "leaks": 0, "command": "~/go/bin/gitleaks detect --no-git --redact -s .", "output": "no leaks found (~3.75 MB)" },
+    "migration_018_dev": {
+      "rows_with_entity_before": 11,
+      "rows_with_entity_after": 0,
+      "second_apply": "UPDATE 0 (idempotente)",
+      "sector_rows_changed": 0
+    },
+    "review": { "verdict": "APROBATE", "p0": 0, "p1": 0, "p2_addressed": 4, "p2_declined_out_of_scope": 2 },
+    "security": { "hard_blocks": 0, "low": 2, "info": 4, "report": "test-results/security/abys-finviz-unescape.json" },
+    "known_flake_preexisting": {
+      "test": "TestHealthConnectedAfterMigrations",
+      "rate": "1/6 corridas",
+      "cause": "cmd/api/health_integration_test.go llama storage.RunMigrations sin tomar el advisory lock de integracion y compite con los TRUNCATE de internal/storage (011 re-agrega el constraint sin guarda)",
+      "baseline": "medido 1/6 tambien sobre arbol pristine de HEAD (git archive HEAD, sin 018): no lo causa esta tarea",
+      "suggested_task": "abys-api-health-lock"
+    }
+  },
+  "evidence": [
+    {
+      "id": "F001",
+      "name": "gofmt / go vet / go build",
+      "command": "gofmt -l . && go vet ./... && go build ./...",
+      "exit": 0,
+      "expected": "0 lineas formateadas, 0 errores de vet, build OK",
+      "actual": "0 / 0 / exit 0",
+      "ok": true
+    },
+    {
+      "id": "F002",
+      "name": "Parser: casos de des-escape (subtests nuevos + existentes)",
+      "command": "go test ./internal/collect/finviz/... -count=1 -v",
+      "exit": 0,
+      "expected": "TestParseQuotePageUnescape con 10 subcasos en PASS (incluye &amp; en industria y sector, &#39;, &nbsp; colapsado por TrimSpace, &quot;/&lt;/&gt;/&apos;, doble escapado de un nivel, idempotencia con HTML plano, hexadecimal &#x26;, &amp sin punto y coma, &AMP; mayuscula) + TestParseQuotePageCategoriesSinEnlaces",
+      "actual": "10/10 subcasos PASS; PASS TestParseQuotePage, TestParseQuotePageMissing, TestGetSectorInfo, TestGetSectorInfoHTTPError; ok github.com/miky/abys-invest/internal/collect/finviz 0.010s",
+      "ok": true
+    },
+    {
+      "id": "F003",
+      "name": "Suite unitaria completa",
+      "command": "go test ./... -count=1 -json",
+      "exit": 0,
+      "expected": "0 fallos; 325 top-level + 209 subtests",
+      "actual": "534 pass / 0 fail / 0 skip en 24 paquetes resueltos",
+      "ok": true
+    },
+    {
+      "id": "F004",
+      "name": "Suite de integracion (via make integration, con advisory lock)",
+      "command": "make integration  (= DATABASE_URL=< *_test > go test ./... -count=1 -tags=integration) y corrida -json identica para el conteo",
+      "exit": 0,
+      "expected": "0 fallos, 0 panic, 0 errores 40P01",
+      "actual": "688 pass / 0 fail / 1 skip en 25 paquetes (409 top-level + 279 subtests); panic_or_40p01 = 0",
+      "ok": true
+    },
+    {
+      "id": "F005",
+      "name": "Migracion 018 aplicada en dev: filas con entidad",
+      "command": "psql -f migrations/018_fix_finviz_html_entities.sql  (BD dev, authorized)",
+      "exit": 0,
+      "expected": "UPDATE de las 11 filas measureadas; 0 filas con entidad posterior",
+      "actual": "antes 11 -> UPDATE 11 -> despues 0; valores canonicos: CAT 'Farm & Heavy Construction Machinery', COP/EOG 'Oil & Gas E&P', CVX/XOM 'Oil & Gas Integrated', GE/RTX 'Aerospace & Defense', GOOGL/META 'Internet Content & Information', PG 'Household & Personal Products', WMB 'Oil & Gas Midstream'; sector sin cambios (0 filas afectadas)",
+      "ok": true
+    },
+    {
+      "id": "F006",
+      "name": "Migracion 018 idempotente",
+      "command": "segunda aplicacion de migrations/018_fix_finviz_html_entities.sql",
+      "exit": 0,
+      "expected": "UPDATE 0 (CA-5 del plan)",
+      "actual": "UPDATE 0",
+      "ok": true
+    },
+    {
+      "id": "F007",
+      "name": "API sin entidades (air :8082, pre_cmd activo)",
+      "command": "curl http://127.0.0.1:8082/health ; curl http://127.0.0.1:8082/securities/COP ; curl http://127.0.0.1:8082/securities/XOM",
+      "exit": 0,
+      "expected": "health 200; industry en forma canonica (OJO: el JSON de Go escapa & como \\u0026, hay que decodificar antes de comparar)",
+      "actual": "health http=200; COP industry 'Oil \\u0026 Gas E\\u0026P' (decodifica a 'Oil & Gas E&P'); XOM 'Oil & Gas Integrated'; grep de entidades en la respuesta = 0",
+      "ok": true
+    },
+    {
+      "id": "F008",
+      "name": "Sin fugas de secretos en el working tree",
+      "command": "~/go/bin/gitleaks detect --no-git --redact -s .",
+      "exit": 0,
+      "expected": "no leaks found",
+      "actual": "no leaks found (~3753255 bytes, 8.97s)",
+      "ok": true
+    },
+    {
+      "id": "F009",
+      "name": "Reviewer sobre el diff (0 P0/P1)",
+      "command": "agente reviewer (APROBATE)",
+      "exit": 0,
+      "expected": "sin P0/P1",
+      "actual": "APROBATE, 6 P2 no bloqueantes: 4 corregidos en el ciclo (comentario 8->7, 3 subcasos de test, acotacion del alcance de equivalencia 018<->Go, README 14->18 migraciones con rango 001-018), 1 typo propio corregido ('el sintoma'), 2 declinados por fuera de alcance (test automatizado de la migracion, consistente con 017; normalizacion de U+00A0 interior)",
+      "ok": true
+    }
+  ],
+  "artifacts": [
+    "/tmp/opencode/fmviz-unit.json",
+    "/tmp/opencode/fmviz-int.json",
+    "/tmp/opencode/fmviz-unit3.log",
+    "/tmp/opencode/fmviz-int3.log",
+    "/tmp/opencode/fmviz-unit.log",
+    "test-results/security/abys-finviz-unescape.json"
+  ],
+  "notes": [
+    "CA-3/CA-4/CA-7 del plan se cumplieron en dev tras aplicar la 018; la migracion quedo aplicada en la BD de desarrollo (no en produccion).",
+    "El fallo del fallback a Finviz solo se registra a nivel slog.Debug (internal/collect/yahoo/update_sector.go:88,102) y el Info no declara la fuente: deuda 8.1 del plan, sugerida task abys-collector-provenance-log, FUERA de alcance.",
+    "Causa raiz de fondo externa al codigo: Yahoo devuelve HTTP 429 (rate limit por IP) desde este host; verificado con probe propio (query1 y query2, con y sin crumb, tras cooldown). El raw capture de defaultKeyStatistics.beta queda pendiente de una corrida con Yahoo disponible."
+  ]
+}

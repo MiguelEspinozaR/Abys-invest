@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -124,11 +125,18 @@ func parseQuotePage(body []byte) (*SectorInfo, error) {
 	}
 
 	var info SectorInfo
+	// Finviz sirve el HTML con las entidades escapadas (industryLinkRe captura un
+	// atributo title="...", que está escapado por definición), así que sin
+	// des-escapar se persistían literales como "Oil &amp; Gas E&P" y la API
+	// devolvía la etiqueta corrupta. El des-escape va ANTES del TrimSpace para
+	// que &nbsp; (que se convierte en un espacio U+00A0) se recorte igual que
+	// un espacio real. Se aplica a los DOS campos aunque hoy sector salga limpio:
+	// el fix es del contrato del parser, no del dato de hoy.
 	if m := sectorLinkRe.FindSubmatch(block); m != nil {
-		info.Sector = strings.TrimSpace(string(m[1]))
+		info.Sector = strings.TrimSpace(html.UnescapeString(string(m[1])))
 	}
 	if m := industryLinkRe.FindSubmatch(block); m != nil {
-		info.Industry = strings.TrimSpace(string(m[1]))
+		info.Industry = strings.TrimSpace(html.UnescapeString(string(m[1])))
 	}
 	if info.Sector == "" && info.Industry == "" {
 		return nil, ErrNoSectorInfo
