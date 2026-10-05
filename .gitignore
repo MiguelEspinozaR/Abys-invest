@@ -10,6 +10,9 @@
 # AI infrastructure (SDD artifacts live outside product history)
 /.ai/
 
+# Private, unversioned walkthrough/deck docs (decision: not in product history)
+/docs/
+
 # Go build artifacts
 *.test
 *.out
