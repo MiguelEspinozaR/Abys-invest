@@ -33,6 +33,70 @@ var conceptMap = map[string]CanonicalConcept{
 	"DepreciationAndAmortization":                         {Canonical: "depreciation_amortization", Unit: "USD", PeriodType: "duration", Priority: 2},
 	"PaymentsOfDividends":                                 {Canonical: "dividends_paid", Unit: "USD", PeriodType: "duration", Priority: 1},
 
+	// duration — interés (Az1, ADR D31).
+	//
+	// Multi-tag con prioridad MENOR-GANA: `dedupeCanonical` agrupa por
+	// `periodKey + canonical` y `newerFact` compara primero la prioridad del
+	// diccionario. La unicidad REAL es **una fila por (concepto, periodKey)**,
+	// no una fila por (concepto, periodo): `periodKey` es
+	// `periodType|end|fy|fp` (más abajo) e incluye la etiqueta de ejercicio, así
+	// que el MISMO periodo reexpresado por un 10-K posterior llega con otro
+	// `fy`/`fp` y sobrevive al dedupe como una fila más. companyfacts reexpresa
+	// el mismo start/end bajo el `fy` del filing que lo publica.
+	//
+	// Medido sobre los 44 payloads de `edgar_staging` (read-only, 2026-10-05):
+	//   * duplicados por (concepto, periodKey): 0 — la garantía se sostiene.
+	//   * filas por (concepto, `period_end`): hasta 3. Ejemplo real NVDA,
+	//     `interest_expense`, rango 2023-01-30→2024-01-28 (257 M en los tres
+	//     casos): `InterestExpense` con fy2024 (10-K 2024-02-21),
+	//     `InterestExpenseNonoperating` con fy2025 (10-K 2025-02-26) y con
+	//     fy2026 (10-K 2026-02-25).
+	//   * cobertura de los tags: InterestExpense 38, InterestExpenseNonoperating
+	//     26, InterestExpenseDebt 14, InterestAndDebtExpense 4,
+	//     InterestExpenseDebtExcludingAmortization 3.
+	//
+	// CONSECUENCIA para W4/W5: la alineación fiscal tiene que leer el par CON su
+	// `fy`/`fp`, no sólo por `period_end` (ADR D31.3), o empareja el interés
+	// reexpresado de un ejercicio viejo con el EBIT de otro.
+	//
+	// EXCLUIDOS a propósito (tienen test negativo en concepts_test.go):
+	//   - `InterestIncomeExpenseNet` (7/44): es el resultado NETO de interés e
+	//     ingreso y puede ser NEGATIVO (WMT FY2024); `interest_coverage` espera
+	//     un interés BRUTO y un denominador con signo ambiguo daría un ratio
+	//     invertido en lugar de `nil`.
+	//   - Las variantes de contexto (`SegmentReportingInformationInterestExpense`,
+	//     `FinanceLeaseInterestExpense`, `InterestExpenseTradingLiabilities`, …)
+	//     no son el gasto de interés consolidado: se mapearían como un subtotal.
+	"InterestExpense":                          {Canonical: "interest_expense", Unit: "USD", PeriodType: "duration", Priority: 1},
+	"InterestExpenseNonoperating":              {Canonical: "interest_expense", Unit: "USD", PeriodType: "duration", Priority: 2},
+	"InterestAndDebtExpense":                   {Canonical: "interest_expense", Unit: "USD", PeriodType: "duration", Priority: 3},
+	"InterestExpenseDebt":                      {Canonical: "interest_expense", Unit: "USD", PeriodType: "duration", Priority: 4},
+	"InterestExpenseDebtExcludingAmortization": {Canonical: "interest_expense", Unit: "USD", PeriodType: "duration", Priority: 5},
+
+	// duration — impuesto sobre la renta (Az1, ADR D31).
+	// Medido: IncomeTaxExpenseBenefit 44/44, …ContinuingOperations 8/44.
+	// EXCLUIDOS: los COMPONENTES (`Deferred*`, `Current*`, `Federal*`,
+	// `StateAndLocal*`, `Foreign*`, `Other*`, …) y los de reconciliación
+	// (`IncomeTaxReconciliation*`, `TaxCutsAndJobsActOf2017*`): sumar o elegir un
+	// componente NO es el impuesto total y abriría un doble conteo. Los P2/P3
+	// (`SegmentReportingInformation*`, `DiscontinuedOperation*`) son subtotales.
+	"IncomeTaxExpenseBenefit":                     {Canonical: "income_tax_expense", Unit: "USD", PeriodType: "duration", Priority: 1},
+	"IncomeTaxExpenseBenefitContinuingOperations": {Canonical: "income_tax_expense", Unit: "USD", PeriodType: "duration", Priority: 2},
+
+	// duration — resultado antes de impuestos (Az1, ADR D31).
+	// Medido: …ExtraordinaryItemsNoncontrollingInterest 36/44,
+	// …MinorityInterestAndIncomeLossFromEquityMethodInvestments 31/44,
+	// ResultsOfOperationsIncomeBeforeIncomeTaxes 2/44.
+	// EXCLUIDOS: `IncomeLossFromContinuingOperationsBeforeIncomeTaxesForeign`
+	// (38/44) y `…Domestic` (36/44) son el desglose GEOGRÁFICO del mismo total
+	// (sumarlos sería el total, elegir uno sería un subtotal);
+	// `DiscontinuedOperation*`/`DisposalGroupIncluding*`/
+	// `SegmentReportingInformationIncomeLossBeforeIncomeTaxes` tampoco son el
+	// total consolidado.
+	"IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest":                 {Canonical: "pretax_income", Unit: "USD", PeriodType: "duration", Priority: 1},
+	"IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments": {Canonical: "pretax_income", Unit: "USD", PeriodType: "duration", Priority: 2},
+	"ResultsOfOperationsIncomeBeforeIncomeTaxes":                                                                  {Canonical: "pretax_income", Unit: "USD", PeriodType: "duration", Priority: 3},
+
 	// instant — balance
 	"Assets":                                 {Canonical: "total_assets", Unit: "USD", PeriodType: "instant", Priority: 1},
 	"Liabilities":                            {Canonical: "total_liabilities", Unit: "USD", PeriodType: "instant", Priority: 1},

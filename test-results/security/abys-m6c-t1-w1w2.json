@@ -1,0 +1,88 @@
+{
+  "task_id": "abys-m6c-t1-interest-tax",
+  "scan_timestamp": "2026-10-05T09:27:00Z",
+  "working_tree": "/home/miky/Abys-Invest",
+  "diff_surface": {
+    "modified_files": [
+      {
+        "path": "internal/collect/edgar/concepts.go",
+        "change_type": "MODIFIED",
+        "lines_added": 47,
+        "lines_removed": 0,
+        "description": "Added 10 new XBRL concept entries mapping InterestExpense variants (5 tags), IncomeTaxExpenseBenefit variants (2 tags), and pretax_income variants (3 tags) to canonical names interest_expense, income_tax_expense, pretax_income. All with Unit: USD, PeriodType: duration, Priorities 1-5."
+      },
+      {
+        "path": "internal/collect/edgar/concepts_test.go",
+        "change_type": "MODIFIED",
+        "lines_added": 264,
+        "lines_removed": 0,
+        "description": "Updated dictionary assertion from 20→23 concepts, added 3 new required concepts (interest_expense, income_tax_expense, pretax_income), and added 5 new test functions: TestM6cT1InterestTaxTagsMapped, TestM6cT1ExcludedInterestTaxTags, TestM6cT1UnitMustBeUSD, TestM6cT1PriorityOrderInterestTax, TestM6cT1DedupeOneRowPerConceptAndPeriod."
+      },
+      {
+        "path": "internal/storage/db_test.go",
+        "change_type": "MODIFIED",
+        "lines_added": 4,
+        "lines_removed": 4,
+        "description": "Updated assertion from concepts != 20 to concepts != 23, with comment documenting the 20 original + 3 M6c-T1 additions."
+      },
+      {
+        "path": "README.md",
+        "change_type": "MODIFIED",
+        "lines_added": 1,
+        "lines_removed": 1,
+        "description": "Updated xbrl_concept_map concept count from 20 to 23, noting the 3 M6c-T1 concepts from migration 019."
+      }
+    ],
+    "new_files": [
+      {
+        "path": "migrations/019_insert_interest_tax_concept_map.sql",
+        "change_type": "NEW FILE",
+        "lines_added": 101,
+        "lines_removed": 0,
+        "description": "Contains 3 INSERT ... ON CONFLICT (xbrl_concept, canonical_name) DO NOTHING statements for interest_expense, income_tax_expense, and pretax_income. No DDL, no backfill, no dynamic SQL. Idempotent by design."
+      }
+    ]
+  },
+  "migration_019_analysis": {
+    "is_static": true,
+    "has_input_concatenation": false,
+    "on_conflict": "ON CONFLICT (xbrl_concept, canonical_name) DO NOTHING",
+    "conflict_matches_constraint": true,
+    "constraint": "uq_xbrl_concept_map UNIQUE (xbrl_concept, canonical_name)",
+    "notes_content_safe": true,
+    "integrity_risks": {
+      "can_duplicate_rows": false,
+      "can_corrupt_catalog": false,
+      "is_reversible": true,
+      "reversal_method": "DELETE FROM xbrl_concept_map WHERE xbrl_concept IN ('interest_expense','income_tax_expense','pretax_income')"
+    },
+    "risk_level": "low",
+    "rationale": "Uses existing unique constraint, idempotent DO NOTHING, no DDL, reversible via targeted DELETE. No backfill required."
+  },
+  "data_privacy": {
+    "xbrl_tags_public_usgaap": true,
+    "no_secrets_or_pii_in_tests": true,
+    "fixtures_no_credentials": true,
+    "confirmed_no_secret_exposure": true
+  },
+  "parser_canonicalzer": {
+    "change_is_catalog_only": true,
+    "no_new_deserialization_surface": true,
+    "no_new_evaluation_surface": true,
+    "normalize_go_untouched": true,
+    "rationale": "All changes are entries in the concept dictionary (concepts.go). The EDGAR parser, normalizer, and dedupe logic in normalize.go are not modified."
+  },
+  "dependencies": {
+    "go_mod_changed": false,
+    "go_sum_changed": false,
+    "package_json_changed": false,
+    "no_new_dependencies": true
+  },
+  "classification": {
+    "hard_blocks": 0,
+    "low_severity": 0,
+    "info": 0,
+    "verdict": "no hard blocks",
+    "summary": "Scan complete: no exposed secrets (gitleaks: no leaks found), no risky SQL, catalog-only changes, no dependency changes. All findings are low-info or neutral. Migration 019 is safe: static SQL, constraint-matched ON CONFLICT, reversible."
+  }
+}

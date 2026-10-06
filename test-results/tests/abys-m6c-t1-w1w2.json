@@ -1,0 +1,201 @@
+{
+  "task_id": "abys-m6c-t1-interest-tax",
+  "block": "W1+W2",
+  "stage": "TEST",
+  "date": "2026-10-06",
+  "tested_at_utc": "2026-10-06T00:22:20Z",
+  "tester": "orquestador (medicion directa de gofmt/vet/build, suites y binding; migracion 019 verificada de forma independiente por builder y reviewer)",
+  "verdict": "PASS",
+  "verdict_detail": "W1 (catalogo XBRL de 10 tags para interest_expense/income_tax_expense/pretax_income) y W2 (migracion 019 con 3 filas en xbrl_concept_map, sin DDL) implementados, revisados y verdes. Reviewer APROBATE con un P1 de registro (la unicidad real es por (concepto, periodKey), no por (concepto, periodo)) que fue corregido antes de commitear, junto con 6 P2. Security scanner: 0 hard blocks. CA-1 y CA-2 (reformulado) cumplidos; CA-9 y CA-11 quedan para el cierre de la task.",
+  "summary": {
+    "gofmt": {
+      "clean": true,
+      "output": ""
+    },
+    "go_vet": {
+      "ok": true,
+      "output": ""
+    },
+    "go_build": {
+      "ok": true,
+      "output": ""
+    },
+    "edgar_package": {
+      "pass": 39,
+      "fail": 0,
+      "output": "ok github.com/miky/abys-invest/internal/collect/edgar 1.640s"
+    },
+    "unit_suite": {
+      "packages_ok": 20,
+      "packages_fail": 0,
+      "note": "go test ./... -count=1; baseline previo a W1/W2 = 534 resultados medidos (325 top + 209 sub); el builder midio 539 PASS tras anadir los 5 tests nuevos"
+    },
+    "integration_binding_test": {
+      "test": "TestM6cT1ConceptMapMatchesGoDictionary",
+      "command": "DATABASE_URL=<abys_test> go test ./internal/collect/edgar/... -tags=integration -run 'TestConceptMap|TestM6cT1' -v",
+      "exit": 0,
+      "actual": "--- PASS: TestM6cT1ConceptMapMatchesGoDictionary (0.18s) + los 5 tests de catalogo en PASS",
+      "scope": "solo lectura sobre abys_test; la BD de desarrollo (abys) no se escribio"
+    },
+    "migration_019": {
+      "target": "abys_test unicamente (verificado por builder y re-verificado de forma independiente por el reviewer)",
+      "catalog_before": 20,
+      "catalog_after": 23,
+      "second_pass": "INSERT 0 0 (idempotente)",
+      "on_conflict_form": "ON CONFLICT (xbrl_concept, canonical_name) DO NOTHING",
+      "constraint_verified": "uq_xbrl_concept_map UNIQUE (xbrl_concept, canonical_name)",
+      "ddl": false,
+      "backfill": false,
+      "dev_db_untouched": true,
+      "reversible_with": "DELETE de las 3 filas"
+    },
+    "tag_spelling_correction": {
+      "finding": "El plan (Az1) escribia InterestExpenseNonOperating; el tag us-gaap real es InterestExpenseNonoperating",
+      "measured_on_edgar_staging": {
+        "InterestExpenseNonoperating": 26,
+        "InterestExpenseNonOperating": 0
+      },
+      "other_tags_confirmed_by_reviewer": {
+        "InterestExpense": 38,
+        "InterestAndDebtExpense": 4,
+        "InterestExpenseDebt": 14,
+        "InterestExpenseDebtExcludingAmortization": 3,
+        "IncomeTaxExpenseBenefit": 44,
+        "IncomeTaxExpenseBenefitContinuingOperations": 8,
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest": 36,
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments": 31,
+        "ResultsOfOperationsIncomeBeforeIncomeTaxes": 2
+      },
+      "excluded_tags_confirmed": {
+        "InterestIncomeExpenseNet": 7,
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesForeign": 38,
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomestic": 36,
+        "EffectiveIncomeTaxRateContinuingOperations": 41
+      },
+      "guard": "caso negativo explicito en TestM6cT1ExcludedInterestTaxTags para que una 'correccion' a la grafia del plan falle el test en vez de perder 5 emisores en silencio"
+    },
+    "review": {
+      "verdict": "APROBATE (W1/W2)",
+      "p0": 0,
+      "p1": 1,
+      "p1_summary": "La garantia 'una fila por (concepto, periodo)' era falsa: periodKey = periodType|end|fy|fp incluye la etiqueta de ejercicio, y companyfacts reexpresa el mismo start/end bajo el fy del filing posterior (hasta 3 filas por (concepto, period_end); NVDA con fy2024/fy2025/fy2026). Preexistente del proyecto (dev: 4513 combinaciones concepto x period_end con >1 fila), no introducido por W1",
+      "p1_corrections_applied": [
+        "comentario de concepts.go reescrito a la verdad: unicidad por (concepto, periodKey), con el ejemplo NVDA medido",
+        "ADR D31 corregido: la reexpresion es por diseno y la alineacion de W4/W5 debe leer el par con su fy/fp",
+        "CA-2 del plan reformulado: GROUP BY concept, period_end, fiscal_year, fiscal_period HAVING count(*)>1 -> 0 filas, con nota de que el agregado por period_end a secas devuelve filas por diseno",
+        "test de unicidad tautologico sustituido por TestM6cT1DedupeOneRowPerConceptAndPeriodKey, que documenta el comportamiento real",
+        "dimension fy registrada como deuda para W4"
+      ],
+      "p2_corrections_applied": [
+        "P2-2: test de integracion que liga el catalogo Go con xbrl_concept_map (canonicos + unit_expected + los 10 tags de Az1 presentes en notes)",
+        "P2-3: .ai/decisions/README.md documenta la convencion (desde D31 un fichero por ADR; las secciones ADR de planes anteriores son historicas)",
+        "P2-4: backtick huerfano corregido en ADR D32",
+        "P2-5: alcance de ADR D31 corregido a (W1, W2, W4, W5)",
+        "P2-7: MCD y SPG quedaran sin pretax_income (solo desglose geografico excluido) -> degradan a configured con motivo, no es bug",
+        "P2-8: la cobertura ~33/36 excluye a CAT, GEV y XOM por limitacion de la fuente, no del catalogo"
+      ],
+      "p2_accepted": [
+        "P2-6: toque de README.md:866 (20 -> 23 concepts) aceptado como correccion factual minima en el mismo commit que cambia el conteo; el resto del README es de W8"
+      ]
+    },
+    "security": {
+      "hard_blocks": 0,
+      "report": "test-results/security/abys-m6c-t1-w1w2.json",
+      "note": "SQL estatico sin concatenacion, sin DDL, sin dependencias nuevas, sin secretos; gitleaks sin leaks"
+    }
+  },
+  "evidence": [
+    {
+      "id": "W1E1",
+      "name": "Formato, vet y build",
+      "command": "gofmt -l . && go vet ./... && go build ./...",
+      "exit": 0,
+      "expected": "0 lineas formateadas, 0 errores, build OK",
+      "actual": "0 / 0 / 0",
+      "ok": true
+    },
+    {
+      "id": "W1E2",
+      "name": "Tests del paquete EDGAR (catalogo + dedupe)",
+      "command": "go test ./internal/collect/edgar/... -count=1 -v",
+      "exit": 0,
+      "expected": "0 fallos, incluidos los 5 tests nuevos de M6c-T1",
+      "actual": "PASS=39 FAIL=0; ok github.com/miky/abys-invest/internal/collect/edgar 1.640s",
+      "ok": true
+    },
+    {
+      "id": "W1E3",
+      "name": "Suite unitaria completa sin regresion",
+      "command": "go test ./... -count=1",
+      "exit": 0,
+      "expected": "0 paquetes con FAIL",
+      "actual": "20 paquetes ok, 0 FAIL",
+      "ok": true
+    },
+    {
+      "id": "W1E4",
+      "name": "Binding catalogo Go <-> tabla xbrl_concept_map (CA-2 reformulado, P2-2)",
+      "command": "DATABASE_URL=<abys_test> go test ./internal/collect/edgar/... -tags=integration -run 'TestConceptMap|TestM6cT1' -v",
+      "exit": 0,
+      "expected": "PASS del binding (canonicos + unit_expected + tags en notes) y de los 5 tests de catalogo",
+      "actual": "--- PASS: TestM6cT1ConceptMapMatchesGoDictionary (0.18s); PASS de TestM6cT1InterestTaxTagsMapped, TestM6cT1ExcludedInterestTaxTags, TestM6cT1UnitMustBeUSD, TestM6cT1PriorityOrderInterestTax, TestM6cT1DedupeOneRowPerConceptAndPeriodKey",
+      "ok": true
+    },
+    {
+      "id": "W1E5",
+      "name": "Grafia del tag de interes P2 (CA-1)",
+      "command": "consulta read-only sobre edgar_staging (44 payloads)Contrastada por el builder y re-verificada por el reviewer",
+      "exit": 0,
+      "expected": "que la grafia usada exista en los payloads reales",
+      "actual": "InterestExpenseNonoperating = 26 emisores; InterestExpenseNonOperating = 0. Se usa la grafia real y se fija con caso negativo",
+      "ok": true
+    },
+    {
+      "id": "W1E6",
+      "name": "Evidencia del P1: unicidad real por (concepto, periodKey)",
+      "command": "simulacion del dedupe sobre los 44 payloads de edgar_staging (read-only)",
+      "exit": 0,
+      "expected": "0 duplicados por (concepto, periodKey); duplicados por (concepto, period_end) presentes por diseno",
+      "actual": "duplicados por (ticker, canonico, period_end, fy, fp) = 0; duplicados por (ticker, canonico, period_end) = 2096. Ejemplo NVDA interest_expense mismo rango con fy2024/fy2025/fy2026",
+      "ok": true
+    },
+    {
+      "id": "W1E7",
+      "name": "Migracion 019 en abys_test (idempotencia y contenido)",
+      "command": "TestRunMigrationsIdempotent + \\i del archivo dentro de BEGIN ... ROLLBACK (ejecutado por el builder; re-verificado por el reviewer)",
+      "exit": 0,
+      "expected": "catalogo 20 -> 23; segunda pasada no-op",
+      "actual": "--- PASS: TestRunMigrationsIdempotent (0.23s); 23 filas, INSERT 0 3 en la 1a pasada e INSERT 0 0 en la 2a, mismos ids, rollback al estado previo; unit_expected='USD' en las 3",
+      "ok": true
+    },
+    {
+      "id": "W1E8",
+      "name": "BD de desarrollo intacta",
+      "command": "SELECT read-only sobre abys",
+      "exit": 0,
+      "expected": "xbrl_concept_map sigue en 20 filas y fundamentals sin filas del trio",
+      "actual": "xbrl_concept_map=20 (max_id=20), filas de la 019 en dev=0, fundamentals del trio=0, edgar_staging=44",
+      "ok": true
+    },
+    {
+      "id": "W1E9",
+      "name": "Revision del diff (W1/W2)",
+      "command": "agente reviewer",
+      "exit": 0,
+      "expected": "0 P0/P1 sin condicion",
+      "actual": "APROBATE con 1 P1 (falsedad de la garantia de unicidad, registrada y corregida antes de commitear) y 6 P2 (4 corregidos, 2 aceptados con razon). El reviewer verifico por su cuenta los conteos de tags, la constraint uq_xbrl_concept_map, la idempotencia de la 019 y el orden real de dedupeCanonical (prioridad primero, menor-gana)",
+      "ok": true
+    }
+  ],
+  "artifacts": [
+    "migrations/019_insert_interest_tax_concept_map.sql",
+    "internal/collect/edgar/conceptmap_integration_test.go",
+    "test-results/security/abys-m6c-t1-w1w2.json"
+  ],
+  "notes": [
+    "CA-1 cumplido (10 tags de Az1 mapeados, unit USD, duration, prioridad 1..5, exclusiones con test negativo). CA-2 cumplido en su forma reformulada: una fila por (concepto, period_end, fiscal_year, fiscal_period).",
+    "La deduplicacion por (concepto, periodKey) es lo que evita el doble conteo de dos tags del MISMO periodo; el agregado por period_end a secas sigue devolviendo filas por la reexpresion en 10-K posteriores (preexistente en todo el proyecto).",
+    "El pendiente de W3: fundamentals no tiene filas del trio hasta la reingesta; hasta ahi interest_coverage sigue nil y tax_rate_source sigue configured.",
+    "Deuda registrada para W4: leer el par alineado usando tambien fy/fp, no solo period_end."
+  ]
+}

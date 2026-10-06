@@ -130,8 +130,10 @@ func TestRunMigrationsIdempotent(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM xbrl_concept_map`).Scan(&concepts); err != nil {
 		t.Fatalf("query xbrl_concept_map falló: %v", err)
 	}
-	if concepts != 20 {
-		t.Fatalf("diccionario canónico: se esperaban 20 conceptos, hay %d", concepts)
+	// 23 = los 20 conceptos canónicos de la migración 005 + los 3 del trío
+	// M6c-T1 de la 019 (interest_expense, income_tax_expense, pretax_income).
+	if concepts != 23 {
+		t.Fatalf("diccionario canónico: se esperaban 23 conceptos, hay %d", concepts)
 	}
 }
 

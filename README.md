@@ -863,7 +863,7 @@ Ver arriba en la sección §14. Resumen:
 | `securities` | Catalog of listed companies (ticker, CIK, name, type, sector, industry, **beta, beta_updated_at** — M6a, migración 011) |
 | `fundamentals` | Normalized XBRL facts (canonical dictionary) |
 | `edgar_staging` | Raw SEC EDGAR payloads awaiting normalization |
-| `xbrl_concept_map` | XBRL → canonical concept mapping dictionary (20 concepts) |
+| `xbrl_concept_map` | XBRL → canonical concept mapping dictionary (23 concepts; los 3 de M6c-T1 en la migración 019) |
 | `daily_prices` | Daily OHLCV series from Yahoo Finance (source='yahoo'); hypertable si TimescaleDB |
 | `macro_series` | Macro observations (series_code, date, value, unit, frequency, source); hypertable si TimescaleDB |
 | `derived_metrics` | Materialized metrics (EPS, P/E, P/B, P/FCF, PEG, ROE, D/E, FCF Yield) con inputs_snapshot JSONB |
