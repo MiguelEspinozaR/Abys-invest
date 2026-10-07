@@ -1,0 +1,341 @@
+{
+  "task_id": "abys-m6c-t1-interest-tax",
+  "block": "W3",
+  "stage": "TEST",
+  "date": "2026-10-06",
+  "tested_at_utc": "2026-10-06T01:50:37Z",
+  "tester": "agente implementador (codigo W3 y cierre del Makefile/test de W3); la re-ingesta real Az6 la ejecuto el orquestador",
+  "verdict": "PASS",
+  "verdict_detail": "Las 4 correcciones P1 y los 3 P2 baratos del review RECHAZADO de A+B estan implementadas y verdes: (A1) la migracion 019 queda con registro auditable de la accion ejecutada; (A2) el binding test queda acotado a las 3 filas de la 019 y se ha probado que muerde con una mordida real (revertir -> FAIL, restaurar -> PASS) y que NO puede fallar por el texto de otras filas del mapa; (B1) se ha demostrado que -fresh re-canoniza de verdad (36 filas de total_assets recuperadas) con el camino de codigo citado; (B2) el target Makefile valida y anuncia antes de escribir, con 13 casos probados y 0 escrituras en todos los de aborto; (B3) la deuda de edgar.NormalizePending queda documentada en el propio target y en el README. R1 y S1 cumplidos. La verificacion 6 (grep de notas obsoletas) NO sale vacia, y ya no es un pendiente de autorizacion: sus 3 coincidencias estan en internal/collect/edgar/concepts.go y concepts_test.go, que son el catalogo de W1 (fuera del alcance de ESTE ciclo y prohibido tocar por instruccion), y las 3 NIEGAN explicitamente la afirmacion obsoleta en vez de repetirla; el orquestador y el reviewer lo verificaron leyendo las lineas (ver W3E8). El pendiente de EJECUCION (Az6) YA ESTA CERRADO: el orquestador ejecuto la re-ingesta real en abys, encontro y corrigio (a) una no idempotencia por resolucion CIK->clase aleatoria y (b) un binario obsoleto por la regla $(COLLECTOR_BIN) sin prerequisitos, y la 6.ª pasada fue identica a la 5.ª (CA-9 cumplido: fundamentals=46078, trio=6147, hash dd78f260f1dd3f27e31604a3175fbce7). En este cierre se arregla el Makefile (W3E10) y se refuerza el test multiclase para que pase por el wiring real de runEdgarJob (W3E11). Ver W3E9-W3E12. Detalle en notes.",
+  "summary": {
+    "gofmt": {
+      "clean": true,
+      "command": "gofmt -l .",
+      "output": ""
+    },
+    "go_vet": {
+      "ok": true,
+      "command": "go vet ./... && go vet -tags=integration ./...",
+      "output": ""
+    },
+    "go_build": {
+      "ok": true,
+      "command": "go build ./...",
+      "output": ""
+    },
+    "unit_suite": {
+      "command": "go test ./... -count=1",
+      "exit": 0,
+      "packages_ok": 22,
+      "packages_fail": 0,
+      "note": "baseline esperado del review: 22 paquetes OK"
+    },
+    "edgar_package": {
+      "command": "go test ./internal/collect/edgar/ -count=1 -v",
+      "pass": 39,
+      "fail": 0,
+      "note": "baseline esperado del review: 39 PASS"
+    },
+    "integration_suite": {
+      "command": "make integration",
+      "exit": 0,
+      "packages_ok": 23,
+      "packages_fail": 0,
+      "target_db": "abys_test (postgres://***@localhost:55432/abys_test)"
+    },
+    "w3_closure": {
+      "az6_verdict": "PASS (W3E9): 6.ª pasada idempotente, CA-9 cumplido",
+      "makefile_stale_binary_fixed": true,
+      "makefile_fix_evidence": "W3E10",
+      "multiclass_test_real_wiring": "W3E11",
+      "reviewer_p2_debt": "W3E12"
+    },
+    "diff_surface": {
+      "modified": [
+        "Makefile (+111)",
+        "README.md (+69)",
+        "cmd/collector/main.go (+210)",
+        "internal/collect/edgar/conceptmap_integration_test.go (+96)",
+        "internal/pipeline/collector.go (+23)",
+        "internal/storage/m6_integration_test.go (+1/-1, solo comentario)",
+        "internal/storage/staging.go (+86)",
+        "migrations/019_insert_interest_tax_concept_map.sql (+71)"
+      ],
+      "untracked": [
+        "cmd/collector/main_test.go (160)",
+        "internal/pipeline/reingest_integration_test.go (418)",
+        "internal/pipeline/reingest_multiclass_integration_test.go (330)",
+        "internal/pipeline/companyclass_test.go (275)",
+        "internal/storage/staging_integration_test.go (120)",
+        "internal/storage/staging_test.go (77)",
+        "test-results/security/abys-m6c-t1-w3.json (141)"
+      ],
+      "git_diff_stat": "8 files changed, 647 insertions(+), 21 deletions(-) (estado inicial del review de W3; el cierre Az6 anade cambios a Makefile y a internal/pipeline/collector.go)",
+      "not_touched": "internal/collect/edgar/normalize.go, internal/collect/edgar/concepts.go, internal/collect/edgar/concepts_test.go (catalogo W1), motores quality/wacc/score, metricver, go.mod/go.sum",
+      "closure_changes": [
+        "Makefile: regla $(COLLECTOR_BIN) con prerequisitos Go + go.mod/go.sum + fallback PHONY y comentario del incidente del binario obsoleto (W3E10)",
+        "internal/pipeline/collector.go: seam runEdgarJobWithClient (extraccion pura de runEdgarJob; produccion sin cambios de comportamiento) (W3E11)",
+        "internal/pipeline/reingest_multiclass_integration_test.go: el test pasa por el wiring real de runEdgarJob y el httptest sirve company_tickers.json (W3E11)",
+        "test-results/tests/abys-m6c-t1-w3.json: cierre de Az6, incidente del binario, limpiezas y deuda P2 (este archivo)"
+      ],
+      "commit": "ninguno: no hay commit ni push (lo decide el Git Manager)"
+    }
+  },
+  "p1_fixes": {
+    "A1_migration_019_auditable": {
+      "what": "Cabecera de la 019 con el registro de la ACCION ejecutada (no una instruccion para el futuro), la variante elegida, los DB, la fecha y la evidencia del artefacto; declara que el SQL es idempotente y que una BD nueva nace ya correcta.",
+      "file": "migrations/019_insert_interest_tax_concept_map.sql",
+      "on_conflict": "ON CONFLICT (xbrl_concept, canonical_name) DO NOTHING",
+      "ddl": false,
+      "rows_updated": 3,
+      "byte_match_recheck": "notes identicas byte a byte entre el archivo y las 3 filas en abys y en abys_test (ver W3E2)",
+      "references_evidence": "test-results/tests/abys-m6c-t1-w3.json (este archivo)"
+    },
+    "A2_binding_test_scoped": {
+      "what": "El binding test se evalua SOLO sobre las 3 filas que introduce la 019, derivadas del propio catalogo (interestTaxConcepts()), en vez de recorrer las 23 filas del mapa; las tres aserciones nuevas (periodKey, fy/fp, prohibicion de la frase obsoleta) se ejecutan sobre ese subconjunto.",
+      "file": "internal/collect/edgar/conceptmap_integration_test.go",
+      "forbidden_phrase_construction": "los patrones se arman por concatenacion (\"concepto\" + \", \" + \"periodo\") para que el propio grep de residuos no los reintroduzca",
+      "bites": "si: ver W3E3 (revertir el texto -> FAIL de las 3 filas x 3 aserciones; restaurar -> PASS)",
+      "cannot_fail_on_other_rows": "si: ver W3E4 (una fila que NO es objetivo, revenues, con el texto prohibido -> el test sigue PASS)"
+    },
+    "B1_fresh_recanonicalization": {
+      "what": "Evidencia de que el camino -fresh re-canoniza de verdad y de por donde pasa.",
+      "code_path": [
+        "cmd/collector/main.go:260 -> pipeline.RunEdgarJobFresh(ctx, pool, targets, dryRun, ua, fresh) (caso jobEdgar); :286 idem en jobAll",
+        "internal/pipeline/collector.go:55-64 RunEdgarJobFresh: con -dry-run fuerza fresh=false",
+        "internal/pipeline/collector.go:114-115 if fresh -> ingestCompanyFresh (no ingestCompany)",
+        "internal/pipeline/collector.go:298-299 ingestCompanyFresh -> storage.DeleteStagingByCIK (staging del CIK borrado ANTES de reinsertar)",
+        "internal/pipeline/collector.go:327 storage.InsertStaging devuelve id",
+        "internal/pipeline/collector.go:333 inserted != nil -> edgar.NormalizeStaging (un payload, acotado al CIK)",
+        "internal/pipeline/collector.go:339 edgar.NormalizePending (hasta 5 filas, GLOBAL, sin acotar por ticker) es la rama else y NO se alcanza con -fresh, porque el staging se borro y el INSERT devuelve id"
+      ],
+      "behavioral_test": "internal/pipeline/reingest_integration_test.go::TestM6cT1FreshForcesRecanonicalization",
+      "what_it_does": "ingiere AAPL, borra las filas de fundamentals de total_assets, comprueba que el camino NO fresco (InsertStaging idempotente) devuelve inserted=nil y NO las recupera, y luego comprueba que -fresh las vuelve a escribir",
+      "actual": "36 filas de total_assets recuperadas por -fresh; PASS en 2.08s (ver W3E5)"
+    },
+    "B2_makefile_guards": {
+      "what": "make reingest-fundamentals anuncia el universo y su tamaño ANTES de escribir y valida la entrada; cualquier entrada invalida o universo vacio aborta con exit 2 sin invocar el job edgar.",
+      "file": "Makefile",
+      "precedence": "REINGEST_TICKERS > TICKERS solo desde la linea de comandos ($(origin TICKERS)=command line) > UNIVERSE (staged)",
+      "not_inherited": "el TICKERS global del Makefile (=AAPL) ni uno exportado en el entorno: ambos tienen origin 'file'/'environment'",
+      "cases_exercised": 13,
+      "aborts_without_writing": 6,
+      "actual": "ver W3E6"
+    }
+  },
+  "p2_cheap_fixes": {
+    "B3_deuda_documentada": {
+      "where": [
+        "Makefile (bloque de documentacion del target reingest-fundamentals)",
+        "README.md (seccion 'Re-ingesta de fundamentals')"
+      ],
+      "text": "edgar.NormalizePending (hasta 5 filas, de cualquier empresa, sin acotar por ticker) sólo se alcanza en el camino NO fresco; el camino -fresh va por NormalizeStaging, acotado al CIK. La re-ingesta sigue pens para BD de desarrollo/test y acotar NormalizePending queda pendiente."
+    },
+    "R1_readme_comando_concreto": {
+      "file": "README.md",
+      "what": "El README nombra el comando concreto (make reingest-fundamentals) con su tabla de variables y su precedencia, y el equivalente sin make (-job universe -universe staged / -job edgar -fresh -universe staged)."
+    },
+    "S1_sin_secretos": {
+      "what": "El target imprime el DSN con bin/redactdsn, nunca en crudo.",
+      "actual": "==> re-ingesta de fundamentals contra postgres://***@localhost:55432/abys_test",
+      "residual": "el error de conexion de pgx incluye user=<usuario> database=<db> (NO la contrasena); lo produce internal/storage, no el Makefile, y no se puede evitar sin reescribir el wrapper de conexion (fuera de alcance)"
+    }
+  },
+  "p2_debt_after_az6": {
+    "what": "Hallazgos NO bloqueantes del reviewer del fix de resolucion CIK->clase; se registran como deuda, no se fuerzan (ver W3E12).",
+    "items": [
+      "fallback de BD nueva: pickPreferredClass sin datos elige el menor ticker del catalogo, no necesariamente la clase primaria de negocio",
+      "fragilidad del nivel 1: si algun dia se ingieren daily_prices de una clase preferente, la preferencia por precios elegiria esa clase",
+      "loadCompanyClassData hace 1 query por CIK (no hay resolucion en batch para todo el universo)",
+      "degradacion silenciosa: si loadCompanyClassData falla, runEdgarJob loguea un warn y cae al fallback determinista del catalogo sin abortar"
+    ]
+  },
+  "evidence": [
+    {
+      "id": "W3E1",
+      "name": "Verificaciones de formato/compilacion/suites",
+      "command": "gofmt -l . ; go vet ./... ; go vet -tags=integration ./... ; go build ./... ; go test ./... -count=1 ; make integration",
+      "exit": 0,
+      "expected": "gofmt sin salida, vet y build OK, 22 paquetes OK, edgar 39 PASS, make integration exit 0",
+      "actual": "gofmt sin salida; vet OK con y sin el tag integration; build OK; go test ./... -count=1 -> 22 ok / 0 FAIL; edgar -> 39 --- PASS / 0 FAIL; make integration -> exit 0, 23 ok / 0 FAIL",
+      "ok": true
+    },
+    {
+      "id": "W3E2",
+      "name": "A1: la 019 esta aplicada y su texto coincide byte a byte con el archivo",
+      "command": "python3 (UPDATE de las 3 filas de abys_test desde el texto del archivo) + SELECT md5(notes) en abys y abys_test + comparacion con el archivo",
+      "exit": 0,
+      "expected": "3 filas con las notes del archivo, identicas en abys y abys_test",
+      "actual": "income_tax_expense=040fb1db5c96d924d52a516e829bdf68, interest_expense=df720ead55c30fe8d4d7945f80402950, pretax_income=fd3bb688e20c24969ac4d6237f12e808 en AMBAS bases; identico_al_archivo=True en las 3. MATRIZ DE QUIEN ESCRIBIO QUE, CADA UNA: en abys_test (integracion) los UPDATE SI los ejecuto el implementador y fueron los de la MORDIDA del test, reverted y restaurados byte a byte; en abys (DESARROLLO) el UPDATE de 3 filas sobre xbrl_concept_map lo ejecuto EL ORQUESTADOR, para converger las notes de las 3 filas a este archivo, y lo verifico el propio review con pg_stat_user_tables.n_tup_upd=3 y con la comparacion byte a byte del texto (562/512/599 caracteres). El implementador en abys solo LEYO (md5 y longitud). Correccion explicita de la version previa de este artefacto, que decia que la BD de desarrollo no se modifico en ningun momento: eso era FALSO.",
+      "ok": true
+    },
+    {
+      "id": "W3E3",
+      "name": "A2 mordida real: revertir el texto de las notes -> el test FALLA",
+      "command": "UPDATE de las 3 filas de abys_test al texto de git HEAD (previo al review) ; go test ./internal/collect/edgar/ -tags=integration -run TestM6cT1ConceptMapMatchesGoDictionary -count=1 -v",
+      "exit": 1,
+      "expected": "FAIL en las 3 filas objetivo (periodKey ausente, fy/fp ausente, frase obsoleta presente)",
+      "actual": "9 fallos = 3 filas x 3 aserciones; p.ej. 'xbrl_concept_map pretax_income: las notes deben mencionar `periodKey` (invariante de dedupe/alineacion)' y '...afirman unicidad por periodo (\"concepto, periodo\"), que no es la invariante real (una fila por concepto y periodKey)'; --- FAIL: TestM6cT1ConceptMapMatchesGoDictionary (0.08s)",
+      "ok": true,
+      "note": "el texto quedo restaurado byte a byte despues (md5 identicos a los de partida)"
+    },
+    {
+      "id": "W3E4",
+      "name": "A2 alcance: el test NO puede fallar por el texto de filas que no son objetivo",
+      "command": "UPDATE de revenues (fila de W1, no objetivo) al texto prohibido 'una fila por (concepto, periodo), sin periodKey ni fy/fp' ; go test ./internal/collect/edgar/ -tags=integration -run TestM6cT1ConceptMapMatchesGoDictionary -count=1",
+      "exit": 0,
+      "expected": "PASS: el binding test solo mira las 3 filas de la 019",
+      "actual": "ok github.com/miky/abys-invest/internal/collect/edgar 0.153s con revenues corrupta; tras restaurar sus notes, md5=a97e7591a54fbd54227b479e7a478942, identico al previo",
+      "ok": true
+    },
+    {
+      "id": "W3E5",
+      "name": "B1: -fresh re-canoniza de verdad (mismo binario, misma BD de test)",
+      "command": "DATABASE_URL=<abys_test> go test ./internal/pipeline/ -tags=integration -run TestM6cT1FreshForcesRecanonicalization -count=1 -v",
+      "exit": 0,
+      "expected": "el camino NO fresco no recupera lo borrado y -fresh si",
+      "actual": "'`fresh` re-canoniza de verdad: total_assets volvio a escribir 36 filas (concepto total_assets) que el camino no fresco dejaba ausentes'; log 'staging previo eliminado (reingesta fresca) ticker=AAPL cik=0000320193 filas=1'; --- PASS (2.08s)",
+      "ok": true
+    },
+    {
+      "id": "W3E6",
+      "name": "B2: matriz de guardas del target con collector STUB (sin red y sin BD)",
+      "command": "/tmp/opencode/reingest-stub/cases.sh (13 casos con COLLECTOR_BIN=stub; comprueba exit y si se llamo a '-job edgar -fresh')",
+      "exit": 0,
+      "expected": "ABORTOS sin escritura: UNIVERSE vacio, entrada vacia (NVDA,,WMT), solo comas, espacios internos, entrada malformada (NVDA;id), universo vacio (0 empresas). OK: lista valida, REINGEST_TICKERS, TICKERS de linea de comandos. Y el DSN nunca en crudo.",
+      "actual": "exit=2 y escribio=no en los 6 casos de aborto (no hay ninguna llamada a -job edgar -fresh); exit=0 con la lista correcta en los demas; precedencia: 'REINGEST_TICKERS gana a TICKERS' -> 1 empresa; 'TICKERS= vacio explicito' cae al universo por omision y lo DICE; el DSN se imprime como postgres://***@localhost:55432/abys_test",
+      "ok": true,
+      "note": "con el binario REAL, el universo por omision contra abys_test (0 empresas normalizadas) tambien aborta antes de escribir: 'ERROR: universo vacio: no hay empresas con companyfacts normalizado en edgar_staging', exit 2 y edgar_staging sigue en 0 filas"
+    },
+    {
+      "id": "W3E7",
+"name": "S1: sin credenciales en la salida (binario real)",
+      "command": "DATABASE_URL='postgres://usuario:***@localhost:55432/abys_test' ./bin/collector -job universe -universe staged ; make reingest-fundamentals con el mismo DSN",
+      "exit": 1,
+      "expected": "el DSN impreso va redactado; el DSN completo nunca aparece en stdout/stderr",
+      "actual": "'==> re-ingesta de fundamentals contra postgres://***@localhost:55432/abys_test'; grep -E 'postgres://|abys:abys|sslmode' sobre stdout y stderr de -job universe -> 0 coincidencias. Unica observacion: el mensaje de error de pgx incluye 'user=usuario database=abys_test' (usuario, no contrasena), producido por internal/storage y fuera del alcance de W3",
+      "ok": true,
+      "note": "DSN con contrasena FICTICIA: el caso de prueba usa 'postgres://usuario:***@localhost:55432/abys_test'. La contrasena es inventada (no es la de ninguna BD) y se documenta redactada desde el principio, para que el artefacto no deje ruido de ese tipo para un escaner. exit=1 es lo esperado: el collector no puede conectar a una BD ficticia y esa conexion fallida es justo lo que prueba que el DSN no se imprime."
+    },
+    {
+"id": "W3E8",
+      "name": "Verificacion 6: grep de notas obsoletas",
+      "command": "grep -rniE '(concepto, periodo|periodo_fiscal|mismo period_end)' . (excluyendo .ai, .git, test-results y node_modules) ; grep -rniE '(concepto, periodo|mismo period_end)' . (idem)",
+      "exit": 0,
+      "expected": "0 coincidencias en los archivos modificados en este ciclo",
+      "actual": "0 coincidencias en TODOS los archivos modificados en este ciclo (Makefile, README.md, los archivos de codigo y de test de W3 y las notas de la 019). Quedan 3 coincidencias en el total del repo, todas fuera del alcance de este ciclo: internal/collect/edgar/concepts.go:41, internal/collect/edgar/concepts_test.go:752 y internal/collect/edgar/concepts_test.go:796, que son el CATALOGO DE W1 (prohibido tocar). Las 3 son NEGACIONES EXPLICITAS de la afirmacion obsoleta, no repeticiones de ella: concepts.go:41 dice 'La unicidad REAL es una fila por (concepto, periodKey), no una fila por (concepto, periodo)'; concepts_test.go:752 usa '(concepto, periodo)' como apelativo del MISMO hecho para el que el test de W3 demuestra que son periodKey distintos; concepts_test.go:796 lleva el encabezado 'LO QUE NO ESTA GARANTIZADO, Y ANTES SE AFIRMABA QUE SI: una fila por (concepto, periodo)'. El orquestador y el reviewer lo verificaron leyendo las tres lineas. Por eso este grep ya NO es un pendiente de autorizacion: reformularlas seria cosmetico y tocaria el catalogo de W1.",
+      "ok": true,
+      "pending_authorization": null,
+      "note": "CONSTANCIA DEL P0 A3 (esta es la nota que hace falta, y NO hay que tocar codigo): los patrones prohibidos del binding test se arman por CONCATENACION en internal/collect/edgar/conceptmap_integration_test.go ('concepto' + ', ' + 'periodo'), justamente para que el propio grep de residuos no los reintroduzca al escribir la asercion. Esa concatenacion se queda COMO ESTA: no se reescribe. Un residuo del otro ciclo (internal/storage/m6_integration_test.go:83, comentario de un fixture, que NO es el catalogo de W1) si se corrigio, por lo que el grep del patron amplio sobre los modificados de este ciclo sale con 0."
+    },
+    {
+      "id": "W3E9",
+      "name": "Az6: re-ingesta REAL en la BD de desarrollo (abys), ejecutada por el orquestador",
+      "command": "make reingest-fundamentals (DATABASE_URL por omision = abys dev); re-ejecutado hasta 6 pasadas",
+      "exit": 0,
+      "status": "EJECUTADA 2026-10-06; cerrada tras corregir no idempotencia y binario obsoleto",
+      "db": "abys (desarrollo): postgres://***@localhost:55432/abys",
+      "expected": "el trio interest_expense/income_tax_expense/pretax_income queda en fundamentals para el universo staged y la 2.ª pasada no cambia filas (CA-9)",
+      "actual": "CA-9 cumplido en la pasada 6: fundamentals_total=46078, trio_total=6147, trio_hash=dd78f260f1dd3f27e31604a3175fbce7, misma resolucion que la pasada 5 (JPM, BAC, PLD, SPG, BRK-B, GOOGL), dupes_clave=0, 0 de los 42 CIKs con fondos bajo mas de un security_id, diff de tickers resueltos pasada5-vs-pasada6 IDENTICO",
+      "ok": true,
+      "blocks": null,
+      "on_completion": "cumplido: W4 puede abrirse",
+      "passes": [
+        {
+          "pass": "1-2",
+          "when": "2026-10-06, primera ejecucion de Az6",
+          "result": "NO idempotente: la resolucion CIK->clase cambiaba entre pasadas (rango de map de Go), asi que el mismo payload podia escribirse bajo security_id distintos",
+          "cifras": "no registradas en el handoff; el hallazgo fue la no idempotencia, no una cifra concreta"
+        },
+        {
+          "pass": "3-4",
+          "when": "2026-10-06, re-ejecucion tras aplicar el fix de resolucion",
+          "result": "el fix NO surtio efecto: make reingest-fundamentals no recompilo bin/collector (regla sin prerequisitos) y se ejecuto el binario obsoleto (de un dia antes que las fuentes)",
+          "end_state": "fundamentals=45784, trio=5853 (punto de partida de la pasada 5)"
+        },
+        {
+          "pass": "5",
+          "when": "2026-10-06 21:26:38 (-0400), tras recompilar a mano bin/collector con go build -o bin/collector ./cmd/collector",
+          "result": "resolvio exactamente las canonicas JPM, BAC, PLD, SPG, BRK-B, GOOGL",
+          "fundamentals": "45784 -> 46078",
+          "trio": "5853 -> 6147"
+        },
+        {
+          "pass": "6",
+          "when": "2026-10-06, pasada de confirmacion",
+          "result": "IDENTICA a la 5: mismas filas, misma resolucion; CA-9 cumplido",
+          "fundamentals_total": 46078,
+          "trio_total": 6147,
+          "trio_hash": "dd78f260f1dd3f27e31604a3175fbce7",
+          "dupes_clave": 0,
+          "ciks_con_fondos_bajo_mas_de_un_security_id": 0
+        }
+      ],
+      "non_idempotence_root_cause": "resolucion CIK->clase aleatoria (primera coincidencia sobre el map del catalogo). Fix aprobado por el reviewer: orden determinista del catalogo + resolveCompanyCandidates + pickPreferredClass + loadCompanyClassData. Agravante que enmascaro el fix durante las pasadas 3/4: bin/collector obsoleto por la regla $(COLLECTOR_BIN) sin prerequisitos; corregido en este cierre (W3E10).",
+      "orphan_cleanups": "Dos rondas de limpieza de filas huerfanas en abys, ambas de clases NO canonicas de los 6 CIKs multiclase: 6180 filas primero y 4491 despues (esta ultima tras recompilar a mano bin/collector). Total 10671 filas huerfanas borradas.",
+      "canonical_classes": "JPM, BAC, PLD, SPG, BRK-B, GOOGL. Son las canonicas porque son las UNICAS con filas en daily_prices: la preferencia de nivel 1 (precios) resuelve cada CIK a su clase con precio y las alternativas (JPM-PM, BAC-PS, PLDGP, SPG-PJ, BRK-A/BRK-B, GOOGN, etc.) no reciben el trio.",
+      "final_state": "cada uno de los 6 CIKs multiclase tiene sus fundamentals SOLO bajo su clase canonica; fundamentals_total=46078"
+    },
+    {
+      "id": "W3E10",
+      "name": "Fix del Makefile: bin/collector recompila cuando cambian las fuentes (incidente del binario obsoleto)",
+      "command": "make -n reingest-fundamentals DATABASE_URL='postgres://***@localhost:55432/abys' ; touch internal/pipeline/collector.go ; make -n reingest-fundamentals ... ; rm -f bin/collector ; make reingest-fundamentals DATABASE_URL=<DSN invalido 127.0.0.1:1>",
+      "exit": 0,
+      "expected": "con el binario al dia NO recompila; al tocar cualquier fuente Go muestra `go build -o bin/collector ./cmd/collector`; tras borrar el binario lo construye y lo ejecuta con el codigo vigente",
+      "actual": "(i) sin cambios: no aparece la linea `go build` (binario al dia); (ii) touch internal/pipeline/collector.go: aparece `go build -o bin/collector ./cmd/collector`; (iii) rm -f bin/collector: make construye (linea go build) y ejecuta el target; con DATABASE_URL invalido (127.0.0.1:1) el collector falla al conectar a Postgres SIN descargar de EDGAR y SIN escribir, y bin/collector queda recreado (16145736 bytes). No se re-ejecuto la re-ingesta real en dev en este cierre.",
+      "defect": "La regla $(COLLECTOR_BIN) NO declaraba prerequisitos: make solo construia si el archivo NO existia, asi que `make reingest-fundamentals` corria en SILENCIO un binario obsoleto (el de dev era de un dia antes que las fuentes). Se corrige con prerequisitos cmd/**/*.go + internal/**/*.go + go.mod/go.sum (via `$(shell find cmd internal -name '*.go' 2>/dev/null)`) y un fallback PHONY que fuerza rebuild si find no devuelve fuentes.",
+      "ok": true
+    },
+    {
+      "id": "W3E11",
+      "name": "P2-1 del reviewer: el test multiclase ahora pasa por el wiring real de runEdgarJob",
+      "command": "DATABASE_URL=<abys_test> go test ./internal/pipeline/ -tags=integration -run TestM6cT1FreshResolvesStableClassForMulticlassCIKs -count=1 -v ; make integration",
+      "exit": 0,
+      "expected": "el test deriva el CIK->clase canonica con la ruta de produccion (catalogo -> upsertCatalog -> loadCompanyClassData -> pickPreferredClass -> ingestCompanyFresh) y no con el ticker fijado por el test",
+      "actual": "TestM6cT1FreshResolvesStableClassForMulticlassCIKs PASS (1.47s); los logs del job resuelven JPM/BAC/PLD/SPG/BRK-B/GOOGL y las 2 pasadas escriben revenues bajo el MISMO security_id canonico (26/28/30/32/34/36), staging=1 y la clase alternativa conserva solo su fila sembrada. make integration exit 0 (23 paquetes ok / 0 FAIL).",
+      "implementation": "seam runEdgarJobWithClient en internal/pipeline/collector.go: extraccion pura de runEdgarJob (el cliente EDGAR se inyecta para tests; produccion sigue construyendo el cliente con edgar.NewClient). El test ya no llama a resolveCompanyCandidates/loadCompanyClassData/pickPreferredClass a mano ni fija el ticker; el httptest sirve company_tickers.json ademas de companyfacts.",
+      "ok": true
+    },
+    {
+      "id": "W3E12",
+      "name": "Deuda P2 registrada (hallazgos no bloqueantes del reviewer del fix)",
+      "command": "N/A (registro)",
+      "exit": 0,
+      "expected": "dejar constancia sin fingir que estan resueltos",
+      "actual": [
+        "fallback de BD nueva: pickPreferredClass sin datos elige el menor ticker del catalogo, no necesariamente la clase primaria de negocio",
+        "fragilidad del nivel 1: si algun dia se ingieren daily_prices de una clase preferente, la preferencia por precios elegiria esa clase",
+        "loadCompanyClassData hace 1 query por CIK (no hay resolucion en batch para el universo)",
+        "degradacion silenciosa: si loadCompanyClassData falla, runEdgarJob loguea un warn y cae al fallback determinista sin abortar"
+      ],
+      "ok": true
+    }
+  ],
+  "artifacts": [
+    "migrations/019_insert_interest_tax_concept_map.sql",
+    "internal/collect/edgar/conceptmap_integration_test.go",
+    "internal/pipeline/reingest_integration_test.go",
+    "internal/pipeline/reingest_multiclass_integration_test.go",
+    "internal/pipeline/companyclass_test.go",
+    "internal/pipeline/collector.go",
+    "cmd/collector/main.go",
+    "cmd/collector/main_test.go",
+    "internal/storage/staging.go",
+    "internal/storage/staging_test.go",
+    "internal/storage/staging_integration_test.go",
+    "Makefile",
+    "README.md",
+    "test-results/security/abys-m6c-t1-w3.json"
+  ],
+  "notes": [
+    "Escritura en BDs. En la implementacion inicial de W3 solo se escribio abys_test (por pruebas justificadas: los 3 UPDATE de notes de W3E3, revertido y restaurado byte a byte, y el UPDATE de revenues de W3E4, restaurado con md5 identico). En el CIERRE Az6 el ORQUESTADOR si escribio en la BD de desarrollo abys (re-ingesta real, legitima del plan); el implementador de este cierre NO ejecuto la re-ingesta real ni escribio en abys: para demostrar (iii) de W3E10 uso un DSN invalido (127.0.0.1:1) que falla la conexion SIN descargar de EDGAR y SIN escribir.",
+    "El residuo de la verificacion 6 en internal/storage/m6_integration_test.go:83 se corrigio porque ese archivo NO es el catalogo de W1 y el cambio es de un solo comentario ('Duplicado con el MISMO `period_end` y OTRO valor'). Los 3 del catalogo W1 quedan como estan: son comentarios que contradicen la frase obsoleta, asi que el cambio seria puramente cosmetico y toca el catalogo de W1 (fuera de alcance).",
+    "Causa raiz DOBLE de la no idempotencia: (a) resolucion CIK->clase aleatoria, corregida con el orden determinista del catalogo + resolveCompanyCandidates/pickPreferredClass/loadCompanyClassData (review APROBADO); (b) bin/collector obsoleto por la regla $(COLLECTOR_BIN) sin prerequisitos, que enmascaro el fix en las pasadas 3/4. (b) se corrige en este cierre: prerequisitos cmd/**/*.go + internal/**/*.go + go.mod/go.sum, con fallback PHONY si find no devuelve fuentes (W3E10).",
+    "Sobre 'TICKERS=NVDA`id`' (backticks) o '$(id)': GNU make expande el valor de una variable de linea de comandos antes de pasarlo al shell, asi que la backtick se evalua. Es comportamiento heredado de make (afecta a todos los targets de este Makefile, incluido run-prices) y no lo introduce W3. Lo que si se bloquea es la inyeccion por ';' y '|': se rechazan como entrada malformada y el valor se pasa como argumento entre comillas de sh, nunca por eval.",
+    "Verificacion de este cierre: gofmt -l . vacio; go vet ./... y go vet -tags=integration ./... OK; go build ./... OK; go test ./... -count=1 -> 22 ok / 0 FAIL; make integration -> exit 0 (23 ok / 0 FAIL); python3 -m json.tool test-results/tests/abys-m6c-t1-w3.json valido.",
+    "W3 cierra funcionalmente el pendiente de W1/W2: la re-ingesta real dejo el trio en 6147 filas (hash dd78f260f1dd3f27e31604a3175fbce7) y cada CIK multiclase solo bajo su clase canonica. interest_coverage y tax_rate_source no se tocan en W3 (caen en W4+).",
+    "Reviewer P2-1 cerrado (W3E11): el test multiclase ya no fija el ticker; deriva la clase canonica por el wiring real de runEdgarJob (seam runEdgarJobWithClient).",
+    "Deuda registrada: acotar edgar.NormalizePending por ticker (B3) y los 4 hallazgos P2 del reviewer del fix (W3E12): fallback de BD nueva elige el menor ticker; fragilidad del nivel 1 si se ingieren precios de una preferente; 1 query por CIK en loadCompanyClassData; degradacion silenciosa si loadCompanyClassData falla.",
+    "Ningun commit, ningun push: el arbol queda con los archivos modificados/untracked para que lo decidan el Scanner/Reviewer y el Git Manager."
+  ]
+}

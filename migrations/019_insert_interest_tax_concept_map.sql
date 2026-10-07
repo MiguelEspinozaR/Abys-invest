@@ -44,6 +44,71 @@
 -- canonizador. Es idempotente y trazable por construcción: el `source_fact_id`
 -- que acaba en `fundamentals` es el del tag que el canonizador eligió.
 --
+-- EL DEDUPE ES POR `periodKey`, NO POR PERIODO. `dedupeCanonical`
+-- (internal/collect/edgar/normalize.go) agrupa por
+-- `periodKey + canonical`, con `periodKey = periodType|end|fy|fp`, y `newerFact`
+-- desempata primero por la prioridad del diccionario: la unicidad real es UNA
+-- fila por (concepto, periodKey). NO es una fila por (concepto, `period_end`):
+-- ese agregado devuelve filas POR DISEÑO, porque companyfacts reexpresa el
+-- mismo rango bajo el `fy`/`fp` del filing que lo publica. Caso medido (NVDA,
+-- `interest_expense`, rango 2023-01-30→2024-01-28, 257 M en los tres casos):
+-- `InterestExpense` con fy2024 (10-K 2024-02-21), `InterestExpenseNonoperating`
+-- con fy2025 (10-K 2025-02-26) y con fy2026 (10-K 2026-02-25). Por eso la
+-- lectura del par en la alineación fiscal (W4/W5) tiene que alinear con
+-- `fy`/`fp` ADEMÁS de `period_end`: emparejar sólo por `period_end` cruzaría el
+-- interés reexpresado de un ejercicio viejo con el EBIT de otro. Es la misma
+-- invariante que documenta el comentario del catálogo en
+-- internal/collect/edgar/concepts.go, y la comprueba el test de binding
+-- internal/collect/edgar/conceptmap_integration_test.go.
+--
+-- ESTA MIGRACIÓN NO ES AUTO-CONVERGENTE (a propósito), Y CÓMO SE RESUELVE ESO.
+-- El `ON CONFLICT ... DO NOTHING` de abajo significa que una instancia que YA
+-- aplicó estas tres filas con otro texto de `notes` conserva el texto antiguo,
+-- aunque este archivo se corrija: las `notes` son documentación y no cambian la
+-- conducta de nada, así que hacerlas converger automáticamente exigiría un
+-- `DO UPDATE` que reescribiría filas ya revisadas. Y aquí no se pone ninguna
+-- lógica: la migración sigue siendo declarativa e idempotente.
+--
+-- VÍA ELEGIDA: REFERENCIA AL ARTEFACTO QUE REGISTRA LA EJECUCIÓN REAL (no un
+-- simple "aplica este UPDATE a mano", que no es auditable). El registro vive
+-- fuera de la migración, en:
+--
+--     test-results/tests/abys-m6c-t1-w3.json   (evidencia de W3)
+--
+-- con el comando exacto y la salida real de cada verificación. Estado a
+-- 2026-10-06, que es lo que ese artefacto sostiene:
+--
+--   * `abys` (BD de desarrollo): UN `UPDATE` que afectó 3 filas, y verificación
+--     byte a byte del texto guardado contra el `INSERT` de este archivo
+--     (`md5(notes)` idéntico en los tres conceptos).
+--   * `abys_test` (BD de integración): mismo `UPDATE`, misma verificación byte a
+--     byte.
+--   * Producción: NO aplicada, y no es un olvido. En este entorno no hay ninguna
+--     otra BD (ni local ni remota), así que estas dos son todas las instancias
+--     existentes; el rollout en un entorno con más BDs es manual (abajo).
+--   * Una BD creada desde cero por `RunMigrations` ya nace con el texto correcto
+--     (es el `INSERT` de más abajo) y NO necesita el `UPDATE`.
+--
+-- CÓMO SE EJECUTA (comando literal, sobre la BD que se quiera converger):
+--
+--     psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "UPDATE xbrl_concept_map
+--       SET notes = '<texto vigente del INSERT de la fila correspondiente>'
+--       WHERE xbrl_concept IN
+--         ('interest_expense','income_tax_expense','pretax_income');"
+--
+-- El texto a copiar es el de las tres filas del `INSERT` de este archivo, tal
+-- cual (sin comillas simples dentro; no las lleva). Cuando el rollout tenga que
+-- aplicarse en más de una instancia, el orden es: aplicar este archivo primero
+-- (idempotente, no-op si las filas ya estaban) y después el `UPDATE`, para que
+-- ninguna copia del texto quede desfasada respecto al archivo.
+--
+-- CÓMO SE COMPRUEBA QUE HAY QUE CONVERGER (el criterio es objetivo y está
+-- automatizado): el binding test `TestM6cT1ConceptMapMatchesGoDictionary`
+-- (internal/collect/edgar/conceptmap_integration_test.go) falla si las `notes`
+-- de esas tres filas no mencionan `periodKey` o si afirman la unicidad por
+-- periodo. Verde = convergida; rojo = falta el `UPDATE` (o el texto copiado no
+-- es el vigente).
+--
 -- LA FORMA DEL `ON CONFLICT`. `ON CONFLICT (xbrl_concept, canonical_name)` casa
 -- EXACTAMENTE con la constraint real de la 005,
 -- `uq_xbrl_concept_map UNIQUE (xbrl_concept, canonical_name)` (verificado en
@@ -81,9 +146,9 @@
 
 INSERT INTO xbrl_concept_map (xbrl_concept, canonical_name, unit_expected, notes) VALUES
     ('interest_expense', 'interest_expense', 'USD',
-     'XBRL (duration, USD), prioridad menor-gana por (concepto, periodo) según ADR D31: InterestExpense (P1), InterestExpenseNonoperating (P2), InterestAndDebtExpense (P3), InterestExpenseDebt (P4), InterestExpenseDebtExcludingAmortization (P5). EXCLUIDO: InterestIncomeExpenseNet (neto, puede ser negativo: no es gasto bruto) y las variantes de contexto/segmento. Se lee del mismo period_end que operating_income (ADR D31: alineación fiscal)'),
+     'XBRL (duration, USD), prioridad menor-gana por (concepto, periodKey) según ADR D31: InterestExpense (P1), InterestExpenseNonoperating (P2), InterestAndDebtExpense (P3), InterestExpenseDebt (P4), InterestExpenseDebtExcludingAmortization (P5). periodKey = periodType|end|fy|fp; la unicidad real es una fila por (concepto, periodKey). EXCLUIDO: InterestIncomeExpenseNet (neto, puede ser negativo: no es gasto bruto) y las variantes de contexto/segmento. La lectura del par en la alineación fiscal debe incluir fy/fp además de period_end (ADR D31: alineación fiscal)'),
     ('income_tax_expense', 'income_tax_expense', 'USD',
-     'XBRL (duration, USD), prioridad menor-gana por (concepto, periodo) según ADR D31: IncomeTaxExpenseBenefit (P1), IncomeTaxExpenseBenefitContinuingOperations (P2). EXCLUIDOS los COMPONENTES Deferred*/Current*/Federal*/StateAndLocal*/Foreign* (doble conteo) y las variantes de segmento/operaciones discontinuadas. Se lee del mismo period_end que pretax_income (ADR D32: una sola fuente de impuestos)'),
+     'XBRL (duration, USD), prioridad menor-gana por (concepto, periodKey) según ADR D31: IncomeTaxExpenseBenefit (P1), IncomeTaxExpenseBenefitContinuingOperations (P2). periodKey = periodType|end|fy|fp; la unicidad real es una fila por (concepto, periodKey). EXCLUIDOS los COMPONENTES Deferred*/Current*/Federal*/StateAndLocal*/Foreign* (doble conteo) y las variantes de segmento/operaciones discontinuadas. La lectura del par fiscal debe alinear con fy/fp además de period_end (ADR D32: una sola fuente de impuestos)'),
     ('pretax_income', 'pretax_income', 'USD',
-     'XBRL (duration, USD), prioridad menor-gana por (concepto, periodo) según ADR D31: IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest (P1), IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments (P2), ResultsOfOperationsIncomeBeforeIncomeTaxes (P3). EXCLUIDOS IncomeLossFromContinuingOperationsBeforeIncomeTaxesForeign/Domestic (desglose geográfico, no el total). Denominador de la tasa fiscal observada de ADR D32')
+     'XBRL (duration, USD), prioridad menor-gana por (concepto, periodKey) según ADR D31: IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest (P1), IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments (P2), ResultsOfOperationsIncomeBeforeIncomeTaxes (P3). periodKey = periodType|end|fy|fp; la unicidad real es una fila por (concepto, periodKey). EXCLUIDOS IncomeLossFromContinuingOperationsBeforeIncomeTaxesForeign/Domestic (desglose geográfico, no el total). Denominador de la tasa fiscal observada de ADR D32')
 ON CONFLICT (xbrl_concept, canonical_name) DO NOTHING;

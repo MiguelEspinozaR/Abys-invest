@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 )
@@ -296,6 +297,14 @@ type CompanyTicker struct {
 }
 
 // ParseCompanyTickers decodes the SEC company_tickers.json payload.
+//
+// The SEC payload is a JSON object keyed by an integer string, so the natural
+// Go type is map[string]CompanyTicker; a map range has RANDOM order in every
+// Go run. The returned slice is sorted stably (CIK asc, then ticker asc) so
+// any "first match" over it is reproducible between runs: a multiclass CIK
+// (JPM, BAC, BRK, ...) must resolve to the same class in every corrida,
+// otherwise a re-ingesta (`-fresh`) can write fundamentals under a DIFFERENT
+// security_id each pass (P0 CA-9 de W3).
 func ParseCompanyTickers(data []byte) ([]CompanyTicker, error) {
 	var raw map[string]CompanyTicker
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -309,5 +318,11 @@ func ParseCompanyTickers(data []byte) ([]CompanyTicker, error) {
 		e.CIKString = fmt.Sprintf("%010d", e.CIK)
 		out = append(out, e)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CIK != out[j].CIK {
+			return out[i].CIK < out[j].CIK
+		}
+		return out[i].Ticker < out[j].Ticker
+	})
 	return out, nil
 }

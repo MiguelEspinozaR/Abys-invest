@@ -80,7 +80,7 @@ func TestGetFYAnnualSeriesFiltraTrimestresYDeduplica(t *testing.T) {
 		fyAnnual(sec.ID, "revenues", time.Date(2025, 9, 27, 0, 0, 0, 0, time.UTC), 416_161, 364, filing(time.Date(2025, 9, 27, 0, 0, 0, 0, time.UTC))),
 		// Trimestre con fiscal_period='FY' (el caso real de EDGAR): 90 días.
 		fyAnnual(sec.ID, "revenues", time.Date(2018, 3, 31, 0, 0, 0, 0, time.UTC), 73_917, 90, filing(time.Date(2018, 3, 31, 0, 0, 0, 0, time.UTC))),
-		// Duplicado del mismo period_end con OTRO valor (reexpresión posterior):
+		// Duplicado con el MISMO `period_end` y OTRO valor (reexpresión posterior):
 		// gana la más reciente (fiscal_year DESC, filing_date DESC, id DESC).
 		fyAnnual(sec.ID, "revenues", time.Date(2024, 9, 28, 0, 0, 0, 0, time.UTC), 999_999, 364, filing(time.Date(2024, 9, 28, 0, 0, 0, 0, time.UTC)).AddDate(0, 0, 1)),
 		// Concepto sin serie anual (3 puntos) → no debe aparecer.

@@ -264,6 +264,59 @@ func TestParseCompanyTickersInvalid(t *testing.T) {
 	}
 }
 
+// TestParseCompanyTickersDeterministicOrder es la garantía (a) del fix P0
+// CA-9/W3: el catálogo se devuelve ORDENADO (CIK asc, luego ticker asc) aunque
+// el payload venga desordenado, porque el rango sobre map[string]CompanyTicker
+// es ALEATORIO en cada corrida de Go. Se reparte el mismo payload con entradas
+// de los DOS TICKERS del mismo CIK separadas y clases fuera de orden, se
+// parsea 100 veces y se exige el mismo orden exacto en todas.
+func TestParseCompanyTickersDeterministicOrder(t *testing.T) {
+	data := []byte(`{"7":{"cik_str":1067983,"ticker":"BRK-B","title":"Berkshire Hathaway Inc."},
+		"3":{"cik_str":1652044,"ticker":"GOOGL","title":"Alphabet Inc."},
+		"9":{"cik_str":1067983,"ticker":"BRK-A","title":"Berkshire Hathaway Inc."},
+		"5":{"cik_str":1652044,"ticker":"GOOG","title":"Alphabet Inc."},
+		"0":{"cik_str":320193,"ticker":"AAPL","title":"Apple Inc."}}`)
+
+	wantOrder := []string{"AAPL", "BRK-A", "BRK-B", "GOOG", "GOOGL"} // CIK asc, ticker asc
+
+	var first []string
+	for i := 0; i < 100; i++ {
+		got, err := ParseCompanyTickers(data)
+		if err != nil {
+			t.Fatalf("parse %d: %v", i, err)
+		}
+		if len(got) != len(wantOrder) {
+			t.Fatalf("parse %d: %d tickers, se esperaban %d", i, len(got), len(wantOrder))
+		}
+		seq := make([]string, len(got))
+		for j := range got {
+			seq[j] = got[j].Ticker
+			if got[j].Ticker != wantOrder[j] {
+				t.Fatalf("parse %d: orden inestable en [%d]: got %q, want %q (secuencia %q). "+
+					"El orden del catálogo debe ser determinista (CIK asc, ticker asc)",
+					i, j, got[j].Ticker, wantOrder[j], wantOrder)
+			}
+		}
+		if first == nil {
+			first = seq
+		} else if !slicesEqual(first, seq) {
+			t.Fatalf("parse %d: el slice difiere del primer parseo: %v vs %v", i, seq, first)
+		}
+	}
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestNormalizeCIK(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"320193", "0000320193"},

@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -90,6 +92,90 @@ func MarkStagingNormalized(ctx context.Context, q DBTX, id int64) error {
 		return fmt.Errorf("storage: mark staging %d normalized: row not found", id)
 	}
 	return nil
+}
+
+// StagedNormalizedCIKsSQL is the READ-ONLY selector of the default re-ingest
+// universe (plan M6c-T1 W3, Az6): the CIKs whose `company_facts` payload is
+// already in `edgar_staging` AND normalized, i.e. exactly the companies whose
+// `fundamentals` were written by the canonicalizer and therefore the only ones
+// a catalog change can affect.
+//
+// It is deliberately NOT `securities` (10.461 filas del catálogo SEC, de las que
+// ~42 están ingeridas): re-canonizar las que nunca se descargaron sería un
+// trabajo inútil y una descarga masiva contra EDGAR. Nor is it "all staging":
+// a row with normalized=false is a payload whose normalization FAILED, and
+// re-running the re-ingest over it is a diagnostic decision, not a default.
+//
+// SELECT-only on purpose: `make reingest-fundamentals` runs it before touching
+// anything, and this function must never be able to write.
+const StagedNormalizedCIKsSQL = `SELECT cik
+	FROM edgar_staging
+	WHERE payload_type = 'company_facts' AND normalized
+	GROUP BY cik
+	ORDER BY cik`
+
+// StagedNormalizedCIKs returns the default re-ingest universe: CIKs with a
+// normalized `company_facts` payload, deduplicated, sorted ascending. Read-only.
+func StagedNormalizedCIKs(ctx context.Context, q DBTX) ([]string, error) {
+	rows, err := q.Query(ctx, StagedNormalizedCIKsSQL)
+	if err != nil {
+		return nil, fmt.Errorf("storage: selector de universo con staging: %w", err)
+	}
+	defer rows.Close()
+
+	var raw []string
+	for rows.Next() {
+		var cik string
+		if err := rows.Scan(&cik); err != nil {
+			return nil, fmt.Errorf("storage: scan del universo con staging: %w", err)
+		}
+		raw = append(raw, cik)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("storage: iteración del universo con staging: %w", err)
+	}
+	return SortDedupCIKs(raw)
+}
+
+// SortDedupCIKs normalizes a CIK list coming from the selector: trims, drops
+// empties, deduplicates and sorts ascending. Split out of StagedNormalizedCIKs so
+// the pure part (order + dedupe, which is what the -companies CSV depends on)
+// is testable without a database, and so the DB call stays a thin read.
+func SortDedupCIKs(raw []string) ([]string, error) {
+	seen := make(map[string]bool, len(raw))
+	out := make([]string, 0, len(raw))
+	for _, cik := range raw {
+		cik = strings.TrimSpace(cik)
+		if cik == "" {
+			continue
+		}
+		if !isCIK(cik) {
+			return nil, fmt.Errorf("storage: CIK inválido %q en el universo con staging (10 dígitos, sin espacios)", cik)
+		}
+		if seen[cik] {
+			continue
+		}
+		seen[cik] = true
+		out = append(out, cik)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// isCIK is the local shape check for a CIK (storage cannot import the edgar
+// package: edgar imports storage). It mirrors edgar.NormalizeCIK, which is what
+// the ingestion path will re-validate anyway; here it only avoids building a
+// `-companies` CSV out of garbage rows.
+func isCIK(s string) bool {
+	if len(s) > 10 {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func scanStaging(row rowScanner, s *EdgarStaging) error {

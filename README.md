@@ -393,6 +393,102 @@ El collector:
 2. Descarga AAPL companyfacts (XBRL 10-K) → normaliza → persiste en `fundamentals`
 3. Idempotente: re-ejecutar no duplica filas
 
+#### Re-ingesta de fundamentals (`make reingest-fundamentals`)
+
+**`make run-collector` NO re-canoniza las empresas ya ingeridas.** Corre el job
+`edgar` con `fresh=false`, y `InsertStaging` es idempotente por
+`(accession, form_type, payload_type)` — que para companyfacts es
+`(cik, "companyfacts/<cik>")`, o sea por `(cik, source)`. En una segunda pasada
+el `INSERT ... DO NOTHING` no inserta nada y el payload **no vuelve a pasar por
+`dedupeCanonical`**: las filas canónicas que se escribieron la primera vez son las
+que se quedan, con el catálogo de entonces.
+
+Por eso, **tras cambiar el catálogo XBRL (`internal/collect/edgar/concepts.go`)
+la re-ingesta es obligatoria**: sin ella, un tag nuevo (p. ej.
+`interest_expense`, `income_tax_expense` o `pretax_income` de M6c-T1) no
+aparecería en ninguna de las empresas ya ingeridas, y el cambio parecería no
+haber surtido efecto. La re-ingesta borra el staging por CIK y reinserta el
+payload, de modo que cada empresa vuelve a pasar por el canonizador; es
+**idempotente** (`fundamentals` se upserta por
+`(security_id, concept, period_type, period_end, fiscal_year, fiscal_period)`
+con `COALESCE`, así que una segunda pasada no cambia filas).
+
+```bash
+# Universo por omisión: las empresas con companyfacts YA NORMALIZADO en
+# edgar_staging (medido 2026-10-05: 42 empresas, NO las 10.461 filas de
+# `securities`, que son el catálogo completo de la SEC y de las que sólo 42 se
+# han descargado). Es un selector SQL de SÓLO LECTURA, y el target imprime la
+# lista y su tamaño ANTES de escribir nada.
+make reingest-fundamentals
+
+# Lista explícita (tiene prioridad sobre el universo por omisión):
+make reingest-fundamentals TICKERS="NVDA,WMT"
+make reingest-fundamentals REINGEST_TICKERS="NVDA,WMT"   # mismo efecto
+
+# Equivalente sin make (el listado del universo es un job de solo lectura que
+# no aplica migraciones):
+go run ./cmd/collector -job universe -universe staged
+go run ./cmd/collector -job edgar -fresh -universe staged
+```
+
+**Variables de `reingest-fundamentals`** (y su precedencia, que es explícita
+para que nadie re-canonice 1 empresa pensando que son 42):
+
+| Variable | Efecto | Precedencia |
+|---|---|---|
+| `REINGEST_TICKERS` | Lista explícita de tickers/CIKs (CSV). Es el nombre **propio** del target | 1 — gana sobre todo lo demás |
+| `TICKERS` | Alias de la lista anterior, aceptado **sólo desde la línea de comandos** (`make reingest-fundamentals TICKERS=...`). El `TICKERS` global del Makefile (=AAPL, para precios/sector/scores) **no se hereda**, ni uno exportado en el entorno: lo decide `$(origin TICKERS)` | 2 |
+| `UNIVERSE` | Selector del universo por omisión; hoy el único es `staged`. `UNIVERSE=` explícitamente vacío es un error (exit 2), no una forma de pedir "el de por defecto" | 3 — sólo si 1 y 2 están vacíos |
+| `DATABASE_URL` | BD destino (la de los demás targets). **Por omisión es la de desarrollo** (`abys`), y aquí **no** hay guard `*_test` (a diferencia de `integration`): ver más abajo. Se imprime **redactada** con `bin/redactdsn`, nunca en crudo | — |
+| `SEC_EDGAR_UA` | User-Agent que el target exporta al collector como `SEC_EDGAR_USER_AGENT` | — |
+
+Con `TICKERS` o `REINGEST_TICKERS` vacíos, el mensaje del target dice
+explícitamente que va con el **universo por omisión** (`staged`) y cuántas
+empresas son. Antes de escribir nada **valida** la lista y aborta con **exit 2**
+si hay entradas vacías (`NVDA,,WMT`), espacios internos, caracteres malformados
+o si el selector no devuelve ninguna empresa: una re-ingesta que no hace nada
+tiene que verse como aborted, no como un éxito silencioso.
+
+**La BD de desarrollo es la de destino por omisión, y aquí no hay guard
+`*_test`.** No es una contradicción con `make integration`, son contratos
+distintos: `integration` corre contra `TEST_DATABASE_URL` y **aborta** (exit 1)
+si el nombre no acaba en `_test`, porque lo que hace es `TRUNCAR` tablas
+compartidas. `reingest-fundamentals` no lleva ese guard y su `DATABASE_URL` por
+omisión es la BD de **desarrollo** (`abys`, puerto 55432), porque Az6 exige
+ejecutar la re-ingesta **ahí**: es el único modo de que el trío
+`interest_expense`/`income_tax_expense`/`pretax_income` aparezca en
+`fundamentals` y la cobertura de interés deje de ser `nil` en el universo. El
+target **escribe** (borra el staging por CIK y reinserta), así que un guard de
+nombre de BD no sería ni siquiera una protección real: quien lo lance sobre otra
+base lo hace a sabiendas, pasando el `DATABASE_URL` que corresponda. No se
+inventa aquí un guard nuevo: es una decisión de contrato, no un descuido.
+
+**AVISO: `make -n` imprime `DATABASE_URL`.** Para ver la precedencia en seco,
+usa un DSN **redactado explícito**:
+
+```bash
+make -n reingest-fundamentals DATABASE_URL='postgres://***@localhost:55432/abys'
+```
+
+`make -n` expande e imprime la receta, cuya última línea es
+`sh "$(DATABASE_URL)" …`, así que el `make -n` escribe el valor de
+`DATABASE_URL` en la terminal y en los logs de CI (el `@` de la receta no lo
+evita). **Nunca** lo uses con el DSN real. En ejecución normal sí se cumple el
+contrato: el DSN que se imprime es siempre el que devuelve `bin/redactdsn`.
+
+**Deuda conocida (`edgar.NormalizePending` es global).** La rama que repasa
+pendientes cuando el staging **ya** existe —el camino NO fresco, el de
+`make run-collector`— llama a `edgar.NormalizePending`, que reprocesa hasta 5
+filas de staging de **cualquier** empresa, sin acotar por ticker. En el camino
+`-fresh` de la re-ingesta **no se llega a él**: el staging del CIK se borra, el
+`INSERT` devuelve id y la normalización va por `edgar.NormalizeStaging`, que
+procesa **un** payload. Aun así, la re-ingesta está pensada para BD de
+desarrollo/test, y acotar `NormalizePending` por ticker queda pendiente.
+
+Operativamente: es un job de red (descarga companyfacts a EDGAR, con el
+`SEC_EDGAR_USER_AGENT` de siempre) y por eso se ejecuta a mano y acotado; el
+`-fresh` es explícito para que nadie lo dispare por sorpresa.
+
 ### 5. Ingest Yahoo prices
 
 ```bash

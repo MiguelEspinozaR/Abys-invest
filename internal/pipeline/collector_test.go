@@ -31,7 +31,7 @@ func TestWorkerDoesNotPanicOnProviderError(t *testing.T) {
 	}
 	// Sin panic -> el worker continúa; la cobertura del bucle de main() queda
 	// garantizada por resolveCompany devolviendo error sin paniquear.
-	if _, _, err := resolveCompany(nil, "APBR"); err == nil {
+	if _, _, err := resolveCompany(nil, "APBR", nil); err == nil {
 		t.Fatal("resolver ticker sin catálogo debe fallar (no paniquear)")
 	}
 }

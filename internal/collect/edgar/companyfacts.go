@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -86,11 +87,26 @@ func ParseCompanyFacts(data []byte) ([]XBRLFact, error) {
 
 // appendNamespaceFacts extracts the flat facts of one XBRL namespace and tags
 // each with its namespace. Namespaces are processed in fixed order so the
-// output is deterministic regardless of JSON map ordering.
+// output is deterministic regardless of JSON map ordering; concept names and
+// unit buckets are also iterated in sorted order (a map range has random
+// order per Go run). `dedupeCanonical` desempata pares (misma prioridad y
+// fecha/accession), así que un orden de entrada aleatorio podría decidir qué
+// hecho sobrevive en esos empates: ordenar la entrada elimina la aleatoriedad.
 func appendNamespaceFacts(dst []XBRLFact, ns string, concepts map[string]CompanyFactsConcept) []XBRLFact {
-	for concept, c := range concepts {
-		for unit, entries := range c.Units {
-			for _, e := range entries {
+	conceptNames := make([]string, 0, len(concepts))
+	for name := range concepts {
+		conceptNames = append(conceptNames, name)
+	}
+	sort.Strings(conceptNames)
+	for _, concept := range conceptNames {
+		c := concepts[concept]
+		unitNames := make([]string, 0, len(c.Units))
+		for u := range c.Units {
+			unitNames = append(unitNames, u)
+		}
+		sort.Strings(unitNames)
+		for _, unit := range unitNames {
+			for _, e := range c.Units[unit] {
 				f, ok := parseValEntry(concept, unit, e)
 				if !ok {
 					continue

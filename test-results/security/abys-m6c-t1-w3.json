@@ -1,0 +1,233 @@
+{
+  "task_id": "abys-m6c-t1-interest-tax",
+  "scan_timestamp": "2026-10-06T12:00:00Z",
+  "working_tree": "/home/miky/Abys-Invest",
+  "delta_surface": {
+    "modified_files": [
+      {
+        "path": "migrations/019_insert_interest_tax_concept_map.sql",
+        "change_type": "MODIFIED",
+        "lines_added": 68,
+        "lines_removed": 3,
+        "description": "Cabecera y notes reescritas; ahora el bloque de convergencia registra la ejecucion real (BD, fecha, n filas, artefacto de evidencia). Contiene 3 INSERT ... ON CONFLICT (xbrl_concept, canonical_name) DO NOTHING para interest_expense, income_tax_expense, pretax_income. No hay DDL, no hay backfill, SQL idempotente."
+      },
+      {
+        "path": "internal/collect/edgar/conceptmap_integration_test.go",
+        "change_type": "MODIFIED",
+        "lines_added": 95,
+        "lines_removed": 1,
+        "description": "Aserciones acotadas a 3 filas del tr\u00edo M6c-T1 (interest_expense, income_tax_expense, pretax_income). La lista target viene de interestTaxTags derivado del cat\u00e1logo Go, no escrita a mano, para que el alcance no se desincronice."
+      },
+      {
+        "path": "internal/pipeline/collector.go",
+        "change_type": "MODIFIED",
+        "lines_added": 23,
+        "lines_removed": 0,
+        "description": "Nueva funci\u00f3n RunEdgarJobFresh que expone el modo fresh; borra staging por CIK antes de reinsertar para que el payload pase por dedupeCanonical nuevamente. Guardas antes de escribir."
+      },
+      {
+        "path": "internal/storage/staging.go",
+        "change_type": "MODIFIED",
+        "lines_added": 86,
+        "lines_removed": 0,
+        "description": "Nuevas funciones: StagedNormalizedCIKsSQL (SELECT solo lectura), StagedNormalizedCIKs, SortDedupCIKs, isCIK (validaci\u00f3n de entrada: CIK de 10 d\u00edgitos, sin espacios, sin basura). Documentada la deuda de NormalizePending como global."
+      },
+      {
+        "path": "cmd/collector/main.go",
+        "change_type": "MODIFIED",
+        "lines_added": 195,
+        "lines_removed": 15,
+        "description": "Nuevas guardas: precedencia de variables (REINGEST_TICKERS > TICKERS > UNIVERSE), validaci\u00f3n con awk (6 casos exit 2), DSN redactado por defecto, job 'universe' nuevo, flag 'fresh' con validaciones cruzadas. Documentada la deuda de NormalizePending."
+      },
+      {
+        "path": "internal/storage/m6_integration_test.go",
+        "change_type": "MODIFIED",
+        "lines_added": 1,
+        "lines_removed": 1,
+        "description": "Solo se cambi\u00f3 un comentario: 'Duplicado del mismo period_end con OTRO valor' -> 'Duplicado con el MISMO period_end y OTRO valor'. Sin riesgos de seguridad."
+      },
+      {
+        "path": "Makefile",
+        "change_type": "MODIFIED",
+        "lines_added": 110,
+        "lines_removed": 1,
+        "description": "Nuevo target reingest-fundamentals con 6 guardas exit 2 (entradas vac\u00edas, espacios internos, entrada malformada, universo vac\u00edo, validaci\u00f3n de lista, precedencia). Documentada la deuda NormalizePending. Precedencia explicita de variables."
+      },
+      {
+        "path": "README.md",
+        "change_type": "MODIFIED",
+        "lines_added": 69,
+        "lines_removed": 0,
+        "description": "Secci\u00f3n 'Re-ingesta de fundamentals' con tabla de variables y su precedencia. Documentada la deuda NormalizePending. Actualizaci\u00f3n del conteo de conceptos de 20 a 23."
+      },
+      {
+        "path": "internal/collect/edgar/client.go",
+        "change_type": "MODIFIED",
+        "lines_added": 15,
+        "lines_removed": 0,
+        "description": "sort.Slice en ParseCompanyTickers para ordenar por CIK/ticker ascending, garantizando resoluci\u00f3n determinista en corridas multiclase (-fresh) y evitando writes a distinto security_id por orden aleatorio de map."
+      },
+      {
+        "path": "internal/collect/edgar/companyfacts.go",
+        "change_type": "MODIFIED",
+        "lines_added": 24,
+        "lines_removed": 0,
+        "description": "Iteraci\u00f3n ordenada (sort.Strings) de conceptos y unidades en appendNamespaceFacts: elimina aleatoriedad del range sobre map en cada corrida Go, previene empates inconsistentes en dedupeCanonical."
+      }
+    ],
+    "new_files": [
+      {
+        "path": "cmd/collector/main_test.go",
+        "change_type": "NEW FILE",
+        "lines_added": 160,
+        "lines_removed": 0,
+        "description": "Tests de validaci\u00f3n de flags edgar (validateEdgarFlags, edgarTargets, resolveUniverse, TestResolveUniverseRejectsUnknownSelector, TestResolveUniverseStagedNeedsDB). Sin red ni BD: comprueba las reglas del comando."
+      },
+      {
+        "path": "internal/pipeline/reingest_integration_test.go",
+        "change_type": "NEW FILE",
+        "lines_added": 418,
+        "lines_removed": 0,
+        "description": "TestM6cT1ReingestIsIdempotent y TestM6cT1FreshDeletesEveryStagingRowOfTheCIK y TestM6cT1FreshForcesRecanonicalization. Sin TRUNCATE: solo DELETE acotado por CIK. Sin datos de negocio fuera del CIK."
+      },
+      {
+        "path": "internal/pipeline/reingest_multiclass_integration_test.go",
+        "change_type": "NEW FILE",
+        "lines_added": 330,
+        "lines_removed": 0,
+        "description": "TestM6cT1FreshResolvesStableClassForMulticlassCIKs: E2E del fix P0 CA-9/W3. Two-pass -fresh reingesta de 6 CIKs multiclase en abys_test. DELETE acotado por CIK, t.Cleanup, sin TRUNCATE. Siembra CIKs/tickers p\u00fablicos. Nada de secretos ni DSN. No afecta BD de desarrollo si apunta a abys_test."
+      },
+      {
+        "path": "internal/storage/staging_integration_test.go",
+        "change_type": "NEW FILE",
+        "lines_added": 120,
+        "lines_removed": 0,
+        "description": "TestStagedNormalizedCIKs y TestSortDedupCIKs y TestSortDedupCIKsRejectsGarbage y TestStagedNormalizedCIKsSQLIsReadOnlyAndPinned. Selector SOLO LECTURA, anclado a payload_type='company_facts' + normalized, sin securities/fundamentals."
+      },
+      {
+        "path": "internal/storage/staging_test.go",
+        "change_type": "NEW FILE",
+        "lines_added": 77,
+        "lines_removed": 0,
+        "description": "Tests de SortDedupCIKs y SortDedupCIKsRejectsGarbage y TestStakedNormalizedCIKs (busca 25 securities pero solo devuelve 2 CIKs companyfacts normalizados)."
+      },
+      {
+        "path": "internal/pipeline/companyclass_test.go",
+        "change_type": "NEW FILE",
+        "lines_added": 275,
+        "lines_removed": 0,
+        "description": "Tests de determinismo multiclase: TestResolveCompanyMulticlassDeterministicAcrossRuns, TestPickPreferredClassLevels, TestResolveCompanyCandidates, TestResolveCompanyMulticlassViaCatalog. Cubre la resoluci\u00f3n determinista de clases para CIKs con m\u00faltiples tickers."
+      },
+      {
+        "path": "internal/collect/edgar/client_test.go",
+        "change_type": "MODIFIED",
+        "lines_added": 53,
+        "lines_removed": 0,
+        "description": "TestParseCompanyTickersDeterministicOrder: garantiza orden CIK asc, ticker asc tras parseo, aun cuando payload tenga map desordenado. 100 corridas = mismo orden exacto."
+      },
+      {
+        "path": "internal/pipeline/collector_test.go",
+        "change_type": "MODIFIED",
+        "lines_added": 2,
+        "lines_removed": 1,
+        "description": "Ajuste de firma: resolveCompany(nil, \"APBR\", nil) en lugar de resolveCompany(nil, \"APBR\")."
+      }
+    ]
+  },
+  "secret_scan": {
+    "gitleaks": {
+      "command": "gitleaks detect --no-git --redact -s .",
+      "result": "not verifiable: gitleaks binary not present in this environment (which gitleaks returns nothing); scan performed via regex fallback on diff only",
+      "details": "Gitleaks binary not found in this environment. Secret scanning is advisory only, using regex fallback over git diff. No real gitleaks scan was performed.",
+      "verificable_en_entorno": false
+    },
+    "regex_fallback": "Fallback regex sobre el diff de git (solo advisory). Escaneado del diff para patrones de secrets/DSN; resultados advisory, no definitivos. No hay binario de gitleaks para escaneo real. No se encontraron credenciales/DSN en los ficheros nuevos ni en el delta."
+  },
+  "destructive_test_risk": {
+    "reingest_integration_test": {
+      "description": "TestM6cT1FreshForcesRecanonicalization borra solo las filas de staging del CIK especfico (0000320193=AAPL) con DELETE acotado, sin TRUNCATE global. Usa la BD de test (abys_test), no la de desarrollo. Riesgo: si el test falla a mitad, las filas canicas de AAPL podr\u00edan quedar ausentes, pero el test tiene t.Cleanup que las restaura. No deja datos inconsistentes fuera del CIK objetivo."
+    },
+    "make reingest-fundamentals": {
+      "description": "Target que valida la lista antes de escribir (exit 2 si hay entradas vac\u00edas/malformadas/universo vac\u00edo). No usa TRUNCATE. Borra staging por CIK y reinserta con -fresh. Las guardas precedencia de variables (REINGEST_TICKERS > TICKERS > UNIVERSE) previenen re-canonizaci\u00f3n accidental de 1 empresa pensando son 42."
+    },
+    "reingest_multiclass_integration_test": {
+      "description": "TestM6cT1FreshResolvesStableClassForMulticlassCIKs: E2E del fix P0. Dos pasadas -fresh sobre 6 CIKs multiclase en abys_test. DELETE acotado por CIK (los 6 CIKs only), sin TRUNCATE global. t.Cleanup restaura estado al final. No siembra secretos ni datos sensibles (CIKs/tickers p\u00fablicos). Si la BD objetivo no es abys_test, podr\u00eda afectar a la BD de destino; pero el test est\u00e1 dise\u00f1ado para abys_test y usa t.Cleanup para dejar el estado consistente."
+    }
+  },
+  "sql_analysis": {
+    "migration_019": {
+      "selector_unchanged": true,
+      "input_concatenation": false,
+      "sql_is_static": true,
+      "on_conflict": "ON CONFLICT (xbrl_concept, canonical_name) DO NOTHING matches uq_xbrl_concept_map constraint",
+      "notes": "Las tres consultas son INSERT estatico con valores fijos; no hay concatenacion de input por parte del usuario. El DSN no aparece en el SQL."
+    },
+    "loadCompanyClassData_new": {
+      "sql_is_static": true,
+      "parameterized": true,
+      "pgx_parameter": "$1",
+      "input_concatenation": false,
+      "read_only": true,
+      "table": "securities WITH EXISTS daily_prices / EXISTS fundamentals",
+      "notes": "Una sola query read-only por CIK: SELECT ... FROM securities s WHERE s.cik = $1 con EXISTS subqueries para has_prices y has_fundamentals. No hay concatenaci\u00f3n de input, no hay fmt.Sprintf de valores. Solo consulta securities del CIK objetivo; no permite enumeraci\u00f3n arbitraria m\u00e1s all\u00e1 del CIK pasado como par\u00e1metro."
+    },
+    "no_new_dynamic_sql": true
+  },
+  "input_validation": {
+    "isCIK": "Funcion isCIK en internal/storage/staging.go: valida que el string tenga maximo 10 digitos y solo contenga caracteres 0-9. Recha CIKs basura (AAPL, 000032019a, etc.) en SortDedupCIKs.",
+    "csv_validation": "El target make reingest-fundamentals usa awk para validar entradas CSV: detecta entradas VACIAS (NVDA,,WMT), espacios internos y entradas MALFORMADAS (no matching ^[0-9A-Za-z._^-]+$). 6 casos exit 2.",
+    "empty_malformed_rejection": "Las entradas vacias, con espacios internos o malformadas provocan exit 2 sin invocar el job edgar. El DSN nunca se imprime en crudo."
+  },
+  "dependencies": {
+    "go_mod_changed": false,
+    "go_sum_changed": false,
+    "package_json_changed": false,
+    "no_new_dependencies": true
+  },
+  "classification": {
+    "hard_blocks": 0,
+    "low_severity": 0,
+    "info": 8,
+    "verdict": "no hard blocks",
+    "summary": "Delta P0 CA-9/W3: sort.Slice en ParseCompanyTickers + iteraci\u00f3n ordenada concepts/units eliminan aleatoriedad determinista. loadCompanyClassData usa query parametrizada $1 read-only sobre securities sin concatenaci\u00f3n ni fmt.Sprintf, solo CIK objetivo. Nuevos tests cubren resoluci\u00f3n multiclase determinista y idempotencia E2E en abys_test sin TRUNCATE ni secretos. reingest_multiclass_integration_test usa DELETE acotado por CIK + t.Cleanup, sin datos sensibles. No hay hard blocks; riesgo bajo (info)."
+  },
+  "summary_3_5_lines": "El fix P0 CA-9/W3 resuelve la no determinismo de resoluci\u00f3n de clases multiclase: sort.Slice en ParseCompanyTickers ordena CIK/ticker asc, loadCompanyClassData usa query parametrizada $1 read-only, y los tests E2E validan idempotencia en abys_test. Sin secretos, sin DSN, sin TRUNCATE, sin nuevos permisos. Veredicto: low/info, sin bloques duros.",
+  "delta_closure_analysis": {
+    "task_id": "abys-m6c-t1-interest-tax",
+    "delta_type": "working_tree_closure",
+    "modified_files": {
+      "Makefile": {
+        "change": "La regla $(COLLECTOR_BIN) ahora usa $(shell find cmd internal -name '*.go' 2>/dev/null) como prerequisitos, m\u00e1s go.mod/go.sum, y un .PHONY condicional de fallback. Verificado: $(shell ...) no interpola ni imprime secretos, no usa rutas con credenciales, y no rompe la portabilidad/seguridad del build. No se introduce escritura nueva en bin/ m\u00e1s all\u00e1 de go build -o bin/collector.",
+        "prerequisites": "$(COLLECTOR_SRCS) go.mod go.sum donde COLLECTOR_SRCS = $(shell find cmd internal -name '*.go' 2>/dev/null), con fallback PHONY force-collector-rebuild si find devuelve vac\u00edo",
+        "security_check": "OK: find est\u00e1ndar en Linux/macOS, 2>/dev/null evita errores que dejar\u00edan la regla sin prerequisitos; bin/collector es el \u00fanico binario builds, consistente con la regla bin/redactdsn"
+      },
+      "internal/pipeline/collector.go": {
+        "change": "Extracci\u00f3n del seam runEdgarJobWithClient: el cuerpo de runEdgarJob se mueve; runEdgarJob construye el cliente con edgar.NewClient y delega a runEdgarJobWithClient. Confirmado: NO se a\u00f1aden permisos, conexiones, DSN en claro, logs de credenciales ni cambios en User-Agent/timeouts; sigue siendo el mismo cliente EDGAR.",
+        "seam": "runEdgarJobWithClient(ctx, pool, client, companies, dryRun, fresh) - cliente EDGAR inyectado para tests; producci\u00f3n siempre usa edgar.NewClient en runEdgarJob, sin cambios de comportamiento externo",
+        "class_resolution": "resolveCompanyCandidates + pickPreferredClass + loadCompanyClassData: resoluci\u00f3n determinista CIK\u2192clase (precios > fundamentales > fallback cat\u00e1logo ordenado), eliminando aleatoriedad del map de Go",
+        "no_secrets": "Confirmed: no new permissions, clear-text connections, DSN in clear, credential logs, or User-Agent/timeout changes"
+      }
+    },
+    "new_files": {
+      "internal/pipeline/reingest_multiclass_integration_test.go": {
+        "change": "Incluye handler /company_tickers.json en httptest y usa runEdgarJobWithClient. Verificado: sigue aislado en abys_test, limpieza scoped por CIK (sin TRUNCATE), sin secretos en fixtures (CIKs/tickers son p\u00fablicos), y no toca la BD de desarrollo.",
+        "isolation": "abys_test only - DELETE scoped por CIK + t.Cleanup al final, sin TRUNCATE global",
+        "fixtures": "CIKs y tickers son p\u00fablicos (JPM, BAC, PLD, SPG, BRK-B, GOOGL y alternativas); no hay secretos ni DSN en los fixtures",
+        "db": "No afecta BD de desarrollo; usa pool de abys_test con cleanup al final"
+      }
+    },
+    "evidence_check": {
+      "test-results/tests/abys-m6c-t1-w3.json": {
+        "check": "Comprobado que no contiene credenciales, DSN con contrase\u00f1a real ni rutas privadas; los DSN van redactados o son ficticios (patr\u00f3n postgres://***@localhost:55432/abys_test)."
+      }
+    },
+    "classification": {
+      "hard_blocks": 0,
+      "low_severity": 0,
+      "info": 3,
+      "verdict": "no hard blocks - riesgo bajo (info)",
+      "summary": "Delta closure: Makefile $(COLLECTOR_BIN) con prerequisitos Go seguros sin escritura oculta en bin/; collector.go con seam runEdgarJobWithClient sin nuevos riesgos; reingest_multiclass test aislado en abys_test sin secretos ni TRUNCATE; evidencia DSN redactado/ficticio. Sin bloques duros, riesgo bajo."
+    },
+    "summary_3_5_lines": "El delta de cierre resuelve el incidente CA-9 de W3: Makefile ahora recompila bin/collector cuando cambian las fuentes (prerequisitos $(shell find cmd internal -name '*.go')), collector.go introduce seam runEdgarJobWithClient para resoluci\u00f3n determinista CIK\u2192clase, y el test multiclase usa httptest con company_tickers.json aislado en abys_test sin secretos. DSN siempre redactado o ficticio. Veredicto: low/info, sin bloques duros."
+  }
+}
