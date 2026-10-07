@@ -1,0 +1,204 @@
+{
+  "task_id": "abys-m6c-t1-interest-tax",
+  "block": "W4",
+  "stage": "TEST",
+  "date": "2026-10-06",
+  "tested_at_utc": "2026-10-07T02:12:21Z",
+  "tester": "agente implementador (W4: helper de alineacion fiscal + tests unitarios sin BD)",
+  "verdict": "PASS",
+  "verdict_detail": "W4 implementado como una lectura pura (sin BD, sin SQL nuevo) que reutiliza storage.GetFYAnnualSeries: alignedFYFacts elige el period_end ancla (el mas reciente con operating_income) y devuelve SOLO los conceptos de ese mismo period_end, el ancla comun y un vocabulario cerrado de motivos. Sin cambio de comportamiento en los motores (W5 cablea). Cubre Az2/ADR D31 (ancla + alineacion exacta + frescura), CA-3 (mismo FY) y CA-4 (motivos interest_period_mismatch / *_stale / no_anchor / *_unavailable). 7 tests top-level (11 con subtests) verdes; suite completa 22 paquetes ok / 0 FAIL; gofmt/vet/build limpios. W5/W6 NO tocados.",
+  "summary": {
+    "gofmt": {
+      "clean": true,
+      "command": "gofmt -l .",
+      "output": ""
+    },
+    "go_vet": {
+      "ok": true,
+      "command": "go vet ./... && go vet -tags=integration ./...",
+      "output": ""
+    },
+    "go_build": {
+      "ok": true,
+      "command": "go build ./...",
+      "output": ""
+    },
+    "unit_suite": {
+      "command": "go test ./... -count=1",
+      "exit": 0,
+      "packages_ok": 22,
+      "packages_fail": 0,
+      "note": "sin regresion; baseline reciente 22 paquetes OK"
+    },
+    "w4_focused": {
+      "command": "go test ./internal/pipeline/... ./internal/storage/... -count=1 -run 'FY|Aligned|Align' -v",
+      "exit": 0,
+      "top_level_pass": 7,
+      "pass_including_subtests": 11,
+      "fail": 0,
+      "note": "storage: [no tests to run] (sus tests de serie FY viven bajo el build tag integration y no entran en este patron)"
+    },
+    "diff_surface": {
+      "created": [
+        "internal/pipeline/fyfacts.go (249 lineas)",
+        "internal/pipeline/fyfacts_test.go (277 lineas)"
+      ],
+      "modified": [],
+      "not_touched": "internal/storage/fundamentals.go (solo se reutiliza GetFYAnnualSeries), internal/collect/edgar/concepts.go, internal/collect/edgar/normalize.go, migrations/019_insert_interest_tax_concept_map.sql, internal/quality/*, internal/pipeline/qualityrelative.go, internal/pipeline/analytics.go, internal/metricver, internal/metrics, go.mod/go.sum",
+      "w5_w6_untouched": "quality.Inputs, taxRateSource(), wacc.Inputs.TaxRate, QUALITY_FY_MAX_AGE_DAYS, versiones (metrics 2.1.0 / quality 1.1.0 / score 2.2.0) y el gate de API NO se tocan en W4",
+      "commit": "ninguno: no hay commit ni push (Git Manager es la unica autoridad de historia)"
+    }
+  },
+  "helper_contract": {
+    "signature": "func alignedFYFacts(ticker string, series map[string][]storage.FYPoint, asOf time.Time, maxAgeDays int) AlignedFYFacts",
+    "file": "internal/pipeline/fyfacts.go",
+    "input": "series = la salida ya filtrada de storage.GetFYAnnualSeries (fiscal_period='FY', duracion 330-400, filing_date <= asOf). El helper NO recibe la BD ni context: es puro y testeable con series sinteticas.",
+    "type": {
+      "AnchorPeriodEnd": "period_end del ancla, o time.Time{} si no hay EBIT",
+      "OperatingIncome_InterestExpense_IncomeTaxExpense_PretaxIncome": "*float64 del mismo period_end; nil cuando el concepto no esta en el ancla (nunca 0)",
+      "InterestReason": "cadena vacia si EBIT+interes completos en ancla fresca; si no, uno de no_anchor/interest_unavailable/interest_period_mismatch/interest_stale",
+      "TaxRateReason": "cadena vacia si pretax+impuesto completos en ancla fresca; si no, uno de no_anchor/tax_rate_unavailable/tax_rate_stale",
+      "Reasons_method": "AlignedFYFacts.Reasons() []string devuelve los motivos no vacios en orden estable (interes, luego tasa) sin duplicar (p.ej. no_anchor una sola vez)"
+    },
+    "contract_by_case": [
+      "ancla = period_end anual mas reciente con operating_income, incluso si esta caducada (así se puede decir que el ancla esta stale)",
+      "sin operating_income en la serie -> AnchorPeriodEnd cero, 4 valores nil, InterestReason=TaxRateReason=no_anchor",
+      "ancla fresca y concepto presente -> valor del ancla; motivo vacio",
+      "ancla fresca sin interes en el ancla pero con interes en otro FY -> InterestExpense nil + interest_period_mismatch (caso AAPL)",
+      "ancla fresca sin interes en ningun FY -> InterestExpense nil + interest_unavailable (caso CAT)",
+      "ancla fresca sin pretax y/o sin impuesto -> TaxRateReason=tax_rate_unavailable (nunca una tasa con un lado nil)",
+      "ancla caducada (period_end < asOf - maxAgeDays) -> interest_stale y/o tax_rate_stale; la staleness domina a la completitud (un EBIT viejo no alimenta interest_coverage ni con el par perfecto)",
+      "available_at posterior a asOf -> el punto se ignora (no look-ahead), aunque la serie sintetica no pase por SQL",
+      "desempate determinista: period_end mas nuevo > available_at (restatement) mas nuevo > valor mayor"
+    ],
+    "freshness": "age = asOf.Sub(anchor); stale = age > time.Duration(maxAgeDays)*24h. maxAgeDays<=0 NO desactiva la regla (solo deja pasar anclas >= asOf), lectura conservadora. W5 cableara 550."
+  },
+  "reasons_implemented": {
+    "no_anchor": "sin operating_income anual en la serie",
+    "interest_unavailable": "EBIT fresco pero interest_expense ausente en todo el universo de la serie",
+    "interest_period_mismatch": "interest_expense existe solo en un FY distinto del ancla",
+    "interest_stale": "ancla mas reciente mayor que asOf-maxAgeDays",
+    "tax_rate_unavailable": "ancla fresca con el par pretax_income/income_tax_expense incompleto",
+    "tax_rate_stale": "ancla mas reciente mayor que asOf-maxAgeDays (tasa no derivable)",
+    "vocabulary_closed": true,
+    "exported": true,
+    "logging": "logAlignedFYFacts emite slog.Debug con ticker y anchor_period_end + reasons[] (patron D29 del beta_stale); el payoff tiene ticker, el periodo lo aporta el ancla"
+  },
+  "tests": [
+    {
+      "id": "W4T1",
+      "name": "TestAlignedFYFactsPicksNewestEBITAndSamePeriodConcepts",
+      "covers": "Az2 (a): ancla = period_end mas reciente con EBIT (2024-12-31, no 2023-12-31) e inclusion SOLO de los conceptos del mismo period_end",
+      "result": "PASS"
+    },
+    {
+      "id": "W4T2",
+      "name": "TestAlignedFYFactsInterestPeriodMismatch",
+      "covers": "CA-4 / caso AAPL: interes solo en FY2023 mientras el ancla con EBIT es FY2025 -> InterestExpense nil + interest_period_mismatch (sin mezclar ejercicios)",
+      "result": "PASS"
+    },
+    {
+      "id": "W4T3",
+      "name": "TestAlignedFYFactsStaleAnchor",
+      "covers": "CA-4 / GE-JNJ: ancla 2012-12-31 fuera de la ventana de 550 dias -> interest_stale + tax_rate_stale aunque el par este completo",
+      "result": "PASS"
+    },
+    {
+      "id": "W4T4",
+      "name": "TestAlignedFYFactsNoAnchorAndInterestUnavailable",
+      "covers": "CA-4 / GEV+CAT: (d) no_anchor sin EBIT y interest_unavailable con EBIT fresco pero sin interes; Reasons() deduplica no_anchor",
+      "result": "PASS"
+    },
+    {
+      "id": "W4T5",
+      "name": "TestAlignedFYFactsTaxRatePairIncomplete",
+      "covers": "Az3 / (e): par fiscal incompleto (sin impuesto o sin pretax) -> tax_rate_unavailable, valor ausente nil",
+      "result": "PASS"
+    },
+    {
+      "id": "W4T6",
+      "name": "TestAlignedFYFactsIgnoresFactsFiledAfterAsOf",
+      "covers": "(f): un hecho con available_at posterior al as_of no se usa (no look-ahead) aunque el helper no pase por SQL",
+      "result": "PASS"
+    },
+    {
+      "id": "W4T7",
+      "name": "TestAlignedFYFactsDeterministicOnUnorderedDuplicatedSeries",
+      "covers": "(g): series desordenadas/duplicadas con restatement en el mismo period_end dan el MISMO resultado (desempate por filing_date mas reciente)",
+      "result": "PASS"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "W4E1",
+      "name": "Formato / compilacion / suites",
+      "command": "gofmt -l . ; go vet ./... ; go vet -tags=integration ./... ; go build ./... ; go test ./... -count=1",
+      "exit": 0,
+      "expected": "gofmt sin salida, vet y build OK, 22 paquetes OK / 0 FAIL",
+      "actual": "gofmt sin salida; go vet ./... OK; go vet -tags=integration ./... OK; go build ./... OK; go test ./... -count=1 -> 22 ok / 0 FAIL (cmd/analytics e internal/metricver [no test files])",
+      "ok": true
+    },
+    {
+      "id": "W4E2",
+      "name": "Subtests nuevos de W4",
+      "command": "go test ./internal/pipeline/... ./internal/storage/... -count=1 -run 'FY|Aligned|Align' -v",
+      "exit": 0,
+      "expected": "los 7 tests de alineacion verdes y sin regresion",
+      "actual": "internal/pipeline: 7 --- PASS top-level / 11 incluyendo subtests / 0 FAIL / ok 0.009s. internal/storage: [no tests to run] (sus tests de GetFYAnnualSeries estan bajo build tag integration). Los nombres cumplen el patron FY/Aligned/Align.",
+      "ok": true
+    },
+    {
+      "id": "W4E3",
+      "name": "Sin SQL nuevo ni toque a storage",
+      "command": "git status --short ; git diff --stat",
+      "exit": 0,
+      "expected": "solo 2 archivos nuevos en internal/pipeline; storage intacto",
+      "actual": "?? internal/pipeline/fyfacts.go ; ?? internal/pipeline/fyfacts_test.go ; ?? test-results/tests/abys-m6c-t1-w4.json (el propio artefacto). git diff --stat vacio (no hay archivos modificados). internal/storage/fundamentals.go sin cambios: se reutiliza GetFYAnnualSeries tal cual.",
+      "ok": true
+    },
+    {
+      "id": "W4E4",
+      "name": "Contrato de frescura/tie-break verificado por los tests",
+      "command": "los propios W4T3/W4T6/W4T7",
+      "exit": 0,
+      "expected": "staleness al ancla, no look-ahead y determinismo",
+      "actual": "W4T3 pasa con ancla 2012-12-31 (age ~13 anios > 550 dias) -> interest_stale/tax_rate_stale; W4T6 pasa con un EBIT 2025-03-31 filed 2025-08-01 > asOf 2025-06-01 ignorado (ancla 2024-12-31, EBIT 100 no 999); W4T7 pasa con el restatement 2025-08-01 ganando al 2025-02-01 en ambos ordenes (EBIT 111, interes 12)",
+      "ok": true
+    }
+  ],
+  "artifacts": [
+    "internal/pipeline/fyfacts.go",
+    "internal/pipeline/fyfacts_test.go",
+    "test-results/tests/abys-m6c-t1-w4.json"
+  ],
+  "ambiguities_resolved": [
+    "fiscal_year/fiscal_period del ancla: storage.FYPoint (la forma reutilizada de GetFYAnnualSeries) solo expone period_end/value/available_at. Anadirlos exigiria ampliar la query de storage (SQL nuevo), que el plan W4 declara innecesario y la tarea prohibe salvo imprescindibilidad. Se resuelve anclando SOLO en period_end (Az2: 'no mezcles fy/fp') y documentando la no exposicion en el tipo. Si un reviewer los exige, el cambio seria aditivo en FYPoint+SELECT, no en la logica de alineacion.",
+    "Precedencia stale vs incompleto: la staleness se evalua ANTES de la completitud (un ancla caducada no es utilizable aunque el par este completo). Da el resultado pedido para GE/JNJ (interest_stale/tax_rate_stale) sin ocultar el motivo de frescura.",
+    "Doble motivo para no_anchor: sin EBIT no hay ancla fiscal para ningun par; se ponen ambos campos a no_anchor y Reasons() deduplica, en vez de inventar un motivo 'tax' distinto.",
+    "Desempate en duplicados: GetFYAnnualSeries ya deduplica por (concept, period_end) con filing_date DESC, id DESC. Para series sinteticas el helper replica 'restatement mas reciente gana' via available_at y usa el valor mayor solo como ultimo desempate, para ser determinista ante entradas que violan el contrato de una fila por periodo.",
+    "Logging con ticker/periodo: el helper es puro pero recibe el ticker y emite slog.Debug con ticker + anchor_period_end + reasons[] (patron D29). W5, que conoce tambien el as_of, podra loguearlo igual al cablear."
+  ],
+  "w5_handoff": {
+    "what_w5_must_wire": [
+      "anadir interest_expense, income_tax_expense y pretax_income a qualityConcepts (W5)",
+      "llamar a alignedFYFacts(ticker, series, asOf, QUALITY_FY_MAX_AGE_DAYS) en ComputeQualityStage",
+      "calcular interest_coverage con EBIT/interes del mismo FY y tax_rate = income_tax_expense/pretax_income del ancla, gateado por Reasons()",
+      "derivar tax_rate_source=derived solo con par valido y ancla fresca, y pasar la tasa a wacc.Inputs.TaxRate (Az4)",
+      "QUALITY_FY_MAX_AGE_DAYS default 550 via EnvFloatRange (patron BETA_MAX_AGE_DAYS)"
+    ],
+    "w4_does_not_touch": [
+      "quality.Inputs / taxRateSource() / confidenceFor",
+      "wacc.Inputs.TaxRate",
+      "versiones y gate de API",
+      "migracion 019, concepts.go, normalize.go"
+    ]
+  },
+  "notes": [
+    "W4 entrega la lectura alineada sin cambio de comportamiento observable en los motores: ningun motor importa todavia alignedFYFacts (W5 lo cablea). El helper y sus tests son aditivos y no alteran ningun símbolo existente.",
+    "Vocabulario cerrado y exportado (FYReasonNoAnchor, FYReasonInterestUnavailable, FYReasonInterestPeriodMismatch, FYReasonInterestStale, FYReasonTaxRateUnavailable, FYReasonTaxRateStale). Los slugs de concepto son constantes internas del paquete (conceptOperatingIncome, conceptInterestExpense, conceptIncomeTaxExpense, conceptPretaxIncome) para no repetir literales; siguen la forma canonica que persiste el normalizador de W1/W2.",
+    "La frescura y el 'sin look-ahead' se re-aplican en el helper aunque GetFYAnnualSeries ya los garantice, porque los tests unitarios construyen series sinteticas en memoria y deben demostrar el comportamiento sin BD.",
+    "No se ejecuto ningun comando contra bases de datos: W4 no toca porciones persistentes.",
+    "Ningun commit, ningun push: el arbol queda con los 2 archivos nuevos (untracked) para Scanner/Reviewer y Git Manager.",
+    "Validacion del artefacto: python3 -m json.tool sobre este archivo, OK."
+  ]
+}

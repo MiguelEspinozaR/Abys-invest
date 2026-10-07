@@ -1,0 +1,123 @@
+{
+  "task_id": "abys-m6c-t1-interest-tax",
+  "scan_timestamp": "2026-10-06T12:00:00Z",
+  "working_tree": "/home/miky/Abys-Invest",
+  "delta_surface": {
+    "new_files": [
+      {
+        "path": "internal/pipeline/fyfacts.go",
+        "change_type": "NEW FILE",
+        "lines_added": 249,
+        "lines_removed": 0,
+        "description": "Helper puro de alineacion fiscal (W4): selecciona el period_end ancla (el mas reciente con operating_income) y devuelve SOLO los conceptos de ese mismo period_end. Sin SQL nuevo, sin red, sin ficheros, sin credenciales. Solo usa log/slog para slog.Debug con ticker/anchor_period_end/reasons. No hay panic/os.Exit/unsafe. Aritmetica de fechas con asOf manejada via observableAt/IsZero."
+      },
+      {
+        "path": "internal/pipeline/fyfacts_test.go",
+        "change_type": "NEW FILE",
+        "lines_added": 277,
+        "lines_removed": 0,
+        "description": "Tests unitarios con fixtures sinteticos: confirma que no hay datos personales ni credenciales, que no toca BD/red, y que cubre los casos de ancla, staleness, period mismatch, no_anchor, interest_unavailable, taxa_rate_unavailable, no look-ahead y determinismo. Solo usa time.Parse y estructuras en memoria."
+      },
+      {
+        "path": "test-results/tests/abys-m6c-t1-w4.json",
+        "change_type": "NEW FILE",
+        "lines_added": 204,
+        "lines_removed": 0,
+        "description": "Evidencia W4: JSON valido que verifica que no contiene DSN con contraseña, tokens ni rutas privadas (los DSN van redactados/ficticios). Verifica suites go test, gofmt, go vet, go build sin regresion."
+      }
+    ],
+    "modified_files": [],
+    "not_touched": [
+      "go.mod",
+      "go.sum",
+      "migrations/*",
+      "internal/storage/*",
+      "internal/collect/edgar/*",
+      "internal/pipeline/qualityrelative.go",
+      "internal/pipeline/analytics.go",
+      "internal/metricver",
+      "internal/metrics",
+      "internal/pipeline/collector.go",
+      "cmd/collector/main.go",
+      "internal/quality/*",
+      "internal/collect/*",
+      "Makefile",
+      "README.md"
+    ]
+  },
+  "secret_scan": {
+    "gitleaks": {
+      "command": "gitleaks detect --no-git --redact -s .",
+      "result": "not verifiable: gitleaks binary not present in this environment (which gitleaks returns nothing); scan performed via regex fallback on new files only",
+      "details": "Gitleaks binary not found in this environment. Secret scanning is advisory only, using regex fallback over new files. No real gitleaks scan was performed. No se encontraron credenciales/DSN en los ficheros nuevos ni en el delta por analisis regex advisory.",
+      "verificable_en_entorno": false
+    },
+    "regex_fallback": "Fallback regex sobre los nuevos ficheros (solo advisory). Patrones buscados: passwords?=, postgres://, mysql://, api_key, secret, token, DSN, private key, .env. Escaneado internal/pipeline/fyfacts.go, internal/pipeline/fyfacts_test.go y el nuevo test-results/tests/abys-m6c-t1-w4.json. No se encontraron patrones de secrets/DSN en los ficheros nuevos. No hay commits con credenciales reales. Resultado: sin hallazgos de secrets por regex advisory.",
+    "no_real_gitleaks_scan": true
+  },
+  "destructive_test_risk": {
+    "description": "Los tests unitarios W4 usan exclusivamente fixtures sinteticos en memoria y t.Testing. No hay TRUNCATE, no hay borrado real de BD, no se siembra datos sensibles. Los tests solo operan sobre series map[string][]storage.FYPoint construidas en el test. Riesgo: nulo para entornos de produccion o desarrollo."
+  },
+  "sql_analysis": {
+    "no_new_dynamic_sql": true,
+    "note": "W4 no introduce ningun SQL. El helper alignedFYFacts re-aplica checks de available_at sobre series ya filtradas por storage.GetFYAnnualSeries (que ya aplica fiscal_period='FY', duracion 330-400 y filing_date <= asOf). No hay nueva query SQL en W4."
+  },
+  "input_validation": {
+    "note": "W4 no recibe input del usuario final en tiempo de ejecucion. Las funciones toman ticker string y series map en tiempo de test; en produccion la series vienen de storage.GetFYAnnualSeries ya filtradas. No hay validacion de entrada de usuario que requiera sanitizacion contra inyeccion."
+  },
+  "dependencies": {
+    "go_mod_changed": false,
+    "go_sum_changed": false,
+    "package_json_changed": false,
+    "no_new_dependencies": true,
+    "note": "Solo usa imports de stdlib Go: log/slog, time. No se agregaron nuevas dependencias externas en W4."
+  },
+  "classification": {
+    "hard_blocks": 0,
+    "low_severity": 0,
+    "info": 5,
+    "verdict": "no hard blocks",
+    "summary": "Delta W4: 2 nuevos ficheros puros de ayuda fiscal sin SQL, red, credenciales o ficheros. Sin secrets detectados (regex advisory, gitleaks no disponible). Sin cambios en go.mod/go.sum, sin SQL nuevo, sin modificacion de permisos. Clasificacion: solo info por nuevas estructuras y cobertura de test."
+  },
+  "summary_3_5_lines": "W4 implementado como helper puro de alineacion fiscal: alignedFYFacts elige el ancla (period_end mas reciente con EBIT) y devuelve solo conceptos de ese mismo FY, con vocabulario cerrado de motivos. Tests unitarios con fixtures sinteticos cubren ancla, staleness, period mismatch, no_anchor, look-ahead y determinismo. Sin secrets, sin DSN, sin SQL nuevo, sin cambios en go.mod/go.sum, sin modificacion de permisos. Veredicto: bajo/info, sin bloques duros.",
+  "delta_closure_analysis": {
+    "task_id": "abys-m6c-t1-interest-tax",
+    "delta_type": "working_tree_closure",
+    "new_files": {
+      "internal/pipeline/fyfacts.go": {
+        "change": "Helper puro W4: alignedFYFacts selecciona ancla fiscal y devuelve valores + motivos de degradacion. Solo log/slog.Debug (ticker, anchor_period_end, reasons). No panic/os.Exit/unsafe. Aritmetica de fechas con asOf cero seguro via observableAt. Verificado que no loguea valores sensibles.",
+        "security_check": "OK: sin credenciales, sin DSN en claro, sin log de valores sensibles, sin codigo peligroso, sin nuevas dependencias. Solo stdlib log/slog y time.",
+        "no_secrets_logged": true
+      },
+      "internal/pipeline/fyfacts_test.go": {
+        "change": "Tests unitarios W4 con fixtures sinteticos: fechas fijas 2006-01-02, valores numericos, series map en memoria. Confirma no look-ahead, staleness, period mismatch, no_anchor, determinismo. Sin datos personales, sin credenciales, sin acceso BD/red.",
+        "security_check": "OK: fixtures solo numeros y fechas, sin secretos, sin DSN, sin llamadas a red o BD. Riesgo nulo.",
+        "no_secrets": true
+      },
+      "test-results/tests/abys-m6c-t1-w4.json": {
+        "change": "Evidencia W4: JSON valido que verifica ausencia de DSN con contraseña, tokens ni rutas privadas. Los DSN van redactados/ficticios. Verifica compilacion y suites de test.",
+        "security_check": "OK: JSON de evidencia validado que no contiene credenciales reales. Estructurado para revision sin exponer secretos.",
+        "no_secrets_evidence": true
+      }
+    },
+    "not_touched": {
+      "go_mod_go_sum": "No se tocaron go.mod ni go.sum. No hay nuevas dependencias.",
+      "sql_migraciones": "No se tocaron migraciones ni nuevo SQL. W4 reutiliza storage.GetFYAnnualSeries sin modificar queries.",
+      "permisos_config": "No se modifico configuracion de permisos ni roles de BD en W4."
+    }
+  },
+  "evidence_check": {
+    "test-results/security/abys-m6c-t1-w4.json": {
+      "check": "Comprobado que no contiene credenciales, DSN con contraseña real ni rutas privadas; los DSN van redactados o son ficticios (patron postgres://***@localhost:55432/abys_test). Valida JSON valido.",
+      "result": "OK: JSON estructurado sin credenciales reales. DSN ausente o ficticio en la evidencia. Formato consistente con estilo abys-m6c-t1-w3.json."
+    }
+  },
+  "classification": {
+    "hard_blocks": 0,
+    "low_severity": 0,
+    "info": 5,
+    "verdict": "no hard blocks",
+    "summary": "W4: 2 nuevos ficheros puros de ayuda fiscal sin SQL, red, credenciales o ficheros. Sin secrets detectados (regex advisory, gitleaks no disponible). Sin cambios en go.mod/go.sum, sin SQL nuevo, sin modificacion de permisos. Clasificacion: solo info por nuevas estructuras y cobertura de test."
+  },
+  "summary_3_5_lines": "W4 implementado como helper puro de alineacion fiscal: alignedFYFacts elige el ancla (period_end mas reciente con EBIT) y devuelve solo conceptos de ese mismo FY, con vocabulario cerrado de motivos. Tests unitarios con fixtures sinteticos cubren ancla, staleness, period mismatch, no_anchor, look-ahead y determinismo. Sin secrets, sin DSN, sin SQL nuevo, sin cambios en go.mod/go.sum, sin modificacion de permisos. Veredicto: bajo/info, sin bloques duros."
+}
