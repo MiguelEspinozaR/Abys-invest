@@ -1,0 +1,108 @@
+{
+  "task_id": "M6c-T1 W6a",
+  "stage": "bump revisión derived_metrics 2.0.0 -> 2.1.0 (12 métricos ADR D12)",
+  "scope": "SOLO el bump de la revisión de derived_metrics. NO se tocan score/API/quality (eso es W6b). NO commit, NO push, NO mutaciones git.",
+  "generated_at_utc": "2026-10-07",
+  "verdict": "PASS",
+  "decisiones": [
+    "Se AÑADE la revisión nueva 2.1.0 (V21/ModelVersion21) y se CONSERVAN las constantes viejas V2/ModelVersion2 = \"2.0.0\" (filas 762 ya persistidas) para poder leer historia (§26: nunca se sobrescriben filas existentes).",
+    "modern (los 12 de ADR D12) se mapea a V21 en byMetric y en AllPairs/PairsFor; legacy (8) sigue en V1. DefiningVersion(desconocida) == V1 intacto.",
+    "CalculateMetricsV2 persiste/serializa model_version = ModelVersion21; BuildDerivedMetricsV2(modelVersion==\"\") usa ModelVersion21.",
+    "pipeline/analytics.go llama BuildDerivedMetricsV2 con metrics.ModelVersion21 (antes ModelVersion2).",
+    "El comentario obsoleto de InterestExpense (\"concept map has no rows for it\") se corrige: el interés es nil solo cuando no hay par alineado/fresco; interest_coverage se emite NULL con ReasonInterestCoverageUnavailable.",
+    "REVIEW P1-1 (ADR D13/R-M6c-1): los readers de PRODUCTO sin versión (GetDerivedMetricsBySecurity/GetLatestMetrics) pasan a devolver POR SLUG SOLO la fila de su revisión VIGENTE según metricver.DefiningVersion (filtro Go tras el scan). 2.0.0 queda como historia consultable por SQL, no por esos readers; un slug sin su revisión vigente se omite (no cae a la vieja). Los readers comparables ya filtraban por versión en el JOIN; estos dos eran el agujero.",
+    "REVIEW P3-1: AllPairs/PairsFor derivan la revisión de byMetric (fuente única; el orden legacy-then-modern se conserva, determinismo intacto).",
+    "REVIEW P2-1: las 762 filas 2.0.0 quedan FUERA de las medianas históricas §16 de los 12 (reinicio de profundidad tras el bump) — consecuencia aprobada de Az5+ADR D13, tarea de deuda, ver notas → W8.",
+    "NO se cambian: DefaultModelVersion==\"1.0.0\", la aserción de que los 8 legacy son 1.0.0, ni score/valuation/api (W6b)."
+  ],
+  "files_touched": [
+    "internal/metricver/metricver.go",
+    "internal/metrics/engine_v2.go",
+    "internal/pipeline/analytics.go",
+    "internal/metrics/engine_v2_test.go",
+    "internal/pipeline/pipeline_integration_test.go",
+    "internal/metricver/metricver_test.go",
+    "internal/storage/comparables_integration_test.go",
+    "internal/storage/derived_metrics.go (REVIEW P1-1: filtro de revisión vigente en los lectores sin versión)",
+    "internal/storage/m2_integration_test.go (REVIEW P1-1: test de no-regresión por slug)",
+    "test-results/tests/abys-m6c-t1-w6-metrics.json"
+  ],
+  "punto_5_grep_seeds": {
+    "busqueda": "grep -rn '\"2\\.0\\.0\"' --include=*.go internal",
+    "hallazgo": "NO hay seeds/fixtures que inserten filas 2.0.0 de los 12 métricos modernos: internal/api/m3_integration_test.go y internal/storage/m2_integration_test.go solo siembran filas 1.0.0 legacy; internal/storage/m3/m6 siembran scores/growth/wacc (fuera de alcance, W6b); internal/score/fixtures/aapl_score.json es score (W6b).",
+    "ficheros_tocados_por_este_punto": [
+      "internal/pipeline/pipeline_integration_test.go (NO seed: aserción de que el pipeline persiste interest_coverage en 2.0.0 -> actualizada a 2.1.0 + comentarios)",
+      "internal/metrics/engine_v2_test.go (aserciones que trataban ModelVersion2 como vigente -> ModelVersion21; punto 4)"
+    ],
+    "2_0_0_restantes_intencionales": [
+      "internal/metricver/metricver.go:34 const V2 = \"2.0.0\" (historia, requerido)",
+      "internal/metrics/engine_v2.go:21 const ModelVersion2 = \"2.0.0\" (historia, requerido)",
+      "internal/storage/comparables_integration_test.go:39 seed 2.0.0 que el test usa para probar que el reader NO la selecciona (requerido)"
+    ]
+  },
+  "tests_que_muerden": [
+    {
+      "name": "internal/metricver: TestDefiningVersionCurrentRevision",
+      "verifica": "DefiningVersion(roic)==\"2.1.0\", DefiningVersion(pe_ratio)==\"1.0.0\", desconocida/vacía==\"1.0.0\", los 12 modernos == V21"
+    },
+    {
+      "name": "internal/metricver: TestAllPairsCarriesCurrentRevision",
+      "verifica": "AllPairs() (lo que reciben los readers por métrica) direcciona los 12 modernos a V21 y los 8 legacy a V1 (tras P3-1, las revisiones salen de byMetric, no de literales)"
+    },
+    {
+      "name": "internal/metricver: TestPairsForUsesDefiningVersion",
+      "verifica": "PairsFor usa el binding vigente (roic->2.1.0, pe_ratio->1.0.0, desconocidas omitidas); derivado de byMetric tras P3-1"
+    },
+    {
+      "name": "internal/metrics: TestDefiningVersionForComparablesReaders",
+      "verifica": "ModelVersion21==\"2.1.0\", roic y los 12 NewMetricNames() => ModelVersion21, legacy=>1.0.0, desconocida=>1.0.0"
+    },
+    {
+      "name": "internal/metrics: TestInterestCoverageNULLCarriesReasonSnapshot",
+      "verifica": "BuildDerivedMetricsV2(in,\"\") serializa model_version 2.1.0 y el snapshot NULL lleva ReasonInterestCoverageUnavailable"
+    },
+    {
+      "name": "internal/storage: TestComparablesReaderPrefersCurrentRevision (integración)",
+      "verifica": "Una fila 2.0.0 de un métrico moderno NO es lo que el reader por métrica selecciona: seed 2.0.0 (0.30) + 2.1.0 (0.21) del mismo roic/as_of; GetSectorComparables y GetHistoricalMedianWithCount con metricver.AllPairs() devuelven 0.21 (gana 2.1.0) y ambas filas siguen en la tabla (historia legible, §26)"
+    },
+    {
+      "name": "internal/storage: TestDerivedMetricsReadersFiltranRevisionVigente (integración, REVIEW P1-1)",
+      "verifica": "GetDerivedMetricsBySecurity y GetLatestMetrics devuelven EXACTAMENTE una fila por slug: roic = 0.21@2.1.0 (con 0.30@2.0.0 del mismo (security, as_of) sembrada DESPUÉS), pe_ratio = 15.0@1.0.0, y ev_ebitda SOLO 2.0.0 se OMITE (no cae a la vieja). Muerde: sin el filtro (mutación probada) el orden/índice decidiría la mezcla y el test FALLA"
+    },
+    {
+      "name": "internal/pipeline: TestRefreshMetricsAndScoresPersists (integración)",
+      "verifica": "El pipeline persiste interest_coverage con model_version 2.1.0 (antes 2.0.0) e idempotencia 9 filas intacta"
+    }
+  ],
+  "command_outputs": {
+    "gofmt_-l_dot": "(vacío — salida cruda: sin líneas)",
+    "go_vet": "go vet ./... && go vet -tags=integration ./... && go build ./... -> sin salida, exit 0",
+    "go_test_5_paquetes": "ok metricver / ok metrics / ok pipeline / ok relative / ok compare (exit 0) — ronda de review: go test ./internal/storage/... ./internal/relative/... ./internal/api/... ./internal/compare/... ./internal/pipeline/... -count=1 -> 5 ok",
+    "go_test_dot_dot_dot": "23 paquetes ok, 0 fallos (exit 0)",
+    "make_integration": "todos los paquetes ok contra postgres://***@localhost:55432/abys_test (incluye TestDerivedMetricsReadersFiltranRevisionVigente, TestCompare... y los de W6b; exit 0)",
+    "verificacion_review_mutaciones": "MUTACIONES PROBADAS (restauradas después): (1) quitando el filtro de keepCurrentRevision -> TestDerivedMetricsReadersFiltranRevisionVigente FALLA; (2) quitando 'model_version DESC' del latest de scores -> TestScoreGate... FALLA; (3) quitando el filtro -> TestComputeRelativeStageFiltraRevisionVigente FALLA (fcf_yield stale-only contamina la stage). Sin las mutaciones: PASS."
+  },
+  "git_status_short": [
+    " M internal/metrics/engine_v2.go",
+    " M internal/metrics/engine_v2_test.go",
+    " M internal/metricver/metricver.go",
+    " M internal/pipeline/analytics.go",
+    " M internal/pipeline/pipeline_integration_test.go",
+    " M internal/storage/derived_metrics.go (REVIEW P1-1)",
+    " M internal/storage/m2_integration_test.go (REVIEW P1-1)",
+    "?? internal/metricver/metricver_test.go",
+    "?? internal/storage/comparables_integration_test.go",
+    "?? internal/pipeline/relative_stage_integration_test.go (REVIEW P1-1, W6b)",
+    "?? internal/api/m6c_w6_score_integration_test.go (REVIEW P2-2, W6b)",
+    "?? test-results/tests/abys-m6c-t1-w6-metrics.json",
+    "?? test-results/tests/abys-m6c-t1-w6-score.json"
+  ],
+  "notas": "Sin commit, sin push, sin tocar .ai/. HEAD permanece en 557a710. La constante ModelVersion2 queda definida pero sin usos productivos (se conserva como dirección de historia, según decisión). REVIEW P2-1/P3-2/P3-3 (documentar, no código): (a) las 762 filas 2.0.0 quedan FUERA de las medianas históricas §16 de los 12 (reinicio de profundidad tras el bump): consecuencia aprobada de Az5+ADR D13, queda como tarea de deuda W8 (profundidad histórica); (b) modelcfg.ModelVersion=\"2.1.0\" (parameter_sets, migration 015) y el comentario 'reproduce cada score 2.1.0' del Makefile quedan como deuda INERTE (sin callers / sin efecto en filas), se documentan, no se tocan.",
+  "review_pass": true,
+  "review_final": {
+    "reviewer": "opencode/big-pickle",
+    "review_date_utc": "2026-10-08",
+    "verdict": "APPROVED",
+    "nota": "W6a aprobado en bloque con W6b (ver abys-m6c-t1-w6-score.json -> review_final). P1-1 cerrado (filtro keepCurrentRevision en los readers de producto, mutado-verificado), P2-1 documentado como deuda (reinicio de profundidad de medianas historicas §16, consecuencia aprobada de Az5+ADR D13)."
+  }
+}

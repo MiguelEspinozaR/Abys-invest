@@ -290,13 +290,13 @@ func handleScore(w http.ResponseWriter, r *http.Request, pool *pgxpool.Pool, tic
 	}
 
 	// B15: `?model_version=` fija la REVISIÓN. Sin él se sirve la última fila,
-	// que desde M6c es 2.1.0; con él, la de esa revisión, que es lo que hace
-	// falta para comprobar que 1.1.0 y 2.0.0 siguen siendo legibles.
+	// que desde M6c-T1 W6b es 2.2.0; con él, la de esa revisión, que es lo que
+	// hace falta para comprobar que 1.1.0, 2.0.0 y 2.1.0 siguen siendo legibles.
 	modelVersion := strings.TrimSpace(r.URL.Query().Get("model_version"))
 	if modelVersion != "" {
 		if !isKnownModelVersion(modelVersion) {
 			writeError(w, http.StatusBadRequest, CodeValidation,
-				"model_version desconocido (esperado 1.1.0, 2.0.0 o 2.1.0)")
+				"model_version desconocido (esperado 1.1.0, 2.0.0, 2.1.0 o 2.2.0)")
 			return
 		}
 	}

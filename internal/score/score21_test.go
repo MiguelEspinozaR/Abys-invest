@@ -56,8 +56,8 @@ func TestScore21CincoDimensionesEnOrdenCanonico(t *testing.T) {
 			t.Fatalf("dimensión %d: esperado %q, got %q", i, name, res.Dimensions[i].Name)
 		}
 	}
-	if res.ModelVersion != ModelVersion21 {
-		t.Fatalf("model_version: esperado %q, got %q", ModelVersion21, res.ModelVersion)
+	if res.ModelVersion != ModelVersion22 {
+		t.Fatalf("model_version: esperado %q, got %q", ModelVersion22, res.ModelVersion)
 	}
 	// §18 estricto: los cinco pesos configurados suman 0.90. Con las cinco
 	// dimensiones válidas, weight_used == weight_configured == 0.90 y el score
@@ -433,5 +433,35 @@ func TestScore21NoAfectaScore2_0_0(t *testing.T) {
 	}
 	if legacy.Score <= 0 || legacy.Score > 100 {
 		t.Fatalf("2.0.0 devolvió un score imposible: %d", legacy.Score)
+	}
+}
+
+// M6c-T1 W6b: 2.2.0 es la revisión VIGENTE del score y 2.1.0 se CONSERVA como
+// historia (§26: las revisiones se añaden, nunca se sobrescriben). El trace NO
+// cambió de forma (W5 cambió entradas, no la forma), así que el esquema sigue
+// siendo TraceVersion "1" y los identificadores se quedaron con el sufijo 21.
+func TestScore22VigenteY21ConservadaComoHistoria(t *testing.T) {
+	if ModelVersion22 != "2.2.0" {
+		t.Fatalf("ModelVersion22: esperado \"2.2.0\", got %q", ModelVersion22)
+	}
+	if ModelVersion21 != "2.1.0" {
+		t.Fatalf("ModelVersion21 (historia legible): esperado \"2.1.0\", got %q", ModelVersion21)
+	}
+	res := CalculateScore21(completeInput21(), modelcfg.DefaultModelConfig())
+	if res.ModelVersion != "2.2.0" {
+		t.Fatalf("CalculateScore21 debe devolver la revisión VIGENTE \"2.2.0\", got %q", res.ModelVersion)
+	}
+	if res.ModelVersion == ModelVersion21 {
+		t.Fatalf("la revisión vigente no puede seguir siendo la historia %q", ModelVersion21)
+	}
+	tr := BuildTrace21(completeInput21(), res)
+	if tr.ModelVersion != "2.2.0" {
+		t.Fatalf("el trace de la fila vigente: esperado \"2.2.0\", got %q", tr.ModelVersion)
+	}
+	if tr.TraceVersion != TraceVersion {
+		t.Fatalf("trace_version: esperado %q (el esquema NO cambió), got %q", TraceVersion, tr.TraceVersion)
+	}
+	if len(tr.Dimensions) != 5 {
+		t.Fatalf("el trace vigente sigue teniendo las 5 dimensiones de §18, got %d", len(tr.Dimensions))
 	}
 }

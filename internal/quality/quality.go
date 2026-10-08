@@ -29,9 +29,18 @@ import (
 	"github.com/miky/abys-invest/internal/reason"
 )
 
-// ModelVersion identifies the quality formula revision. 1.0.0 is the FIRST
-// version of a NEW engine: nothing persisted before M6c carries this string.
-const ModelVersion = "1.0.0"
+// ModelVersion identifies the quality formula revision.
+//
+// HISTORY (§26: revisions are ADDED, never overwritten, so old rows stay
+// readable):
+//
+//	1.0.0 — FIRST version of a NEW engine: nothing persisted before M6c
+//	        carries this string.
+//	1.1.0 — M6c-T1: observed tax rate (`derived`, ADR D32) feeding the bands
+//	        plus interest_coverage aligned by fiscal year (W4/W5/W6). Same
+//	        five sub-blocks, same metrics, same coverage denominator: the
+//	        revision changed WHAT a metric reads, not the shape of the result.
+const ModelVersion = "1.1.0"
 
 // Metric names (§13/§14). They are the keys of Result.Metrics, the `name` of
 // every Metric of a SubScore, and the same slugs that derived_metrics 2.0.0

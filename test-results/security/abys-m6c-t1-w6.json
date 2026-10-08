@@ -1,0 +1,81 @@
+{
+  "task_id": "abys-m6c-t1-w6",
+  "git_diff_numstat": {
+    "3": {
+      "internal/api/handlers.go": 3
+    },
+    "22": {
+      "internal/api/score_response.go": 22
+    },
+    "89": {
+      "internal/api/score_response_21_test.go": 89
+    },
+    "32": {
+      "internal/score/score21_test.go": 32
+    },
+    "125": {
+      "internal/backtest/m6_integration_test.go": 125
+    },
+    "5": {
+      "internal/backtest/scorereplay.go": 5
+    },
+    "18": {
+      "internal/metrics/engine_v2.go": 18
+    },
+    "13": {
+      "internal/pipeline/analytics.go": 13
+    },
+    "16": {
+      "internal/storage/scores.go": 16
+    },
+    "6": {
+      "internal/pipeline/pipeline_integration_test.go": 6
+    },
+    "2": {
+      "internal/pipeline/qualityrelative.go": 2
+    },
+    "12": {
+      "internal/quality/quality.go": 12
+    },
+    "17": {
+      "internal/quality/quality_test.go": 17
+    },
+    "1": {
+      "internal/relative/relative.go": 1
+    },
+    "45": {
+      "internal/score/score21.go": 45
+    }
+  },
+  "secrets_scan": {
+    "gitleaks": "not installed; regex advisory applied against .gitleaks.toml allowlist",
+    "findings": []
+  },
+  "evidence_json_check": {
+    "abys-m6c-t1-w6-metrics.json": "no DSN/tokens beyond placeholder abys:abys@localhost (masked as *** in JSON)",
+    "abys-m6c-t1-w6-score.json": "no DSN/tokens beyond placeholder abys:abys@localhost (masked as *** in JSON)"
+  },
+  "no_sql_deps_perms_changes": true,
+  "no_absolute_paths_outside_working_tree": true,
+  "verdict": "PASS",
+  "summary": "W6 delta (W6a metrics + W6b score/quality/gate) shows only Go source and test file modifications; no exposed secrets, no new DSN/tokens beyond allowlisted placeholder, no SQL/deps/perm changes, no absolute paths outside working tree. All evidence JSONs are clean.",
+  "delta": {
+    "P1-1_fix": {
+      "affected_files": [
+        "internal/storage/derived_metrics.go",
+        "internal/metricver/metricver.go",
+        "internal/storage/comparables_integration_test.go",
+        "internal/api/m6c_w6_score_integration_test.go",
+        "internal/storage/*_test.go (new integration tests)",
+        "internal/pipeline/*_test.go (new integration tests)",
+        "internal/backtest/*_test.go (new integration tests)"
+      ],
+      "description": "Adds keepCurrentRevision filter based on metricver.DefiningVersion; updates AllPairs/PairsFor to use byMetric; adds integration tests for storage, pipeline, backtest; updates evidence JSONs."
+    },
+    "secrets_check": "gitleaks not installed; regex advisory against .gitleaks.toml allowlist \u2013 only placeholder abys:abys@localhost matches, which is allowed and masked in JSON evidence",
+    "sql_changes": "no new SQL; filter is pure Go post-scan, only SELECT queries unchanged",
+    "deps_red_perms": "no new dependencies, network, or permission changes",
+    "evidence_json_tokens": "evidence JSONs contain only placeholder abys:abys@localhost (allowlisted), masked as ***",
+    "absolute_paths": "no new absolute paths outside working_tree"
+  }
+}

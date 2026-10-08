@@ -129,3 +129,35 @@ func equalScore(a, b *float64) bool {
 	}
 	return *a == *b
 }
+
+// M6c-T1 W6b: la lista CERRADA de `?model_version=` conoce la revisión vigente
+// 2.2.0 y conserva legibles las cuatro revisiones históricas (§26: se lee la
+// historia, no se reescribe). Una cadena malformada NO pasa: el gate existe
+// para poder responder "esa revisión no existe" en vez de un 404 confuso.
+func TestIsKnownModelVersionIncluyeLaVigenteYLasHistoricas(t *testing.T) {
+	for _, v := range []string{"1.1.0", "2.0.0", "2.1.0", "2.2.0"} {
+		if !isKnownModelVersion(v) {
+			t.Errorf("isKnownModelVersion(%q) = false, esperado true", v)
+		}
+	}
+	for _, v := range []string{"3.0.0", "2.2.0 ", " 2.2.0", "2.2", "2.10.0", "1.1.0/2.0.0", ""} {
+		if isKnownModelVersion(v) {
+			t.Errorf("isKnownModelVersion(%q) = true, esperado false (lista cerrada)", v)
+		}
+	}
+	// Los literales de arriba deben ser LAS CONSTANTES de los motores: si el
+	// score sube a 2.3.0 sin tocar esta lista, el gate no lo deja fuera en
+	// silencio.
+	if !isKnownModelVersion(score.ModelVersion22) {
+		t.Errorf("la revisión vigente del motor (%q) debe estar en la gate", score.ModelVersion22)
+	}
+	if score.ModelVersion22 != "2.2.0" {
+		t.Errorf("score.ModelVersion22: esperado \"2.2.0\", got %q", score.ModelVersion22)
+	}
+	if !isKnownModelVersion(score.ModelVersion21) || score.ModelVersion21 != "2.1.0" {
+		t.Errorf("la historia 2.1.0 debe seguir legible: %q", score.ModelVersion21)
+	}
+	if !isKnownModelVersion(score.ModelVersion) {
+		t.Errorf("2.0.0 (%q) debe seguir legible", score.ModelVersion)
+	}
+}

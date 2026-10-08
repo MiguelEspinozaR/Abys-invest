@@ -9,7 +9,7 @@
 // validated in REVIEW): SPEC §16 needs nine metrics for `relative`, but ADR D12
 // leaves the eight metrics of 1.0.0 untouched, so four of the nine
 // (pe_ratio, pb_ratio, fcf_yield, roe) are 1.0.0 forever. Filtering the peer
-// medians by a single `model_version = '2.0.0'` would return nil for those four
+// medians by a single `model_version = '2.1.0'` would return nil for those four
 // and silently cut `relative` to a quarter of its inputs.
 //
 // So the comparables readers filter PER METRIC, by the revision that metric is
@@ -21,7 +21,16 @@ package metricver
 // Revision 1.0.0: the eight metrics of M2 (§13.2/§13.3/§13.4).
 const V1 = "1.0.0"
 
-// Revision 2.0.0: the twelve metrics of ADR D12 (SPEC §13/§14).
+// Revision 2.1.0 (current): the twelve metrics of ADR D12 (SPEC §13/§14).
+// M6c-T1 W5 changed their INPUTS — interest and the observed tax rate must come
+// from the SAME fiscal year — so the revision that owns them today is 2.1.0,
+// not the 2.0.0 they were released as.
+const V21 = "2.1.0"
+
+// V2 is the FIRST revision of the twelve metrics of ADR D12. It is superseded
+// by V21 but is KEPT as history: rows 762 (and any other 2.0.0 row) were
+// already persisted and must remain readable (§26: never overwrite existing
+// rows).
 const V2 = "2.0.0"
 
 // Pair binds a metric to the revision that defines it.
@@ -42,7 +51,8 @@ const (
 	FCFYield = "fcf_yield"
 )
 
-// Metrics of 2.0.0 (ADR D12).
+// Metrics of 2.1.0 (ADR D12). The same twelve slugs existed as 2.0.0 (V2) and
+// are kept as history; the DEFINING revision of these metrics is now 2.1.0.
 const (
 	ROIC            = "roic"
 	OperatingMargin = "operating_margin"
@@ -61,7 +71,7 @@ const (
 // legacy is the 1.0.0 set.
 var legacy = []string{EPS, PE, PB, PCF, PEG, ROE, DE, FCFYield}
 
-// modern is the 2.0.0 set.
+// modern is the 2.1.0 set (ADR D12, revision vigente tras M6c-T1 W5).
 var modern = []string{ROIC, OperatingMargin, FCFMargin, NetDebtToEBITDA, InterestCover,
 	FCFToDebt, PositiveEPSYrs, PositiveFCFYrs, EPSVolatility, FCFVolatility, EVEBITDA, EVEBIT}
 
@@ -72,7 +82,7 @@ var byMetric = func() map[string]string {
 		m[k] = V1
 	}
 	for _, k := range modern {
-		m[k] = V2
+		m[k] = V21
 	}
 	return m
 }()
@@ -89,23 +99,29 @@ func DefiningVersion(metric string) string {
 
 // AllPairs returns every metric with its defining revision, in a deterministic
 // order. It is what the comparables readers are given.
+//
+// M6c-T1 review P3-1: the REVISION of every pair comes from byMetric — the
+// single source of truth of the binding (no duplicated V1/V21 literals). The
+// ORDER stays as declared above (legacy then modern, both in their defined
+// order), which is the deterministic order consumers already rely on.
 func AllPairs() []Pair {
 	out := make([]Pair, 0, len(byMetric))
 	for _, k := range legacy {
-		out = append(out, Pair{k, V1})
+		out = append(out, Pair{k, byMetric[k]})
 	}
 	for _, k := range modern {
-		out = append(out, Pair{k, V2})
+		out = append(out, Pair{k, byMetric[k]})
 	}
 	return out
 }
 
 // PairsFor returns the pairs of a subset of metrics, skipping unknown ones.
+// The revision comes from byMetric, never from a literal.
 func PairsFor(metrics []string) []Pair {
 	out := make([]Pair, 0, len(metrics))
 	for _, m := range metrics {
 		if _, ok := byMetric[m]; ok {
-			out = append(out, Pair{m, DefiningVersion(m)})
+			out = append(out, Pair{m, byMetric[m]})
 		}
 	}
 	return out

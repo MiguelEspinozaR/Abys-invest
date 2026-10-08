@@ -18,7 +18,8 @@ import (
 )
 
 // This file is the M6c staging of §13 (quality) and §16 (relative) into the
-// pipeline, and the wiring of score 2.1.0 that consumes them (B9, B10, B11).
+// pipeline, and the wiring of the score engine (2.1.0 history / 2.2.0 current)
+// that consumes them (B9, B10, B11).
 //
 // WHY THERE IS NO quality_metrics / relative_results TABLE
 // -------------------------------------------------------

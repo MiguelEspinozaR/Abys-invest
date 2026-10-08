@@ -167,8 +167,9 @@ func TestRefreshMetricsAndScoresPersists(t *testing.T) {
 		t.Fatalf("GetLatestMetrics: %v", err)
 	}
 	// M6c B4: derived_metrics now holds BOTH revisions — the 8 of 1.0.0 untouched
-	// and the 12 of 2.0.0 — and the fixture has no interest_expense (M6c-T1), so
-	// the only 2.0.0 row that MUST exist is interest_coverage with a NULL value.
+	// and the 12 of 2.1.0 (M6c-T1 W6a: la revisión vigente de los 12 dejó de ser
+	// 2.0.0) — and the fixture has no interest_expense (M6c-T1), so
+	// the only 2.1.0 row that MUST exist is interest_coverage with a NULL value.
 	seen := map[string]string{}
 	for _, m := range mts {
 		seen[m.Metric] = m.ModelVersion
@@ -178,8 +179,8 @@ func TestRefreshMetricsAndScoresPersists(t *testing.T) {
 			t.Errorf("métrica %q ausente de la revisión 1.0.0 (vista como %q)", name, seen[name])
 		}
 	}
-	if seen["interest_coverage"] != "2.0.0" {
-		t.Errorf("interest_coverage debe emitirse en 2.0.0 incluso sin interest_expense (M6c-T1), vista como %q", seen["interest_coverage"])
+	if seen["interest_coverage"] != "2.1.0" {
+		t.Errorf("interest_coverage debe emitirse en 2.1.0 incluso sin interest_expense (M6c-T1), vista como %q", seen["interest_coverage"])
 	}
 	var icValue *float64
 	for _, m := range mts {
@@ -214,7 +215,7 @@ func TestRefreshMetricsAndScoresPersists(t *testing.T) {
 	if err := integPool.QueryRow(ctx, `SELECT count(*) FROM scores WHERE security_id=$1`, sec.ID).Scan(&nScores); err != nil {
 		t.Fatalf("count scores: %v", err)
 	}
-	// 8 (1.0.0) + interest_coverage (2.0.0, NULL por M6c-T1): la segunda corrida
+	// 8 (1.0.0) + interest_coverage (2.1.0, NULL por M6c-T1): la segunda corrida
 	// debe seguir dejando exactamente las mismas filas (idempotencia por
 	// (security, as_of, model_version, metric)).
 	if nMetrics != 9 || nScores != 1 {

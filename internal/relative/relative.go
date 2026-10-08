@@ -119,7 +119,7 @@ const (
 )
 
 // Provenance of a Result (GET /relative marks `computed` when there is no
-// persisted 2.1.0 row to read).
+// persisted score row (2.1.0/2.2.0 trace) to read).
 const (
 	SourcePersisted = "persisted"
 	SourceComputed  = "computed"

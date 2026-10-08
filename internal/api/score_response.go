@@ -8,7 +8,8 @@ import (
 	"github.com/miky/abys-invest/internal/storage"
 )
 
-// dimensionResponse is ONE dimension in the API contract, for BOTH revisions.
+// dimensionResponse is ONE dimension in the API contract, for every revision
+// that has dimensions (2.0.0, 2.1.0 and 2.2.0).
 //
 // It is a projection and not score.DimensionScore / score.Dimension21 on purpose:
 // the wire format must not change shape when the engine does, and it must not
@@ -41,9 +42,9 @@ type qualitySubBlockResponse struct {
 	Metrics  map[string]*float64 `json:"metrics,omitempty"`
 }
 
-// qualityResponse is the §13 block of 2.1.0: score, coverage, confidence, the
-// tax rate provenance and the five sub-blocks (D26/Az3: they are what the UI has
-// to show, not just a number).
+// qualityResponse is the §13 block of 2.1.0/2.2.0: score, coverage, confidence,
+// the tax rate provenance and the five sub-blocks (D26/Az3: they are what the UI
+// has to show, not just a number).
 type qualityResponse struct {
 	Score         *float64                           `json:"score,omitempty"`
 	Coverage      float64                            `json:"coverage"`
@@ -59,9 +60,9 @@ type relativeSideResponse struct {
 	Coverage float64  `json:"coverage"`
 }
 
-// relativeResponse is the §16 block of 2.1.0. The two sides are SEPARATE fields
-// because §16 asks for them separated: "cheap for its sector" and "cheap for
-// itself" disagreeing is information.
+// relativeResponse is the §16 block of 2.1.0/2.2.0. The two sides are SEPARATE
+// fields because §16 asks for them separated: "cheap for its sector" and "cheap
+// for itself" disagreeing is information.
 type relativeResponse struct {
 	Score           *float64 `json:"score,omitempty"`
 	SectorScore     *float64 `json:"sector_score,omitempty"`
@@ -81,6 +82,9 @@ type relativeResponse struct {
 //	2.0.0 → its five M4b dimensions (graham/dcf/fundamentals/comparables/trend).
 //	2.1.0 → the five §18 dimensions (graham/dcf/quality/relative/market_context)
 //	         plus `quality` (with sub-blocks) and `relative` (sides separated).
+//	2.2.0 → IDENTICAL to 2.1.0 (same trace schema, same five dimensions): only
+//	         the quality INPUTS changed (quality 1.1.0), so it decodes through
+//	         the same blocksFromTrace21.
 //
 // A row of a revision this build does not know gets NO dimensions rather than
 // wrong ones: describing a score you did not produce is worse than omitting it.
@@ -107,7 +111,7 @@ type scoreResponse struct {
 func newScoreResponse(s storage.Score) scoreResponse {
 	resp := scoreResponse{Score: s}
 	switch s.ModelVersion {
-	case score.ModelVersion21:
+	case score.ModelVersion21, score.ModelVersion22:
 		resp.Dimensions, resp.Quality, resp.Relative, resp.TraceVersion, resp.ParameterSet = blocksFromTrace21(s.InputsSnapshot)
 	default:
 		resp.Dimensions = dimensionsFromSnapshot(s.InputsSnapshot, s.ModelVersion)
@@ -137,7 +141,8 @@ func weightSums(dims []dimensionResponse) (configured, used *float64) {
 	return &c, &u
 }
 
-// blocksFromTrace21 decodes the trace of a 2.1.0 row.
+// blocksFromTrace21 decodes the trace of a 2.1.0 OR 2.2.0 row — same schema,
+// one decoder (W5 changed the entries, not the shape).
 //
 // The DIMENSIONS are recomputed from the trace (not read from the trace's own
 // dimension list) so that what the API shows is what the engine produces from the
@@ -208,8 +213,9 @@ func relativeFromTrace(t *score.Trace21) *relativeResponse {
 //
 // VERSION ISOLATION (D3): recomputing a 1.x snapshot with the 2.0.0 engine would
 // return five dimensions with weights the persisted score never used, so a row
-// whose model_version is not 2.0.0 gets NO dimensions. 2.1.0 is handled by
-// blocksFromTrace21 because its snapshot is a TRACE, not a ScoreInput.
+// whose model_version is not 2.0.0 gets NO dimensions. 2.1.0 and 2.2.0 are
+// handled by blocksFromTrace21 because their snapshot is a TRACE, not a
+// ScoreInput.
 func dimensionsFromSnapshot(snapshot []byte, modelVersion string) []dimensionResponse {
 	if len(snapshot) == 0 {
 		return nil
@@ -235,9 +241,13 @@ func dimensionsFromSnapshot(snapshot []byte, modelVersion string) []dimensionRes
 // espacio o "3.0.0" y obtendría un 404 genérico que no distingue "no existe esa
 // revisión" de "no hay score de AAPL para esa fecha". Con la lista cerrada el 400
 // dice exactamente qué versiones puede pedir.
+//
+// The four readable score revisions: 1.1.0 (legacy, no dimensions), 2.0.0
+// (score.ModelVersion, M4b), 2.1.0 (M6c history) and 2.2.0 (score.ModelVersion22,
+// current). History is READ, never rewritten (§26).
 func isKnownModelVersion(v string) bool {
 	switch v {
-	case "1.1.0", score.ModelVersion, score.ModelVersion21:
+	case "1.1.0", score.ModelVersion, score.ModelVersion21, score.ModelVersion22:
 		return true
 	default:
 		return false

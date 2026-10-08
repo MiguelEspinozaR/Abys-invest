@@ -13,21 +13,40 @@ import (
 	"github.com/miky/abys-invest/internal/relative"
 )
 
-// This file is score 2.1.0: the revision that makes the five dimensions of SPEC
-// §12/§18 the REAL taxonomy of the score, with the three M4b hybrids
-// (fundamentals/comparables/trend) replaced by quality/relative/market_context.
+// This file is score 2.1.0 and its successor 2.2.0: the revision that makes the
+// five dimensions of SPEC §12/§18 the REAL taxonomy of the score, with the three
+// M4b hybrids (fundamentals/comparables/trend) replaced by
+// quality/relative/market_context.
+//
+// TWO REVISIONS, ONE SCHEMA. 2.2.0 is the CURRENT revision (M6c-T1 W6b): same
+// five dimensions of §18, same trace layout, but its `quality` dimension is fed
+// by quality 1.1.0 (observed tax rate + interest_coverage aligned by FY) instead
+// of quality 1.0.0. 2.1.0 stays readable as HISTORY, its rows keep replaying and
+// its constant keeps naming them (§26: revisions are added, never overwritten).
+// That is why the identifiers are still called Trace21/Dimension21/…: they
+// carry BOTH 2.1.0 and 2.2.0, and renaming them would claim a schema change
+// that did not happen.
 //
 // NON-REGRESSION (CA-M6c-14): score.go (2.0.0) and its fixtures are NOT touched.
-// 2.1.0 lives beside them, ModelVersion21 is its own constant, and the API gate
-// keeps 1.1.0/2.0.0 readable. Two coexisting revisions of one engine is the same
-// contract M6b applied to valuation.
+// 2.1.0/2.2.0 live beside them, ModelVersion21 is its own constant, and the API
+// gate keeps 1.1.0/2.0.0/2.1.0 readable next to the current 2.2.0. Two
+// coexisting revisions of one engine is the same contract M6b applied to
+// valuation.
 //
 // THE RULE THIS FILE EXISTS TO ENFORCE (§16/§18, ADR D8): a dimension without a
 // value is INVALID and leaves the average. It is never a 50. `CalculateScore21`
 // has no `neutralDimension` at all — there is no code path that can invent one.
 
-// ModelVersion21 is the score revision of M6c (SPEC §18).
+// ModelVersion21 is the PREVIOUS score revision of M6c (SPEC §18), kept to read
+// the rows it wrote: its trace replays, its API block decodes and its version
+// string still identifies those rows.
 const ModelVersion21 = "2.1.0"
+
+// ModelVersion22 is the CURRENT score revision (M6c-T1 W6b). Same five §18
+// dimensions and the same trace schema as 2.1.0 — what changed is the quality
+// input (quality 1.1.0: observed tax rate + FY-aligned interest_coverage) and
+// therefore the numbers, not the shape.
+const ModelVersion22 = "2.2.0"
 
 // TraceVersion is the compatibility gate of the persisted trace (ADR D27): the
 // backtest runner refuses a snapshot whose trace_version it cannot decode, instead
@@ -130,8 +149,9 @@ func Weights21(mc modelcfg.ModelConfig) [5]float64 {
 	}
 }
 
-// §12 weights of 2.1.0 as the CODES default (graham 0.15, dcf 0.20, quality 0.35,
-// relative 0.20, market_context 0.10 — see the header note on the deviation).
+// §12 weights of 2.1.0/2.2.0 as the CODES default (graham 0.15, dcf 0.20,
+// quality 0.35, relative 0.20, market_context 0.10 — see the header note on the
+// deviation).
 // modelcfg.DefaultModelConfig is the authority; these constants exist so the test
 // suite and the report can name the numbers without retyping the literals.
 var (
@@ -148,9 +168,9 @@ func DimensionOrder21() []string {
 	return []string{DimGrahamV21, DimDCFV21, DimQualityV21, DimRelativeV21, DimMarketContextV21}
 }
 
-// Dimension21 is one weighted dimension of 2.1.0. Same contract as
-// DimensionScore: nil Score = invalid, and WeightConfigured is the configured
-// weight while the applied divisor is the result's WeightUsed.
+// Dimension21 is one weighted dimension of the 2.1.0/2.2.0 engine. Same
+// contract as DimensionScore: nil Score = invalid, and WeightConfigured is the
+// configured weight while the applied divisor is the result's WeightUsed.
 type Dimension21 struct {
 	Name   string   `json:"name"`
 	Score  *float64 `json:"score"`
@@ -228,7 +248,7 @@ func calculateScore21(in ScoreInput21, w [5]float64, mc modelcfg.ModelConfig) Re
 		Dimensions:       dims,
 		WeightConfigured: round6(weightConfigured),
 		WeightUsed:       round6(weightUsed),
-		ModelVersion:     ModelVersion21,
+		ModelVersion:     ModelVersion22,
 		ParameterSetID:   mc.ParameterSetID,
 		ParameterSet:     mc.ParameterSetName,
 	}
@@ -291,8 +311,11 @@ func scoreMarketContext21(sma50, sma200, momentum6m, momentum12m *float64) *floa
 	return &v
 }
 
-// Trace21 is the persisted snapshot of 2.1.0 (ADR D27): everything needed to
-// REPRODUCE the score and to explain it, without reading any other table.
+// Trace21 is the persisted snapshot of 2.1.0 AND 2.2.0 (ADR D27): everything
+// needed to REPRODUCE the score and to explain it, without reading any other
+// table. The layout is IDENTICAL for both revisions (W5 changed the entries,
+// not the shape), so one decoder serves the history and the current rows; only
+// the `model_version` field inside tells them apart.
 //
 // It is a versioned structure on purpose: TraceVersion gates its decoding, so a
 // future field change is a new version instead of a silent reinterpretation of an
@@ -317,13 +340,13 @@ type Trace21 struct {
 	MarketContext *MarketContextDetail `json:"market_context,omitempty"`
 
 	// The valuation blocks are COPIED from the 2.0.0 row that was read, never
-	// recomputed (§9): the 2.1.0 score does not own a valuation.
+	// recomputed (§9): this score does not own a valuation.
 	GrahamBase       *float64 `json:"graham_base,omitempty"`
 	DCFBase          *float64 `json:"dcf_base,omitempty"`
 	GrahamConfidence string   `json:"graham_confidence,omitempty"`
 	DCFConfidence    string   `json:"dcf_confidence,omitempty"`
 	// GrahamMOS and DCFMOS are the per-method margins of safety from the 2.0.0
-	// valuation row (INFORMATIONAL ONLY). The 2.1.0 score uses a single
+	// valuation row (INFORMATIONAL ONLY). This score uses a single
 	// MarginOfSafety (field below) for both dimensions. These fields are kept
 	// for auditability and are not used in score calculation (P2).
 	GrahamMOS   *float64 `json:"graham_margin_of_safety,omitempty"`
@@ -356,7 +379,8 @@ type MarketContextDetail struct {
 	Momentum12m *float64 `json:"momentum12m,omitempty"`
 }
 
-// BuildTrace21 assembles the trace of a computed 2.1.0 result.
+// BuildTrace21 assembles the trace of a computed result (history 2.1.0 or
+// current 2.2.0 — the layout is the same).
 func BuildTrace21(in ScoreInput21, res Result21) *Trace21 {
 	t := &Trace21{
 		TraceVersion:     TraceVersion,
@@ -503,8 +527,9 @@ func RecomputeFromTrace(t *Trace21, mc modelcfg.ModelConfig) (Result21, error) {
 	return calculateScore21(in, w, mc), nil
 }
 
-// generateJustification21 renders the Spanish justification of 2.1.0, naming the
-// dimensions that were MISSING instead of quietly scoring them.
+// generateJustification21 renders the Spanish justification of the 2.1.0/2.2.0
+// engine, naming the dimensions that were MISSING instead of quietly scoring
+// them.
 //
 // A justification that omits an absent dimension is how a score of 72 with
 // weight_used 0.55 reads as a verdict on a company when it is a verdict on the

@@ -125,9 +125,16 @@ func ListScores(ctx context.Context, q DBTX, f ScoresFilter) ([]Score, error) {
 
 // GetScoreByTicker returns the score of a ticker at exactly as_of, or
 // pgx.ErrNoRows when it does not exist.
+//
+// TIE-BREAK (M6c-T1 W6b): 2.1.0 and 2.2.0 coexist for the SAME (security,
+// as_of) (§26), so "the score of that date" is ambiguous. Ordering by
+// model_version DESC returns the CURRENT revision ("2.2.0" > "2.1.0") instead
+// of whatever row the planner happened to surface first — the same rule
+// growth/wacc/valuation already use.
 func GetScoreByTicker(ctx context.Context, q DBTX, ticker string, asOf time.Time) (*Score, error) {
 	row := q.QueryRow(ctx, `SELECT `+scoreColumns+` FROM scores
-		WHERE security_id = (SELECT id FROM securities WHERE ticker = $1) AND as_of = $2`,
+		WHERE security_id = (SELECT id FROM securities WHERE ticker = $1) AND as_of = $2
+		ORDER BY model_version DESC, id DESC`,
 		ticker, asOf)
 	s := &Score{}
 	if err := scanScore(row, s); err != nil {
@@ -142,9 +149,9 @@ func GetScoreByTicker(ctx context.Context, q DBTX, ticker string, asOf time.Time
 // GetScoreByTickerAndVersion is GetScoreByTicker restricted to ONE model
 // revision (B15: el gate por versión).
 //
-// The endpoint needs this because 2.0.0 and 2.1.0 coexist for the SAME as_of:
-// asking for "the score of AAPL" is ambiguous, and picking one silently would
-// make the dimensions served depend on which job ran last.
+// The endpoint needs this because 2.0.0, 2.1.0 and 2.2.0 coexist for the SAME
+// as_of: asking for "the score of AAPL" is ambiguous, and picking one silently
+// would make the dimensions served depend on which job ran last.
 func GetScoreByTickerAndVersion(ctx context.Context, q DBTX, ticker string, asOf time.Time, modelVersion string) (*Score, error) {
 	row := q.QueryRow(ctx, `SELECT `+scoreColumns+` FROM scores
 		WHERE security_id = (SELECT id FROM securities WHERE ticker = $1)
@@ -178,10 +185,14 @@ func GetLatestScoreByVersion(ctx context.Context, q DBTX, ticker, modelVersion s
 
 // GetLatestScore returns the most recent score of a ticker, or pgx.ErrNoRows
 // when the ticker or any score row is missing.
+//
+// "Most recent" is as_of DESC, then model_version DESC (the CURRENT revision
+// wins a same-day tie, M6c-T1 W6b), then id DESC as the last resort — the order
+// growth/wacc/valuation already use.
 func GetLatestScore(ctx context.Context, q DBTX, ticker string) (*Score, error) {
 	row := q.QueryRow(ctx, `SELECT `+scoreColumns+` FROM scores
 		WHERE security_id = (SELECT id FROM securities WHERE ticker = $1)
-		ORDER BY as_of DESC, id DESC LIMIT 1`, ticker)
+		ORDER BY as_of DESC, model_version DESC, id DESC LIMIT 1`, ticker)
 	s := &Score{}
 	if err := scanScore(row, s); err != nil {
 		if err == pgx.ErrNoRows {

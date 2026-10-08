@@ -10,7 +10,14 @@ import (
 	"github.com/miky/abys-invest/internal/storage"
 )
 
-// ModelVersion2 is the formula revision of the 12 ADR D12 metrics.
+// ModelVersion21 is the CURRENT formula revision of the 12 ADR D12 metrics.
+// M6c-T1 W5 changed their inputs (interest and the observed tax rate from the
+// same FY), hence 2.1.0.
+const ModelVersion21 = "2.1.0"
+
+// ModelVersion2 is the FIRST formula revision of the 12 ADR D12 metrics,
+// superseded by 2.1.0; it is kept to address history (2.0.0 rows were already
+// persisted, §26: never overwrite existing rows).
 const ModelVersion2 = "2.0.0"
 
 // DefiningVersion returns the revision in which a metric is DEFINED.
@@ -20,7 +27,7 @@ const ModelVersion2 = "2.0.0"
 // metric — a median over 1.0.0 rows and 2.0.0 rows of one metric is
 // non-deterministic and wrong. But SPEC §16 needs nine metrics for `relative`,
 // and only five of them (roic, ev_ebitda, ev_ebit, net_debt_to_ebitda and, via
-// valuation_results, p_fcf) are 2.0.0: pe_ratio, pb_ratio, fcf_yield and roe are
+// valuation_results, p_fcf) are 2.1.0: pe_ratio, pb_ratio, fcf_yield and roe are
 // and remain 1.0.0 (ADR D12 does not touch them).
 //
 // So the comparables readers filter PER METRIC, by the version in which that
@@ -31,7 +38,7 @@ func DefiningVersion(metric string) string {
 	return metricver.DefiningVersion(metric)
 }
 
-// NewMetricNames returns the 12 slugs of 2.0.0 in canonical order.
+// NewMetricNames returns the 12 slugs of 2.1.0 in canonical order.
 func NewMetricNames() []string {
 	return []string{
 		MetricEVEBIT, MetricEVEBITDA, MetricEPSVolatility, MetricFCFMargin,
@@ -71,9 +78,10 @@ type MetricInputV2 struct {
 	TotalDebt       *float64
 	Cash            *float64
 	EBITDA          *float64
-	// InterestExpense is nil for the whole universe today: the XBRL concept map
-	// has no rows for it (M6c-T1, a separate task). interest_coverage is emitted
-	// anyway with value NULL and a snapshot that says why.
+	// InterestExpense is nil only when there is no aligned/fresh interest pair
+	// for the fiscal year of the observed tax rate (M6c-T1 W5). When it is nil,
+	// interest_coverage is emitted anyway with value NULL and a snapshot that
+	// says ReasonInterestCoverageUnavailable.
 	InterestExpense *float64
 	// NormalizedTaxRate is a RATIO (0.21), per SPEC §13.
 	NormalizedTaxRate *float64
@@ -96,7 +104,7 @@ const ReasonInterestCoverageUnavailable = "interest_expense_unavailable"
 // that names the missing input turns a silent gap into a self-describing one.
 const interestCoverageAlwaysEmitted = true
 
-// CalculateMetricsV2 computes the 12 metrics of 2.0.0 for one security.
+// CalculateMetricsV2 computes the 12 metrics of 2.1.0 for one security.
 //
 // Emission policy, and it is the part worth stating out loud:
 //
@@ -138,7 +146,7 @@ func CalculateMetricsV2(input MetricInputV2) []MetricResult {
 			"interest_expense":    sanitize(input.InterestExpense),
 			"normalized_tax_rate": sanitize(input.NormalizedTaxRate),
 			"net_debt":            sanitize(netDebt),
-			"model_version":       ModelVersion2,
+			"model_version":       ModelVersion21,
 		}
 		for k, v := range extra {
 			m[k] = v
@@ -212,10 +220,10 @@ func seriesValues(pts []MetricSeriesPoint) []float64 {
 	return out
 }
 
-// BuildDerivedMetricsV2 converts 2.0.0 results into persistable rows.
+// BuildDerivedMetricsV2 converts 2.1.0 results into persistable rows.
 func BuildDerivedMetricsV2(input MetricInputV2, modelVersion string) ([]storage.DerivedMetric, error) {
 	if modelVersion == "" {
-		modelVersion = ModelVersion2
+		modelVersion = ModelVersion21
 	}
 	results := CalculateMetricsV2(input)
 	out := make([]storage.DerivedMetric, 0, len(results))

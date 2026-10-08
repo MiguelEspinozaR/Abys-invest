@@ -164,7 +164,7 @@ func TestAllTwelveEmittedWithFullInput(t *testing.T) {
 	}
 	for _, name := range NewMetricNames() {
 		if _, ok := got[name]; !ok {
-			t.Fatalf("métrica 2.0.0 no emitida con input completo: %s", name)
+			t.Fatalf("métrica 2.1.0 no emitida con input completo: %s", name)
 		}
 	}
 	if len(res) != 12 {
@@ -254,7 +254,7 @@ func TestInterestCoverageNULLCarriesReasonSnapshot(t *testing.T) {
 		if r.Metric != MetricInterestCover {
 			continue
 		}
-		if r.ModelVersion != ModelVersion2 {
+		if r.ModelVersion != ModelVersion21 {
 			t.Fatalf("model_version = %q", r.ModelVersion)
 		}
 		var snap map[string]any
@@ -277,9 +277,18 @@ func TestDefiningVersionForComparablesReaders(t *testing.T) {
 			t.Fatalf("%s debe seguir en %s, es %s", name, DefaultModelVersion, got)
 		}
 	}
+	// Los 12 modernos (ADR D12) se definen en la revisión VIGENTE 2.1.0
+	// (M6c-T1 W6a): las filas 2.0.0 quedan como historia, pero el reader por
+	// métrica apunta a 2.1.0.
+	if ModelVersion21 != "2.1.0" {
+		t.Fatalf("ModelVersion21 cambió a %q (debe ser 2.1.0)", ModelVersion21)
+	}
+	if got := DefiningVersion(MetricROIC); got != ModelVersion21 {
+		t.Fatalf("roic debe estar en %s, es %s", ModelVersion21, got)
+	}
 	for _, name := range NewMetricNames() {
-		if got := DefiningVersion(name); got != ModelVersion2 {
-			t.Fatalf("%s debe estar en %s, es %s", name, ModelVersion2, got)
+		if got := DefiningVersion(name); got != ModelVersion21 {
+			t.Fatalf("%s debe estar en %s, es %s", name, ModelVersion21, got)
 		}
 	}
 	// Una métrica desconocida cae en 1.0.0 (fail-safe: no inventa una versión).

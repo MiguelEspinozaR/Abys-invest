@@ -267,3 +267,75 @@ func TestGetLatestMetricsScopedToSecurity(t *testing.T) {
 		t.Fatalf("roe B incorrecto: %+v", bMetrics[1])
 	}
 }
+
+// M6c-T1 review P1-1 (ADR D13, R-M6c-1): los readers DE PRODUCTO
+// (GetDerivedMetricsBySecurity y GetLatestMetrics) deben devolver POR SLUG SOLO
+// la fila de su revisión VIGENTE (metricver.DefiningVersion). Sin el filtro, el
+// ganador entre 2.0.0 y 2.1.0 del mismo slug dependería del orden de inserción.
+//
+// Seed: roic 2.0.0 (0.30) y 2.1.0 (0.21) del mismo (security, as_of);
+// pe_ratio solo 1.0.0 (15.0) — su revisión vigente —; ev_ebitda SOLO 2.0.0
+// (9.0), que NO debe caerse a la revisión vieja: se omite.
+func TestDerivedMetricsReadersFiltranRevisionVigente(t *testing.T) {
+	pool := requirePool(t)
+	requireMigrations(t, pool)
+	truncateDataTables(t, pool)
+	ctx := context.Background()
+
+	sec, err := UpsertSecurity(ctx, pool, &Security{Ticker: "W6REV", CIK: "0000000902", Name: "W6 Revision Co", Type: "stock", Currency: "USD", Status: "active"})
+	if err != nil {
+		t.Fatalf("UpsertSecurity: %v", err)
+	}
+	asOf := time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC)
+	// roic 2.1.0 PRIMERO y 2.0.0 DESPUÉS: sin el filtro, el id mayor/orden de
+	// scan dejaría la fila stale compitiendo igual de fuerte (el test no debe
+	// enmascarar la victoria ni por id ni por posición).
+	rows := []DerivedMetric{
+		{SecurityID: sec.ID, AsOf: asOf, Metric: "roic", Value: ptr(0.21), InputsSnapshot: []byte(`{"rev":"2.1.0"}`), ModelVersion: "2.1.0"},
+		{SecurityID: sec.ID, AsOf: asOf, Metric: "roic", Value: ptr(0.30), InputsSnapshot: []byte(`{"rev":"2.0.0"}`), ModelVersion: "2.0.0"},
+		{SecurityID: sec.ID, AsOf: asOf, Metric: "pe_ratio", Value: ptr(15.0), InputsSnapshot: []byte(`{"rev":"1.0.0"}`), ModelVersion: "1.0.0"},
+		{SecurityID: sec.ID, AsOf: asOf, Metric: "ev_ebitda", Value: ptr(9.0), InputsSnapshot: []byte(`{"rev":"2.0.0"}`), ModelVersion: "2.0.0"},
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if err := UpsertDerivedMetrics(ctx, tx, rows); err != nil {
+		t.Fatalf("UpsertDerivedMetrics: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+
+	for name, fn := range map[string]func() ([]DerivedMetric, error){
+		"GetDerivedMetricsBySecurity": func() ([]DerivedMetric, error) { return GetDerivedMetricsBySecurity(ctx, pool, sec.ID, asOf) },
+		"GetLatestMetrics":            func() ([]DerivedMetric, error) { return GetLatestMetrics(ctx, pool, sec.ID) },
+	} {
+		got, err := fn()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		byMetric := map[string]DerivedMetric{}
+		for _, dm := range got {
+			if _, dup := byMetric[dm.Metric]; dup {
+				t.Fatalf("%s: el slug %q aparece %d veces — el reader mezclaría revisiones", name, dm.Metric, 2)
+			}
+			byMetric[dm.Metric] = dm
+		}
+		if len(got) != 2 {
+			t.Fatalf("%s: se esperaban EXACTAMENTE 2 filas (roic 2.1.0 + pe_ratio 1.0.0), hay %d (%+v). Sin el filtro, roic 2.0.0 y ev_ebitda 2.0.0 (slug sin revisión vigente) también volverían", name, len(got), got)
+		}
+		r := byMetric["roic"]
+		if r.Value == nil || *r.Value != 0.21 || r.ModelVersion != "2.1.0" {
+			t.Fatalf("%s: roic debe ser el de la revisión vigente 0.21@2.1.0, got %+v (si ganara el orden de inserción sería 0.30@2.0.0)", name, r)
+		}
+		p := byMetric["pe_ratio"]
+		if p.Value == nil || *p.Value != 15.0 || p.ModelVersion != "1.0.0" {
+			t.Fatalf("%s: pe_ratio (legacy) debe seguir siendo 15.0@1.0.0, got %+v", name, p)
+		}
+		if _, ok := byMetric["ev_ebitda"]; ok {
+			t.Fatalf("%s: ev_ebitda solo tiene fila 2.0.0 (sin su revisión vigente 2.1.0) y debe OMITIRSE, no caerse a la vieja: got %+v", name, byMetric["ev_ebitda"])
+		}
+	}
+}

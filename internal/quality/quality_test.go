@@ -795,3 +795,20 @@ func TestSubWeightFallback(t *testing.T) {
 		t.Fatalf("sub-peso presente = %v", got)
 	}
 }
+
+// M6c-T1 W6b: la revisión VIGENTE de quality es 1.1.0 — tasa observada
+// (`derived`, ADR D32) + interest_coverage alineado por FY — y Calculate la
+// propaga a Result.ModelVersion. El literal se comprueba ADEMÁS de la constante
+// a propósito: un cambio accidental de la constante debe romper este test.
+func TestModelVersionActualEsUnoUnoCero(t *testing.T) {
+	if ModelVersion != "1.1.0" {
+		t.Fatalf("quality.ModelVersion: esperado \"1.1.0\", got %q", ModelVersion)
+	}
+	res := Calculate(aaplInputs(), DefaultConfig())
+	if res.ModelVersion != "1.1.0" {
+		t.Fatalf("Result.ModelVersion: esperado \"1.1.0\", got %q", res.ModelVersion)
+	}
+	if res.ModelVersion != ModelVersion {
+		t.Fatalf("Result.ModelVersion (%q) debe ser la constante del motor (%q)", res.ModelVersion, ModelVersion)
+	}
+}

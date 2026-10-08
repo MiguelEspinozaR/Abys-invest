@@ -1,0 +1,292 @@
+{
+  "task_id": "M6c-T1 W6b",
+  "stage": "bump revisión score 2.1.0 -> 2.2.0 y quality 1.0.0 -> 1.1.0; gate de API y replay ampliados (2.1.0 y 2.2.0 conviven, §26); no-regresión de integración del endpoint /score",
+  "scope": "W6b SOLO: score 2.2.0, quality 1.1.0, gate API + replay, ORDER BY de storage con tie-break model_version, tests unidad + integración + evidencia. NO commit, NO push, NO mutaciones git. W6a (derived_metrics 2.1.0) sigue en working tree intacto. Sin tocar .ai/ ni web/.",
+  "generated_at_utc": "2026-10-08",
+  "verdict": "PASS",
+  "decisiones": [
+    "Se AÑADE la revisión vigente score.ModelVersion22 = \"2.2.0\" y se CONSERVA score.ModelVersion21 = \"2.1.0\" como constante de historia (§26: las filas 2.1.0 ya persistidas NO se reescriben; siguen siendo legibles y replay-no-skippeadas).",
+    "La FORMA del trace NO cambió (en W5 Cambios/decode de 2.1.0; solo cambió la cabecera de score21.go): los identificadores Trace21/Dimension21/blocksFromTrace21/fromDimension21 conservan su nombre y sirven a AMBAS revisiones (2.1.0 y 2.2.0), documentado en score21.go y score_response.go.",
+    "calculateScore21 estampa ModelVersion: ModelVersion22 (antes ModelVersion21). El motor ya NO escribe filas 2.1.0; las lee como historia.",
+    "quality.ModelVersion sube 1.0.0 -> \"1.1.0\" (misma forma de QualityDetail; el cambio de motor fue en la 1.1.0 con tax rate observado + interest_coverage alineado a FY). Sin endpoint /quality ni /relative que tocar (no existen).",
+    "Gate de la API (isKnownModelVersion): lista cerrada {\"1.1.0\", \"2.0.0\", \"2.1.0\", \"2.2.0\"}; nuevaScoreResponse decodifica para score.ModelVersion21 y score.ModelVersion22; la 400 informa la lista completa (handlers.go).",
+    "Gate de replay (ReplayScores): ACEPTA ModelVersion21 y ModelVersion22 (ambas traen trace); omite las que no traen trace (1.1.0/2.0.0) con motivo explícito \"skip:model_version=<v> (sin trace 2.1.0/2.2.0)\". Un skip es un ERROR controlado, nunca un fallo silencioso.",
+    "GetScoreByTicker y GetLatestScore AÑADEN el tie-break ORDER BY model_version DESC (antes solo as_of DESC, id DESC): con 2.1.0 y 2.2.0 del mismo (security, as_of), \"latest\" = revisión vigente determinista.",
+    "pipeline: los logs del job de scores y el dry-run reportan la revisión que el motor realmente produjo (res.ModelVersion en el error de marshal y en el log persistir/dry-run, score.ModelVersion22 en el log de job).",
+    "REVIEW P1-1 (blindaje del camino 2.2.0): storage.GetDerivedMetricsBySecurity/GetLatestMetrics devuelven por slug SOLO su revisión vigente (metricver.DefiningVersion). ComputeRelativeStage, handleMetrics, loader.go:180 y compare.go:89 los consumen, así que el fix los cubre sin tocarlos. p_fcf NO se toca: sigue viniendo de valuation_results (ADR D9). Ver abys-m6c-t1-w6-metrics.json para el detalle.",
+    "REVIEW P2-2: el seed del test de la gate ahora inserta 2.2.0 con id MENOR que 2.1.0 (mismo as_of): sin el ORDER BY ... model_version DESC del lector, el latest sería 2.1.0 y el subtest falla (mutación probada y restaurada). El SQL de producción NO cambió en esta ronda.",
+    "NO se toca: internal/modelcfg.ModelVersion=\"2.1.0\" (es parameter_sets.model_version, NO filas de scores; sin callers Go; migration 015 sigue sembrando '2.1.0' para el set az3) — se reporta, no se cambia. Tampoco se toca el comentario del Makefile \"reproduce cada score 2.1.0\" (deuda reportada)."
+  ],
+  "files_touched": [
+    "internal/quality/quality.go",
+    "internal/score/score21.go",
+    "internal/api/score_response.go",
+    "internal/api/handlers.go",
+    "internal/backtest/scorereplay.go",
+    "internal/storage/scores.go",
+    "internal/pipeline/analytics.go",
+    "internal/pipeline/qualityrelative.go",
+    "internal/relative/relative.go",
+    "internal/quality/quality_test.go",
+    "internal/score/score21_test.go",
+    "internal/api/score_response_test.go",
+    "internal/api/score_response_21_test.go",
+    "internal/api/m6c_w6_score_integration_test.go",
+    "internal/backtest/m6_integration_test.go",
+    "internal/storage/derived_metrics.go (REVIEW P1-1, ronda de review)",
+    "internal/storage/m2_integration_test.go (REVIEW P1-1, ronda de review)",
+    "internal/pipeline/relative_stage_integration_test.go (REVIEW P1-1, ronda de review)",
+    "test-results/tests/abys-m6c-t1-w6-score.json"
+  ],
+  "punto_5_grep_seeds": {
+    "busqueda": "grep -rn '2\\.1\\.0' internal --include=*.go (fuera metricver/metrics, que son de W6a) + grep ModelVersion21/22",
+    "seeds_de_filas_score_210_que_siguen_requeridos": [
+      "internal/backtest/m6_integration_test.go: replaySecurityVersion(..., score.ModelVersion21) siembra una fila HISTÓRICA 2.1.0 a propósito, para probar que sigue reproduciéndose (§26) con SU revisión dentro del trace.",
+      "internal/api/m6c_w6_score_integration_test.go: seed 2.1.0 + 2.2.0 del mismo (security, as_of) a propósito, para probar coexistencia, latest=vigente e historia consultable por ?model_version=2.1.0."
+    ],
+    "2_1_0_restantes_intencionales_o_reportados": [
+      "internal/score/score21.go:40 const ModelVersion21 = \"2.1.0\" (historia legible, requerido por §26).",
+      "internal/modelcfg/modelcfg.go:45 const ModelVersion = \"2.1.0\" -> es parameter_sets.model_version (migration 015 siembra '2.1.0'): NO es una fila de scores; no tiene callers Go; se REPORTA, no se cambia.",
+      "Makefile (~291): comentario \"reproduce cada score 2.1.0\" -> deuda documentada, fuera de alcance, NO se edita.",
+      "migrations/015 y 017: history SQL de la época 2.1.0 -> no se tocan."
+    ]
+  },
+  "tests_que_muerden": [
+    {
+      "name": "internal/quality: TestModelVersionActualEsUnoUnoCero",
+      "verifica": "quality.ModelVersion == \"1.1.0\" y Result.ModelVersion del motor == \"1.1.0\" (la revisión vigente de quality ya no puede ser 1.0.0)"
+    },
+    {
+      "name": "internal/score: TestScore22VigenteY21ConservadaComoHistoria",
+      "verifica": "ModelVersion22==\"2.2.0\", ModelVersion21==\"2.1.0\" (distintas), CalculateScore21 estampa ModelVersion22, trace.ModelVersion/TraceVersion coherentes y 5 dimensiones de §18"
+    },
+    {
+      "name": "internal/score: TestCalculateScore21Complete (actualizado)",
+      "verifica": "el resultado del motor declara res.ModelVersion != ModelVersion21 (ya no escribe filas de historia)"
+    },
+    {
+      "name": "internal/api: TestIsKnownModelVersionIncluyeLaVigenteYLasHistoricas",
+      "verifica": "la gate acepta \"1.1.0\", \"2.0.0\", \"2.1.0\" y \"2.2.0\"; rechaza \"3.0.0\", \"2.2.0 \", \" 2.2.0\", \"2.2\", \"2.10.0\", \"\" y coincide con las constantes del motor"
+    },
+    {
+      "name": "internal/api: TestScoreResponse22VigenteDecodificaIgualQue210",
+      "verifica": "una fila 2.2.0 (input_snapshot = trace 2.2.0) decodifica 5 dimensiones de §18, bloque quality y trace_version: si la gate no incluyera 2.2.0 daría score SIN desglose"
+    },
+    {
+      "name": "internal/api: TestScoreResponse21HistoriaSigueLegible",
+      "verifica": "una fila 2.1.0 real (fórmula az3 not on its own line) sigue decodificando con sus 5 dimensiones y su quality por peso (la historia no se rompe con el bump)"
+    },
+    {
+      "name": "internal/api: TestScoreGateVigente220YHistoria210Coexisten (integración)",
+      "verifica": "no-regresión de §26 en el endpoint: las DOS filas del mismo (security, as_of) están en la tabla (nada se sobrescribió); GET /score/<t> (latest) -> 2.2.0 con dimensiones+quality; ?model_version=2.2.0 idem; ?model_version=2.1.0 (con o sin as_of) -> 2.1.0 con dimensiones+quality; ?model_version=3.0.0 -> 400"
+    },
+    {
+      "name": "internal/backtest: TestReplayAcepta220VigenteYConserva210Historica (integración)",
+      "verifica": "el replay NO omite la 2.2.0 (vuelve a producir su score y/o forward), sigue reproduciendo la 2.1.0 histórica como antes, y omite la 1.1.0 SIN trace con motivo explícito \"skip:model_version=1.1.0 (sin trace 2.1.0/2.2.0)\""
+    },
+    {
+      "name": "internal/storage: TestDerivedMetricsReadersFiltranRevisionVigente (integración, REVIEW P1-1)",
+      "verifica": "los readers que alimentan ComputeRelativeStage devuelven por slug solo su revisión vigente (roic 0.21@2.1.0 frente a 0.30@2.0.0 del mismo (security,as_of); ev_ebitda stale-only omitido). Muerde con mutación: sin el filtro FALLA"
+    },
+    {
+      "name": "internal/pipeline: TestComputeRelativeStageFiltraRevisionVigente (integración, REVIEW P1-1)",
+      "verifica": "la stage es determinista (2 invocaciones) e igual a la referencia del MISMO engine con los valores del reader filtrado; incluye un slug stale-only (fcf_yield 2.0.0) que debe OMITIRSE de la stage (su ausencia cambia coverage y es verificable en Result.Metrics). Muerde con mutación: sin el filtro FALLA ('fcf_yield ... coverage contaminado'). Garantía por slug citada en TestDerivedMetricsReadersFiltranRevisionVigente"
+    },
+    {
+      "name": "internal/api: TestScoreGateVigente220YHistoria210Coexisten (integración, REVIEW P2-2)",
+      "verifica": "seed reordenado: 2.2.0 se inserta con id MENOR que 2.1.0 (mismo as_of), así el subtest 'latest-es-la-vigente-2.2.0' solo lo gana el ORDER BY model_version DESC del lector. Muerde con mutación: sin el desempate, el latest pasa a ser 2.1.0 y FALLA"
+    }
+  ],
+  "command_outputs": {
+    "gofmt_-l_dot": "(vacío — salida cruda: sin líneas)",
+    "go_vet": "go vet ./... && go vet -tags=integration ./... && go build ./... -> sin salida, exit 0",
+    "go_test_5_paquetes": "go test ./internal/storage/... ./internal/relative/... ./internal/api/... ./internal/compare/... ./internal/pipeline/... -count=1 -> 5 ok (exit 0)",
+    "go_test_dot_dot_dot": "23 paquetes ok, 0 fallos (exit 0)",
+    "make_integration": "todos los paquetes ok contra postgres://***@localhost:55432/abys_test (incluye los tests de integración nuevos de storage/pipeline/api de la ronda de review; exit 0)",
+    "web_build": "npm --prefix web run build -> tsc && vite build OK, sin cambios de código runtime en web/ (no-delta).",
+    "verificacion_review_mutaciones": "MUTACIONES PROBADAS Y RESTAURADAS: (1) sin el filtro keepCurrentRevision -> TestDerivedMetricsReadersFiltranRevisionVigente FALLA y TestComputeRelativeStageFiltraRevisionVigente FALLA; (2) sin 'model_version DESC' en GetLatestScore -> TestScoreGate.../latest-es-la-vigente FALLA. Con el fix restaurado: todo PASS."
+  },
+  "git_status_short": [
+    " M internal/api/handlers.go",
+    " M internal/api/score_response.go",
+    " M internal/api/score_response_21_test.go",
+    " M internal/api/score_response_test.go",
+    " M internal/backtest/m6_integration_test.go",
+    " M internal/backtest/scorereplay.go",
+    " M internal/metrics/engine_v2.go (W6a)",
+    " M internal/metrics/engine_v2_test.go (W6a)",
+    " M internal/metricver/metricver.go (W6a + P3-1)",
+    " M internal/pipeline/analytics.go",
+    " M internal/pipeline/pipeline_integration_test.go (W6a)",
+    " M internal/pipeline/qualityrelative.go",
+    " M internal/quality/quality.go",
+    " M internal/quality/quality_test.go",
+    " M internal/relative/relative.go",
+    " M internal/score/score21.go",
+    " M internal/score/score21_test.go",
+    " M internal/storage/scores.go",
+    " M internal/storage/derived_metrics.go (REVIEW P1-1)",
+    " M internal/storage/m2_integration_test.go (REVIEW P1-1)",
+    "?? internal/api/m6c_w6_score_integration_test.go",
+    "?? internal/metricver/metricver_test.go (W6a)",
+    "?? internal/pipeline/relative_stage_integration_test.go (REVIEW P1-1)",
+    "?? internal/storage/comparables_integration_test.go (W6a)",
+    "?? test-results/tests/abys-m6c-t1-w6-metrics.json (W6a)",
+    "?? test-results/tests/abys-m6c-t1-w6-score.json"
+  ],
+  "notas": "Sin commit, sin push, sin tocar .ai/. HEAD permanece intacto; W6a sigue en working tree (lista de git_status separa lo de W6a de lo de W6b). Reportes fuera de alcance, sin tocar: modelcfg.ModelVersion \"2.1.0\" = parameter_sets (migration 015), y el comentario obsoleto 'reproduce cada score 2.1.0' del Makefile. Frontend: sin cambios; build de no-delta OK. RONDA DE REVIEW V2: P1-1, P2-2 y P3-1 CORREGIDOS (ver review_v2); P2-1 y P3-2/P3-3 documentados como deuda (ver abys-m6c-t1-w6-metrics.json notas).",
+  "review_pass": true,
+  "review": {
+    "reviewer": "opencode/big-pickle",
+    "review_date_utc": "2026-10-08",
+    "scope_reviewed": "W6a+W6b (M6c-T1) en working tree sin commit",
+    "verdict": "REJECTED",
+    "verification_reproduced": {
+      "gofmt_l": "vacio",
+      "go_vet": "ok (vet ./... y vet -tags=integration ./...)",
+      "go_build": "ok",
+      "go_test_dot_dot_dot": "24 paquetes ok, 0 fallos",
+      "make_integration": "ok contra abys_test (incluye TestComparablesReaderPrefersCurrentRevision, TestScoreGateVigente220YHistoria210Coexisten y TestReplayAcepta220VigenteYConserva210Historica)",
+      "npm_build": "ok, 46 modulos, bundle index-BU2xzJgo.js sin delta",
+      "mutation_tests": {
+        "AllPairs a V2 (2.0.0)": "TestComparablesReaderPrefersCurrentRevision FALLA: got 0.3; muerde",
+        "decodificador sin 2.2.0 (switch newScoreResponse)": "TestScoreGateVigente220YHistoria210Coexisten FALLA (0 dimensiones para 2.2.0); muerde",
+        "replay gate solo 2.1.0": "TestReplayAcepta220VigenteYConserva210Historica FALLA (skip 2.2.0); muerde",
+        "ORDER BY model_version DESC eliminado (seed entregado)": "TestScoreGateVigente220YHistoria210Coexisten PASA igual (la fila 2.2.0 gana por id mayor); la asercion del tie-break NO muerde en la forma entregada. Con seed invertido (2.2.0 insertada primero, id menor) SI falla. Debilidad de test (P2-2)."
+      }
+    },
+    "findings": [
+      {
+        "id": "P1-1",
+        "severity": "P1",
+        "file_line": "internal/pipeline/qualityrelative.go:135-139 (ComputeRelativeStage); internal/storage/derived_metrics.go:44-73 (GetDerivedMetricsBySecurity/GetLatestMetrics, sin cambios pero expuestos por el bump)",
+        "title": "Lectura SIN filtro de version mezcla 2.0.0 y 2.1.0 del mismo slug en el mismo as_of",
+        "detail": "El bump hace que los 12 slugs modernos existan en DOS revisiones para el MISMO (security, as_of) en cuanto una corrida post-bump escribe 2.1.0 sobre un as_of ya persistido como 2.0.0 (el job de metricas escribe en as_of = ultima fecha de precio; la primera corrida post-deploy colisiona por diseno con filas 2.0.0 del mismo precio). ComputeRelativeStage copia a in.Metrics con 'ORDER BY metric ASC' sin tie-break de version: el mapa gana por orden de filas NO determinista (2.0.0 vs 2.1.0), mientras mediana de sector e historica SI estan filtradas a 2.1.0 (metricver). Es la mezcla inter-revision que ADR D13/R-M6c-1 prohibe y que el propio comentario del metodo describe ('la resta de dos definiciones'); hace el score persistido 2.2.0 no determinista (SPEC 27). Ademas GetLatestMetrics sin tie-break afecta a handleMetrics (GET /metrics devuelve los 12 duplicados), LoadValuation (mapa con ganador arbitrario) y compare (duplicados en la lista de peers).",
+        "required_change": "Anadir determinismo por revision vigente en la lectura sin version de derived_metrics: p.ej. ORDER BY metric, model_version DESC (last-wins => vigente) o filtrar por metricver.AllPairs(); cubrirlo con un test que siembre 2.0.0+2.1.0 del mismo as_of y aserte que gana 2.1.0, y que GET /metrics no duplique slugs."
+      },
+      {
+        "id": "P2-1",
+        "severity": "P2",
+        "file_line": "internal/storage/comparables.go:182-207 + internal/metricver/metricver.go:24-34",
+        "title": "Las medianas historicas (16) de los 5 metricos modernos reinician su profundidad en el bump",
+        "detail": "Los readers por metrica filtran SOLO 2.1.0 (ADR D13, por diseno y con test que muerde). Consecuencia: las 762 filas 2.0.0 quedan excluidas para siempre de las medianas historica y de sector de roic/ev_ebitda/ev_ebit/net_debt_to_ebitda (p_fcf viene de valuation). La propia historia del ticker pasa de anios a un unico as_of el dia post-bump y tarda anios en reconstruirse; la cobertura/confianza del bloque relative y el score cambian materialmente. El plan Az5 no lo discute. Requiere nota de producto (aceptado por Az5 + ADR D13, pero explicito) y verificar que el primer pass post-bump escribe 2.1.0 para todo el universo.",
+        "required_change": "Documentar el impacto en README/SPEC 16; no bloquear."
+      },
+      {
+        "id": "P2-2",
+        "severity": "P2",
+        "file_line": "internal/api/m6c_w6_score_integration_test.go:79 (orden del seed)",
+        "title": "El subtest 'latest-es-la-vigente-2.2.0' no muerde sobre el tie-break ORDER BY model_version DESC",
+        "detail": "Mutacion verificada: eliminando 'model_version DESC' de GetLatestScore/GetScoreByTicker, el test entregado sigue PASANDO (2.2.0 gana por id mayor al insertarse en segundo lugar). Solo falla si la fila 2.2.0 tiene id menor (seed invertido). El ORDER BY anadido es robustez deseable, pero la asercion no lo ejercita.",
+        "required_change": "Sembrar 2.2.0 antes que 2.1.0 (id menor) en el seed, o eliminar el ORDER BY redundante y que la asercion cubra solo la coexistencia."
+      },
+      {
+        "id": "P3-1",
+        "severity": "P3",
+        "file_line": "internal/metricver/metricver.go:79-122",
+        "title": "Dos fuentes de verdad del binding: byMetric y AllPairs",
+        "detail": "AllPairs hardcodea V1/V21 en sus bucles en vez de leer byMetric; mutar byMetric no cambia AllPairs (la mutacion del mapa no afecto al test del reader; solo la de AllPairs lo hizo fallar). Riesgo de deriva futura, bajo.",
+        "required_change": "Opcional: AllPairs deberia emitir Pair{m, byMetric[m]}."
+      },
+      {
+        "id": "P3-2",
+        "severity": "P3",
+        "file_line": "internal/backtest/m6_integration_test.go:113-135; internal/api/m6c_w6_score_integration_test.go:33-64",
+        "title": "Las fixtures 'historicas' 2.1.0 se construyen con el motor actual y solo se re-etiquetan",
+        "detail": "La fila 2.1.0 se genera con CalculateScore21 actual (quality 1.1.0 dentro del trace) y solo se le cambia el sello de version; no hay fixture con valores reales pre-bump (quality 1.0.0). Prueba la igualdad de ESQUEMA, no la fidelidad de bytes de una fila real 2.1.0. Aceptable por identidad de esquema; documentar.",
+        "required_change": "Opcional: persistir un JSON de trace genuinamente pre-bump como fixture."
+      },
+      {
+        "id": "P3-3",
+        "severity": "P3",
+        "file_line": "internal/modelcfg/modelcfg.go:45 (const ModelVersion = \"2.1.0\") + migraciones 015/017; Makefile:291",
+        "title": "parameter_sets.model_version = '2.1.0' mientras las filas de score son 2.2.0 (inercia confirmada, sin callers Go)",
+        "detail": "Confirmado: modelcfg.ModelVersion no tiene callers productivos en Go (solo definicion y tests); migration 015 siembra base/conservative con '2.1.0' y 017 es backfill historico de 2.1.0. Ningun codigo valida que las filas de score coincidan con parameter_sets.model_version, asi que hoy es inocuo; si Resolve validara en el futuro, fallaria al unisono. Comentario obsoleto del Makefile:291 tambien reportado como deuda.",
+        "required_change": "No accionable en W6; anotar como deuda."
+      }
+    ],
+    "approved": false,
+    "summary": "El mecanismo de versiones (bump a 2.1.0/1.1.0/2.2.0, constantes ANIDADAS sin sobrescribir, gates de API/replay, ORDER BY de scores) es correcto y esta bien testeado; la no-regresion 26 (dos revisiones cohexistiendo) se cumple y los tests muerden bajo mutacion. El bloqueo es el P1-1: la lectura sin version de derived_metrics permite mezclar 2.0.0/2.1.0 del mismo slug en el mismo as_of en el motor de relative y en GET /metrics, rompiendo ADR D13 y SPEC 27 (determinismo). Fix acotado a ordenar/filtrar por revision vigente en GetLatestMetrics/GetDerivedMetricsBySecurity + test."
+  },
+  "review_v2": {
+    "round": "RESPUESTA A REVIEW (P1-1, P2-1, P2-2, P3-1, P3-2, P3-3)",
+    "date_utc": "2026-10-08",
+    "verdict": "PASS (working tree corregido, sin commit)",
+    "resolucion_por_finding": [
+      {
+        "id": "P1-1",
+        "status": "CORREGIDO",
+        "fix": "internal/storage/derived_metrics.go: GetDerivedMetricsBySecurity y GetLatestMetrics conservan ORDER BY metric ASC y aplican keepCurrentRevision (filtro Go tras el scan): por slug, SOLO la fila con dm.ModelVersion == metricver.DefiningVersion(dm.Metric) (fuente única). Un slug sin su revisión vigente se OMITE (no cae a la vieja). Los consumidores (ComputeRelativeStage en qualityrelative.go:133-140, handleMetrics en handlers.go:272, loader.go:180, compare.go:89) quedan cubiertos sin tocar; p_fcf intacto (sigue viniendo de valuation_results, ADR D9).",
+        "tests_que_muerden": [
+          "internal/storage: TestDerivedMetricsReadersFiltranRevisionVigente (integración): seed roic 0.30@2.0.0 + 0.21@2.1.0 (mismo security/as_of, stale insertado DESPUÉS) y pe_ratio 1.0.0; aserta EXACTAMENTE una fila por slug, roic=0.21@2.1.0, pe_ratio=15.0@1.0.0 y ev_ebitda stale-only OMITIDO.",
+          "internal/pipeline: TestComputeRelativeStageFiltraRevisionVigente (integración): stage determinista (2 invocaciones), igual a la referencia del mismo engine con los valores del reader filtrado, y fcf_yield stale-only OMITIDO de la stage (visible en Result.Metrics/coverage). Cita el test de storage para la garantía por slug."
+        ],
+        "mutacion_verificada": "quitando el filtro (if true) ambos tests FALLAN (storage por filas de más/roic 2.0.0; stage por fcf_yield 0.08 'coverage contaminado'). Restaurado: PASS."
+      },
+      {
+        "id": "P2-1",
+        "status": "DOCUMENTADO (deuda W8)",
+        "nota": "Las 762 filas 2.0.0 quedan FUERA de las medianas históricas §16 de los 12 (reinicio de profundidad tras el bump): consecuencia aprobada de Az5+ADR D13; tarea de deuda W8. Nota añadida a test-results/tests/abys-m6c-t1-w6-metrics.json (notas)."
+      },
+      {
+        "id": "P2-2",
+        "status": "CORREGIDO",
+        "fix": "internal/api/m6c_w6_score_integration_test.go seedW6scScores: ahora inserta 2.2.0 PRIMERO (id MENOR) y 2.1.0 DESPUÉS (id MAYOR), mismo as_of — solo el ORDER BY ... model_version DESC del lector hace ganar a 2.2.0. El SQL de producción no se tocó.",
+        "mutacion_verificada": "quitando 'model_version DESC' de GetLatestScore, el subtest 'latest-es-la-vigente-2.2.0' FALLA (el latest pasa a ser 2.1.0 por id mayor). Restaurado: PASS."
+      },
+      {
+        "id": "P3-1",
+        "status": "CORREGIDO",
+        "fix": "internal/metricver/metricver.go: AllPairs y PairsFor emiten Pair{k, byMetric[k]} / Pair{m, byMetric[m]}: la revisión sale de la fuente única; el orden legacy-then-modern se conserva (determinismo intacto). TestAllPairsCarriesCurrentRevision y TestPairsForUsesDefiningVersion siguen en verde.",
+        "mutacion_verificada": "previo al fix, mutar byMetric no cambiaba AllPairs; ahora ambos usan byMetric por construcción."
+      },
+      {
+        "id": "P3-2",
+        "status": "DOCUMENTADO (aceptado)",
+        "nota": "Las fixtures históricas 2.1.0 se re-etiquetan desde el motor actual por IDENTIDAD DE ESQUEMA (documentado en decisiones y en los propios tests). No se añade fixture de bytes reales pre-bump."
+      },
+      {
+        "id": "P3-3",
+        "status": "DOCUMENTADO (deuda inerte)",
+        "nota": "modelcfg.ModelVersion='2.1.0' (parameter_sets, migration 015, sin callers Go) y el comentario 'reproduce cada score 2.1.0' del Makefile:291 quedan como deuda inerte, anotados en el wrapper sin tocar nada."
+      }
+    ],
+    "comandos_review": {
+      "gofmt_-l_dot": "vacío",
+      "go_vet_plain_y_integration": "sin salida, exit 0",
+      "go_build": "sin salida, exit 0",
+      "go_test_5_paquetes": "storage/relative/api/compare/pipeline -> ok",
+      "go_test_dot_dot_dot": "23 ok, 0 fallos",
+      "make_integration": "todos ok contra abys_test, exit 0",
+      "git_status_short": "ver git_status_short (23 entradas, separadas W6a vs W6b vs review)"
+    }
+  },
+  "review_final": {
+    "reviewer": "opencode/big-pickle",
+    "review_date_utc": "2026-10-08",
+    "verdict": "APPROVED",
+    "resolucion_verificada": {
+      "P1-1": "CORREGIDO y mutado-verificado: keepCurrentRevision en GetDerivedMetricsBySecurity/GetLatestMetrics (derived_metrics.go). Reproduje la mutacion (condicion siempre-verdadera) y ambos tests nuevos FALLAN (storage: 'roic aparece 2 veces'; pipeline: 'fcf_yield ... coverage contaminado'). Contrato: por slug solo la revisión vigente; slug sin vigente se OMITE (ev_ebitda@2.0.0 en storage, fcf_yield@2.0.0 en pipeline); p_fcf intacto (valuation_results, ADR D9). Consumidores cubiertos sin tocar: handleMetrics (handlers.go:272), loader.go:180, compare.go:89, ComputeRelativeStage (qualityrelative.go:133).",
+      "P2-1": "DEUDA ACEPTADA (documentada): reinicio de profundidad de medianas historicas §16 tras el bump - consecuencia aprobada de Az5+ADR D13; notada en -metrics.json y W8.",
+      "P2-2": "CORREGIDO y mutado-verificado: seed invertido (2.2.0 con id menor). Eliminando 'model_version DESC' de GetLatestScore, el subtest 'latest-es-la-vigente-2.2.0' FALLA ('got 2.1.0'). Verificado.",
+      "P3-1": "CORREGIDO y mutado-verificado: AllPairs/PairsFor emiten Pair{k, byMetric[k]}. Mutando byMetric a V2 fallan a la vez TestComparablesReaderPrefersCurrentRevision y TestAllPairsCarriesCurrentRevision (antes solo el segundo dependia de la mutacion). Fuente unica.",
+      "P3-2": "DEUDA ACEPTADA: fixtures 2.1.0 re-etiquetadas por identidad de esquema (documentado).",
+      "P3-3": "DEUDA ACEPTADA (inerte): modelcfg.ModelVersion='2.1.0' = parameter_sets sin callers Go; comentario Makefile:291."
+    },
+    "verificaciones_reproducidas": {
+      "gofmt_-l_dot": "vacio",
+      "go_vet_plain_y_integration": "ok (exit 0)",
+      "go_build": "ok (exit 0)",
+      "go_test_dot_dot_dot": "24 paquetes ok, 0 fallos",
+      "make_integration": "ok contra abys_test (incluye TestDerivedMetricsReadersFiltranRevisionVigente, TestComputeRelativeStageFiltraRevisionVigente, TestScoreGateVigente220YHistoria210Coexisten, TestReplayAcepta220VigenteYConserva210Historica, TestComparablesReaderPrefersCurrentRevision)",
+      "npm_build": "ok, 46 modulos, bundle index-BU2xzJgo.js sin delta",
+      "baseline_tests_nuevos": "PASS en deliver: storage (0.13s), pipeline (0.05s), api (0.02s)"
+    },
+    "notas_de_test": [
+      "El test de storage muerde de forma determinista (aserta EXACTAMENTE 2 filas; bajo mutacion falla por duplicado de slug independentemente del orden de empate).",
+      "El test de pipeline muerde por la omision de fcf_yield stale-only (no por roic, cuyo empate por indice puede legítimamente ganar 2.1.0; el propio test lo cita y delega la garantia por slug al test de storage).",
+      "Nota P3 menor: fcf_yield@2.0.0 es una fila sintetica (produccion solo conoce fcf_yield@1.0.0); el caso realista stale-only (roic@2.0.0 sin 2.1.0) está cubierto en el test de storage via ev_ebitda."
+    ],
+    "summary": "Todos los hallazgos P1/P2 del reviewer anterior quedan cerrados con tests que muerden bajo mutacion (reproducido) y regresion completa en verde (unit+integration+web). Veredicto final: APPROVED."
+  }
+}

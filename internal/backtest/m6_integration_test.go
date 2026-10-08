@@ -6,6 +6,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,10 +23,11 @@ import (
 	"github.com/miky/abys-invest/internal/wacc"
 )
 
-// These tests are the fixture PROOF of B13: a persisted 2.1.0 trace replays to
-// the same score, and the forward returns come from the adjusted close with the
-// §28 lag window. They live in the integration suite because the whole point is
-// the round trip through the database.
+// These tests are the fixture PROOF of B13: a persisted 2.1.0 (history) or
+// 2.2.0 (current, M6c-T1 W6b) trace replays to the same score, and the forward
+// returns come from the adjusted close with the §28 lag window. They live in
+// the integration suite because the whole point is the round trip through the
+// database.
 
 func TestMain(m *testing.M) {
 	dsn := os.Getenv("DATABASE_URL")
@@ -68,9 +70,19 @@ func TestMain(m *testing.M) {
 
 func f64(v float64) *float64 { return &v }
 
-// replaySecurity seeds one security with a 2.1.0 score (trace) and the daily
-// bars needed for the three horizons.
+// replaySecurity seeds one security with a score of the CURRENT revision
+// (trace) and the daily bars needed for the three horizons.
 func replaySecurity(t *testing.T, pool *pgxpool.Pool, ticker string, asOf time.Time, basePrice float64, withForward bool) int64 {
+	t.Helper()
+	return replaySecurityVersion(t, pool, ticker, asOf, basePrice, withForward, "")
+}
+
+// replaySecurityVersion is replaySecurity with an EXPLICIT revision to persist
+// (M6c-T1 W6b): "" means "whatever the engine currently produces" (2.2.0); any
+// other value seeds a HISTORY row whose trace is stamped with that same
+// revision, exactly as it was written before the bump (§26: the old rows stay
+// readable, they are not rewritten).
+func replaySecurityVersion(t *testing.T, pool *pgxpool.Pool, ticker string, asOf time.Time, basePrice float64, withForward bool, modelVersion string) int64 {
 	t.Helper()
 	ctx := context.Background()
 	sec, err := storage.UpsertSecurity(ctx, pool, &storage.Security{Ticker: ticker, CIK: "9000" + ticker, Type: "stock", Currency: "USD", Status: "active"})
@@ -118,7 +130,13 @@ func replaySecurity(t *testing.T, pool *pgxpool.Pool, ticker string, asOf time.T
 		MarginOfSafety: mc.TargetMarginOfSafety,
 	}
 	res := score.CalculateScore21(in, mc)
-	raw, err := score.BuildTrace21(in, res).Marshal()
+	trace := score.BuildTrace21(in, res)
+	if modelVersion == "" {
+		modelVersion = res.ModelVersion
+	} else {
+		trace.ModelVersion = modelVersion
+	}
+	raw, err := trace.Marshal()
 	if err != nil {
 		t.Fatalf("marshal trace: %v", err)
 	}
@@ -128,7 +146,7 @@ func replaySecurity(t *testing.T, pool *pgxpool.Pool, ticker string, asOf time.T
 	}
 	if err := storage.UpsertScore(ctx, tx2, &storage.Score{
 		SecurityID: sec.ID, AsOf: asOf, Score: res.Score, Signal: res.Signal,
-		Justification: res.Justification, InputsSnapshot: raw, ModelVersion: res.ModelVersion,
+		Justification: res.Justification, InputsSnapshot: raw, ModelVersion: modelVersion,
 	}); err != nil {
 		tx2.Rollback(ctx) //nolint:errcheck
 		t.Fatalf("upsert score: %v", err)
@@ -165,8 +183,8 @@ func TestReplayReproduceElScorePersistido(t *testing.T) {
 	if r.StoredScore != r.ReplayedScore {
 		t.Fatalf("score almacenado %d != reproducido %d", r.StoredScore, r.ReplayedScore)
 	}
-	if r.ModelVersion != score.ModelVersion21 {
-		t.Fatalf("model_version: esperado %q, got %q", score.ModelVersion21, r.ModelVersion)
+	if r.ModelVersion != score.ModelVersion22 {
+		t.Fatalf("model_version: esperado la revisión vigente %q, got %q", score.ModelVersion22, r.ModelVersion)
 	}
 	if len(r.Forward) != 3 {
 		t.Fatalf("se esperaban 3 horizontes, got %d", len(r.Forward))
@@ -181,6 +199,98 @@ func TestReplayReproduceElScorePersistido(t *testing.T) {
 		if d := *fr.ReturnPct - 10; d > 1e-9 || d < -1e-9 {
 			t.Fatalf("horizonte %d: esperado +10%%, got %v", fr.HorizonDays, *fr.ReturnPct)
 		}
+	}
+}
+
+// M6c-T1 W6b (§26): el gate de replay acepta las DOS revisiones con trace —
+// 2.2.0 (vigente) y 2.1.0 (historia) — porque comparten la misma forma de
+// trace, y sigue omitiendo con motivo explícito las revisiones SIN trace
+// (1.1.0/2.0.0). La historia no se reescribe: se reproduce.
+func TestReplayAcepta220VigenteYConserva210Historica(t *testing.T) {
+	pool := replPool(t)
+	if pool == nil {
+		t.Skip("sin DATABASE_URL")
+	}
+	ctx := context.Background()
+	asOf := time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
+	// 2.2.0: lo que escribe el motor HOY (replaySecurity sin revisión explícita).
+	replaySecurity(t, pool, "W6B22", asOf, 100, true)
+	// 2.1.0: fila histórica con SU revisión dentro del trace.
+	replaySecurityVersion(t, pool, "W6B21", asOf, 120, true, score.ModelVersion21)
+	// 1.1.0: revisión SIN trace (su inputs_snapshot es un ScoreInput viejo).
+	seedLegacyScoreWithoutTrace(t, pool, "W6B11", asOf)
+
+	rows, err := ReplayScores(ctx, pool, ReplayOptions{TickersCSV: "W6B22,W6B21,W6B11"})
+	if err != nil {
+		t.Fatalf("ReplayScores: %v", err)
+	}
+	byTicker := map[string]ReplayResult{}
+	for _, r := range rows {
+		byTicker[r.Ticker] = r
+	}
+	if len(byTicker) != 3 {
+		t.Fatalf("se esperaban 3 filas (2.2.0 + 2.1.0 + 1.1.0), got %d (%+v)", len(byTicker), rows)
+	}
+
+	cur := byTicker["W6B22"]
+	if cur.Error != "" {
+		t.Fatalf("2.2.0 (vigente) NO debe marcarse skip: %s", cur.Error)
+	}
+	if cur.ModelVersion != score.ModelVersion22 {
+		t.Fatalf("vigente: esperado %q, got %q", score.ModelVersion22, cur.ModelVersion)
+	}
+	if !cur.Reproduces || cur.StoredScore != cur.ReplayedScore {
+		t.Fatalf("2.2.0 debe reproducirse: %d vs %d (%s)", cur.StoredScore, cur.ReplayedScore, cur.DivergenceReason)
+	}
+
+	hist := byTicker["W6B21"]
+	if hist.Error != "" {
+		t.Fatalf("2.1.0 (historia) debe seguir reproduciéndose, no omitirse: %s", hist.Error)
+	}
+	if hist.ModelVersion != score.ModelVersion21 {
+		t.Fatalf("historia: esperado %q, got %q", score.ModelVersion21, hist.ModelVersion)
+	}
+	if !hist.Reproduces || hist.StoredScore != hist.ReplayedScore {
+		t.Fatalf("2.1.0 debe reproducirse: %d vs %d (%s)", hist.StoredScore, hist.ReplayedScore, hist.DivergenceReason)
+	}
+
+	legacy := byTicker["W6B11"]
+	if !strings.HasPrefix(legacy.Error, "skip:model_version=1.1.0") {
+		t.Fatalf("1.1.0 (sin trace) debe OMITIRSE con su motivo, got %q", legacy.Error)
+	}
+	if !strings.Contains(legacy.Error, "2.1.0/2.2.0") {
+		t.Fatalf("el motivo del skip debe nombrar las revisiones CON trace, got %q", legacy.Error)
+	}
+	if legacy.Reproduces {
+		t.Fatalf("1.1.0 no es reproducible: no tiene trace que replayear")
+	}
+}
+
+// seedLegacyScoreWithoutTrace persiste una fila como las previas a M6c: un
+// inputs_snapshot que NO es un Trace21. Existe para probar el gate de replay.
+func seedLegacyScoreWithoutTrace(t *testing.T, pool *pgxpool.Pool, ticker string, asOf time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	sec, err := storage.UpsertSecurity(ctx, pool, &storage.Security{
+		Ticker: ticker, CIK: "9000" + ticker, Type: "stock", Currency: "USD", Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("upsert security: %v", err)
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	if err := storage.UpsertScore(ctx, tx, &storage.Score{
+		SecurityID: sec.ID, AsOf: asOf, Score: 45, Signal: "mantener",
+		Justification: "fixture 1.1.0 sin trace", InputsSnapshot: []byte(`{"graham_intrinsic":150}`),
+		ModelVersion: "1.1.0",
+	}); err != nil {
+		tx.Rollback(ctx) //nolint:errcheck
+		t.Fatalf("upsert score legacy: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit score legacy: %v", err)
 	}
 }
 
@@ -463,8 +573,8 @@ func TestReplayFullChain(t *testing.T) {
 	}
 	asOf := time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC)
 
-	// Seed a security with a complete 2.1.0 trace AND the underlying snapshots
-	// for growth, wacc, and valuation.
+	// Seed a security with a complete score trace (current revision 2.2.0) AND
+	// the underlying snapshots for growth, wacc, and valuation.
 	seedFullChainFixtures(t, pool, "FC1", asOf, 150.0)
 
 	rows, err := ReplayScores(context.Background(), pool, ReplayOptions{
@@ -603,7 +713,7 @@ func TestReplayFullChainGrowthUsesChainConfig(t *testing.T) {
 
 // seedFullChainFixtures creates a security with all the snapshots needed for
 // FullChain replay: growth_metrics, wacc_metrics, valuation_results, and a
-// 2.1.0 score trace.
+// score trace of the CURRENT revision (2.2.0).
 func seedFullChainFixtures(t *testing.T, pool *pgxpool.Pool, ticker string, asOf time.Time, basePrice float64) {
 	t.Helper()
 	ctx := context.Background()
@@ -760,7 +870,8 @@ func seedFullChainFixtures(t *testing.T, pool *pgxpool.Pool, ticker string, asOf
 		t.Fatalf("commit valuation: %v", err)
 	}
 
-	// 8. Create a 2.1.0 score trace (for quality/relative/market_context)
+	// 8. Create the score trace (for quality/relative/market_context) with the
+	// CURRENT revision: the engine stamps it, this fixture never hardcodes it.
 	mc := modelcfg.DefaultModelConfig()
 	mc.ParameterSetName, mc.ParameterSetID = "base", 0
 	qRes := quality.Result{Score: f64(85), Coverage: 0.9, Confidence: quality.ConfidenceHigh}

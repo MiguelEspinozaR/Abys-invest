@@ -270,8 +270,11 @@ func replayOne(ctx context.Context, pool *pgxpool.Pool, r scoredRow, mc modelcfg
 	// inputs_snapshot es un ScoreInput, no un Trace21. Se marca como omitida con
 	// su motivo y se cuenta aparte, para que "1/3 reproducidos" signifique tres
 	// scores que no se pudieron comprobar y no tres fallos del replay.
-	if r.ModelVersion != score.ModelVersion21 {
-		res.Error = "skip:model_version=" + r.ModelVersion + " (sin trace 2.1.0)"
+	//
+	// El trace es la MISMA forma para 2.1.0 (historia) y 2.2.0 (vigente, M6c-T1
+	// W6b): el gate es por presencia de trace, no por cuál de las dos lo escribió.
+	if r.ModelVersion != score.ModelVersion21 && r.ModelVersion != score.ModelVersion22 {
+		res.Error = "skip:model_version=" + r.ModelVersion + " (sin trace 2.1.0/2.2.0)"
 		res.Reproduces = false
 		return res
 	}

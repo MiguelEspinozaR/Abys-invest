@@ -19,9 +19,27 @@ import (
 
 func f(v float64) *float64 { return &v }
 
-// trace21Fixture is a complete 2.1.0 trace: quality with sub-blocks, relative
-// with both sides, market context and the valuation bases.
+// trace21Fixture is a complete 2.1.0 trace (HISTORY: written before W6b,
+// stamped with the then-current revision) with sub-blocks, relative with both
+// sides, market context and the valuation bases.
 func trace21Fixture(t *testing.T) []byte {
+	t.Helper()
+	return traceFixtureVersion(t, score.ModelVersion21)
+}
+
+// trace22Fixture is the SAME trace as the CURRENT engine writes it (2.2.0).
+func trace22Fixture(t *testing.T) []byte {
+	t.Helper()
+	return traceFixtureVersion(t, score.ModelVersion22)
+}
+
+// traceFixtureVersion builds one trace stamped with an explicit revision. The
+// trace SCHEMA is identical for 2.1.0 and 2.2.0 (W5 changed the entries, not
+// the shape), so the only difference between a history row and a current row on
+// disk is this field — which is exactly what stamping it simulates: a row
+// persisted by 2.1.0 carries "2.1.0" inside its trace, a row persisted today
+// carries "2.2.0".
+func traceFixtureVersion(t *testing.T, modelVersion string) []byte {
 	t.Helper()
 	in := score.ScoreInput21{
 		Ticker: "TEST", AsOf: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), Price: 100,
@@ -44,7 +62,9 @@ func trace21Fixture(t *testing.T) []byte {
 		SMA50: f(110), SMA200: f(100), Momentum6m: f(0.05), Momentum12m: f(0.02),
 	}
 	res := score.CalculateScore21(in, modelcfg.DefaultModelConfig())
-	raw, err := score.BuildTrace21(in, res).Marshal()
+	trace := score.BuildTrace21(in, res)
+	trace.ModelVersion = modelVersion
+	raw, err := trace.Marshal()
 	if err != nil {
 		t.Fatalf("marshal trace: %v", err)
 	}
@@ -198,7 +218,9 @@ func TestScoreResponse21TraceIlegibleDegradaSinRomper(t *testing.T) {
 	}
 }
 
-// La renormalización se ve en el JSON: weight_used < weight_configured.
+// La renormalización se ve en el JSON: weight_used < weight_configured. La fila
+// lleva la revisión que el MOTOR declara en su trace (hoy 2.2.0): el camino de
+// decode es el mismo para 2.1.0 y 2.2.0, así que el dato no se inventa.
 func TestScoreResponse21RenormalizacionVisible(t *testing.T) {
 	in := score.ScoreInput21{Ticker: "X", AsOf: time.Now(), Price: 100, GrahamBase: f(150), DCFBase: f(120)}
 	res := score.CalculateScore21(in, modelcfg.DefaultModelConfig())
@@ -206,12 +228,74 @@ func TestScoreResponse21RenormalizacionVisible(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	resp := newScoreResponse(storage.Score{Score: res.Score, ModelVersion: score.ModelVersion21, InputsSnapshot: raw})
+	resp := newScoreResponse(storage.Score{Score: res.Score, ModelVersion: res.ModelVersion, InputsSnapshot: raw})
 	if resp.WeightUsed == nil || resp.WeightConfigured == nil {
 		t.Fatalf("faltan las sumas de pesos")
 	}
 	if *resp.WeightUsed >= *resp.WeightConfigured {
 		t.Fatalf("con una sola dimensión válido weight_used (%v) debe ser menor que weight_configured (%v)",
 			*resp.WeightUsed, *resp.WeightConfigured)
+	}
+}
+
+// M6c-T1 W6b: la fila VIGENTE (2.2.0) decodifica por el mismo camino que la
+// 2.1.0 — misma forma de trace, mismas cinco dimensiones de §18, mismo bloque
+// quality con sub-bloques. Si el gate de newScoreResponse no la incluyera,
+// tendría score persistido SIN desglose.
+func TestScoreResponse22VigenteDecodificaIgualQue210(t *testing.T) {
+	resp := newScoreResponse(storage.Score{
+		Score: 72, Signal: "comprar",
+		InputsSnapshot: trace22Fixture(t), ModelVersion: score.ModelVersion22,
+	})
+	want := []string{"graham", "dcf", "quality", "relative", "market_context"}
+	if len(resp.Dimensions) != 5 {
+		t.Fatalf("2.2.0 debe exponer las 5 dimensiones de §18, got %d (%+v)", len(resp.Dimensions), resp.Dimensions)
+	}
+	for i, w := range want {
+		if resp.Dimensions[i].Name != w {
+			t.Fatalf("dimensión %d: esperado %q, got %q", i, w, resp.Dimensions[i].Name)
+		}
+	}
+	if resp.Quality == nil || resp.Quality.Score == nil || *resp.Quality.Score != 84.1 {
+		t.Fatalf("2.2.0 debe traer el bloque quality: %+v", resp.Quality)
+	}
+	if len(resp.Quality.SubScores) != 2 {
+		t.Fatalf("sub-bloques de quality: esperado 2, got %d", len(resp.Quality.SubScores))
+	}
+	if resp.Relative == nil || resp.Relative.SectorScore == nil {
+		t.Fatalf("2.2.0 debe traer relative con sus dos lados: %+v", resp.Relative)
+	}
+	if resp.TraceVersion != score.TraceVersion {
+		t.Fatalf("trace_version de la fila vigente: %q (el esquema NO cambió)", resp.TraceVersion)
+	}
+	if resp.WeightConfigured == nil || math.Abs(*resp.WeightConfigured-0.90) > 1e-6 {
+		t.Fatalf("weight_configured: esperado 0.90 (§18), got %v", resp.WeightConfigured)
+	}
+}
+
+// M6c-T1 W6b (§26): la 2.1.0 es HISTORIA y sigue siendo legible. Su fila, su
+// trace y su bloque quality no se tocaron al subir a 2.2.0.
+func TestScoreResponse21HistoriaSigueLegible(t *testing.T) {
+	resp := newScoreResponse(storage.Score{
+		Score: 72, Signal: "mantener",
+		InputsSnapshot: trace21Fixture(t), ModelVersion: score.ModelVersion21,
+	})
+	if len(resp.Dimensions) != 5 {
+		t.Fatalf("la historia 2.1.0 debe seguir exponiendo sus 5 dimensiones, got %d", len(resp.Dimensions))
+	}
+	if resp.Quality == nil || resp.Quality.Score == nil {
+		t.Fatalf("la historia 2.1.0 debe seguir exponiendo su bloque quality: %+v", resp.Quality)
+	}
+	if resp.Relative == nil {
+		t.Fatalf("la historia 2.1.0 debe seguir exponiendo su bloque relative")
+	}
+	if resp.TraceVersion != score.TraceVersion {
+		t.Fatalf("trace_version de la historia: %q", resp.TraceVersion)
+	}
+	// Y las DOS revisiones coexisten sin pisarse: mismo payload, distinta fila.
+	actual := newScoreResponse(storage.Score{InputsSnapshot: trace22Fixture(t), ModelVersion: score.ModelVersion22})
+	if len(actual.Dimensions) != len(resp.Dimensions) {
+		t.Fatalf("2.1.0 (%d) y 2.2.0 (%d) deben describir las mismas 5 dimensiones",
+			len(resp.Dimensions), len(actual.Dimensions))
 	}
 }

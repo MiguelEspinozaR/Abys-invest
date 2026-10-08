@@ -103,7 +103,7 @@ func RunAnalytics(ctx context.Context, pool *pgxpool.Pool, tickersCSV string, gr
 		res.Metrics = runMetricsJob(ctx, pool, securities, growth, dryRun)
 	}
 	// Los dos motores de M6c (B9/B10) van DESPUÉS de metrics: quality necesita las
-	// series de fundamentals y relative necesita derived_metrics 2.0.0 y los
+	// series de fundamentals y relative necesita derived_metrics 2.1.0 y los
 	// comparables. `all` los evalúa para que un diagnóstico previo exista, y el
 	// job scores los vuelve a evaluar dentro del mismo pass (§27: un cálculo por
 	// as_of) — el eval doble es deliberado y barato frente al riesgo de que el
@@ -149,7 +149,7 @@ const qualityTaxRate = 0.21
 
 // runMetricsJob computes and persists the metrics of BOTH revisions into
 // derived_metrics (SPEC §13.2/§13.4 and ADR D12): the 8 of 1.0.0 unchanged and the
-// 12 of 2.0.0 added. Idempotent by (security, as_of, model_version).
+// 12 of 2.1.0 added. Idempotent by (security, as_of, model_version).
 //
 // NO LOOK-AHEAD (ADR D14, R-M6c-2): the fundamentals are read with
 // GetLatestFYFundamentalsAsOf(cutoff = the price date), so a 10-K filed after the
@@ -252,9 +252,9 @@ func runMetricsJob(ctx context.Context, pool *pgxpool.Pool, securities []storage
 			EPSSeries:          toMetricSeries(series["eps_diluted"]),
 			FCFSeries:          toMetricSeries(series["free_cash_flow"]),
 		}
-		rowsV2, err := metrics.BuildDerivedMetricsV2(v2, metrics.ModelVersion2)
+		rowsV2, err := metrics.BuildDerivedMetricsV2(v2, metrics.ModelVersion21)
 		if err != nil {
-			slog.Error("build de métricas 2.0.0 falló (continúa)", "ticker", sec.Ticker, "error", err)
+			slog.Error("build de métricas 2.1.0 falló (continúa)", "ticker", sec.Ticker, "error", err)
 			continue
 		}
 		rows = append(rows, rowsV2...)
@@ -333,11 +333,13 @@ func runScoresJob(ctx context.Context, pool *pgxpool.Pool, securities []storage.
 		succeeded++
 	}
 	slog.Info("job scores terminado", "exitosos", succeeded, "total", len(securities),
-		"dry_run", dryRun, "model_version", score.ModelVersion21, "parameter_set", mc.ParameterSetName)
+		"dry_run", dryRun, "model_version", score.ModelVersion22, "parameter_set", mc.ParameterSetName)
 	return succeeded
 }
 
-// runOneScore computes and persists one security's score 2.1.0 (B11 wiring).
+// runOneScore computes and persists one security's score 2.1.0/2.2.0 (B11
+// wiring; the CURRENT revision is whatever the engine constant says — this code
+// never hardcodes it).
 //
 // The chain is: growth (persisted, M6a) → valuation 2.0.0 (persisted, M6b) →
 // metrics 1.0.0/2.0.0 (persisted, B4) → QUALITY → RELATIVE → SCORE. The two new
@@ -422,7 +424,7 @@ func runOneScore(ctx context.Context, pool *pgxpool.Pool, sec storage.Security, 
 	trace := score.BuildTrace21(input, res)
 	snapshot, err := trace.Marshal()
 	if err != nil {
-		return fmt.Errorf("marshal trace 2.1.0: %w", err)
+		return fmt.Errorf("marshal trace %s: %w", res.ModelVersion, err)
 	}
 
 	if qres.Score == nil || rres.Score == nil {
@@ -434,10 +436,10 @@ func runOneScore(ctx context.Context, pool *pgxpool.Pool, sec storage.Security, 
 	}
 
 	if dryRun {
-		slog.Info("score 2.1.0 (dry-run)",
+		slog.Info("score del motor (dry-run)",
 			"ticker", sec.Ticker, "as_of", priceRow.Date.Format("2006-01-02"),
 			"score", res.Score, "signal", res.Signal, "weight_used", res.WeightUsed,
-			"parameter_set", mc.ParameterSetName)
+			"model_version", res.ModelVersion, "parameter_set", mc.ParameterSetName)
 		for _, d := range res.Dimensions {
 			slog.Info("  dimensión (dry-run)", "ticker", sec.Ticker,
 				"name", d.Name, "score", formatValue(d.Score), "weight_configured", d.Weight, "válida", d.Valid)
@@ -471,9 +473,9 @@ func runOneScore(ctx context.Context, pool *pgxpool.Pool, sec storage.Security, 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit score: %w", err)
 	}
-	slog.Info("score 2.1.0 persistido", "ticker", sec.Ticker, "as_of", priceRow.Date.Format("2006-01-02"),
+	slog.Info("score del motor persistido", "ticker", sec.Ticker, "as_of", priceRow.Date.Format("2006-01-02"),
 		"score", res.Score, "signal", res.Signal, "weight_used", res.WeightUsed,
-		"parameter_set_id", mc.ParameterSetID)
+		"model_version", res.ModelVersion, "parameter_set_id", mc.ParameterSetID)
 	return nil
 }
 
