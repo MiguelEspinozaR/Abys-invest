@@ -143,14 +143,33 @@ type Inputs struct {
 	SharesOutstanding *float64 `json:"shares_outstanding,omitempty"`
 	MarketCap         *float64 `json:"market_cap,omitempty"`
 
-	// TaxRateSource is "configured" in M6c (Az1(a)) — the only value it can have
-	// until M6c-T1 lands the XBRL plumbing for income_tax_expense. It caps the
-	// confidence at medium (ADR D26).
+	// TaxRate is the observed tax rate in percentage (M6c-T1). nil means configured.
+	TaxRate *float64 `json:"tax_rate,omitempty"`
+	// TaxRateSource is "configured" or "derived" (M6c-T1).
 	TaxRateSource string `json:"tax_rate_source,omitempty"`
+	// Interest/tax alignment fields (M6c-T1).
+	InterestReason         string   `json:"interest_reason,omitempty"`
+	TaxRateReason          string   `json:"tax_rate_reason,omitempty"`
+	AlignedInterestExpense *float64 `json:"aligned_interest_expense,omitempty"`
+	AlignedOperatingIncome *float64 `json:"aligned_operating_income,omitempty"`
 }
 
 // Tax rate provenance (ADR D26/D5).
-const TaxRateSourceConfigured = "configured"
+const (
+	TaxRateSourceConfigured = "configured"
+	TaxRateSourceDerived    = "derived"
+)
+
+// Reason codes for tax rate derivation (M6c-T1).
+const (
+	ReasonTaxRateOutOfRange = "tax_rate_out_of_range"
+)
+
+// maxTaxRate is the ceiling of an OBSERVED tax rate (ADR D32). It is the same
+// number as wacc.MaxTaxRate, kept local so that the quality engine does not
+// depend on the wacc package: outside [0, maxTaxRate] a derived rate is
+// REJECTED, never clamped.
+const maxTaxRate = 50.0
 
 // Confidence levels of §23, in decreasing order of trust.
 const (
@@ -289,16 +308,30 @@ func fin(m map[string]*float64, keys ...string) *float64 {
 // It never returns an error and never panics: a bad input degrades a metric with
 // a reason, which is the contract of every engine of this project.
 func Calculate(in Inputs, cfg Config) Result {
+	src := taxRateSource(in)
 	res := Result{
 		Confidence:    ConfidenceLow,
 		SubScores:     map[string]*SubScore{},
 		Metrics:       map[string]*float64{},
-		TaxRateSource: taxRateSource(in),
+		TaxRateSource: src,
 		AvailableAt:   in.AsOf,
 		ModelVersion:  ModelVersion,
 	}
 
-	values := computeAll(in, cfg)
+	// The observed rate replaces the configured one ONLY inside the range; a
+	// derived rate outside it is rejected (ADR D32) and the configured rate
+	// keeps feeding ROIC, saying why in Reasons.
+	derivedOutOfRange := false
+	effectiveCfg := cfg
+	if src == TaxRateSourceDerived && in.TaxRate != nil {
+		if t := *in.TaxRate; t >= 0 && t <= maxTaxRate {
+			effectiveCfg.TaxRate = t
+		} else {
+			derivedOutOfRange = true
+		}
+	}
+
+	values := computeAll(in, effectiveCfg)
 
 	// Metrics map: every applicable metric that has a value, plus de_ratio as a
 	// secondary. Written in canonical order (the map is unordered, but the TRACE
@@ -371,6 +404,15 @@ func Calculate(in Inputs, cfg Config) Result {
 	if res.TaxRateSource == TaxRateSourceConfigured && res.Score != nil {
 		reasons = append(reasons, ReasonTaxRateConfigured)
 	}
+	if derivedOutOfRange {
+		// Reported even when there is no score: the caller passed a rate the
+		// engine refused to use, and hiding that would make the fallback look
+		// like a clean derivation.
+		reasons = append(reasons, ReasonTaxRateOutOfRange)
+	}
+	if in.TaxRateReason != "" {
+		reasons = append(reasons, in.TaxRateReason)
+	}
 
 	res.Reasons = reason.Normalize(reasons)
 	return res
@@ -397,9 +439,7 @@ func subBlockNilReason(name string) string {
 // and a CONFIGURED tax rate caps it at medium, because a normalised tax rate is
 // an assumption of the deployment and not an observation of the company.
 //
-// The cap reads the tax rate PROVENANCE (Inputs.TaxRateSource, "configured" in
-// M6c) and not the value: the moment M6c-T1 derives the rate from
-// income_tax_expense, the same numbers will legitimately reach `high`.
+// The cap reads the tax rate PROVENANCE. When derived, the cap is lifted.
 func confidenceFor(cov float64, cfg Config, taxSource string) string {
 	base := ConfidenceLow
 	switch {
@@ -421,7 +461,18 @@ func coverage(valid, applicable int) float64 {
 	return float64(valid) / float64(applicable)
 }
 
+// taxRateSource reports the provenance of the rate that actually fed the
+// metrics. `derived` is a claim about the NUMBER, so it requires the observed
+// rate itself: an input labelled derived with TaxRate=nil has nothing derived
+// and must fall back to `configured` (P2-1), otherwise the engine would lift the
+// ADR D26 confidence cap for a rate nobody supplied.
 func taxRateSource(in Inputs) string {
+	if in.TaxRateSource == TaxRateSourceDerived {
+		if in.TaxRate != nil {
+			return TaxRateSourceDerived
+		}
+		return TaxRateSourceConfigured
+	}
 	if in.TaxRateSource == "" {
 		return TaxRateSourceConfigured
 	}

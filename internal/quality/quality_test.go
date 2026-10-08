@@ -566,8 +566,10 @@ func TestConfidenceCapWithConfiguredTax(t *testing.T) {
 		t.Fatalf("tope ADR D26: %q", res.Confidence)
 	}
 	// Con un tax rate DERIVED (fuera de M6c, pero el motor lo soporta) el tope
-	// desaparece y la confianza sube a high.
+	// desaparece y la confianza sube a high. `derived` exige la tasa (P2-1): sin
+	// TaxRate el motor se niega a declarar una derivación y el tope se mantiene.
 	derived := in
+	derived.TaxRate = ptr(21)
 	derived.TaxRateSource = "derived"
 	res = Calculate(derived, cfg)
 	if res.Confidence != ConfidenceHigh {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/miky/abys-invest/internal/metrics"
 	"github.com/miky/abys-invest/internal/modelcfg"
+	"github.com/miky/abys-invest/internal/quality"
 	"github.com/miky/abys-invest/internal/score"
 	"github.com/miky/abys-invest/internal/storage"
 	"github.com/miky/abys-invest/internal/valuation"
@@ -174,9 +175,15 @@ func runMetricsJob(ctx context.Context, pool *pgxpool.Pool, securities []storage
 
 		// Annual series (already deduplicated by period and cut at asOf) for the
 		// stability metrics of 2.0.0.
-		series, err := storage.GetFYAnnualSeries(ctx, pool, sec.ID, []string{"eps_diluted", "free_cash_flow"}, asOf, 330, 400)
+		fySeries, err := storage.GetFYAnnualSeries(ctx, pool, sec.ID, []string{"eps_diluted", "free_cash_flow", "operating_income", "interest_expense", "income_tax_expense", "pretax_income"}, asOf, 330, 400)
 		if err != nil {
 			slog.Warn("series anuales fallaron (continúa)", "ticker", sec.Ticker, "error", err)
+		}
+		series := make(map[string][]storage.FYPoint, 6)
+		for k, v := range fySeries {
+			if k == "eps_diluted" || k == "free_cash_flow" {
+				series[k] = v
+			}
 		}
 
 		v1 := metrics.MetricInput{
@@ -197,7 +204,34 @@ func runMetricsJob(ctx context.Context, pool *pgxpool.Pool, securities []storage
 			continue
 		}
 
-		tax := qualityTaxRate
+		// ONE alignment for the two consumers of this pass (P1-B, Az2/Az3/CA-4):
+		// the tax rate of 2.0.0 AND the interest expense below. AlignedFYFacts is
+		// computed once, before MetricInputV2 is built, so both read the SAME
+		// anchor instead of one reading the alineador and the other reading
+		// GetLatestFYFundamentalsAsOf (LatestPerSecurity PER CONCEPT, which happily
+		// returns EBIT FY2025 next to interest FY2023).
+		fyMax := quality.ConfigFromEnv().FYMaxAgeDays
+		aligned := alignedFYFacts(sec.Ticker, fySeries, asOf, fyMax)
+
+		taxVal := qualityTaxRate
+		// Az4: derive the observed rate when the aligned pair is fresh and
+		// complete; the helper returns PERCENT, the normalised metric wants a
+		// FRACTION.
+		if rate, rateReason := alignedTaxRate(aligned); rateReason == "" {
+			taxVal = rate / 100.0
+		}
+		tax := taxVal
+
+		// Interest: a mismatched or stale anchor means the ratio would MIX fiscal
+		// years, so the input is nil instead of a wrong number. The engine emits
+		// interest_coverage as NULL with reason interest_expense_unavailable
+		// (interestCoverageAlwaysEmitted) rather than 0 or nothing — it never
+		// invents the ratio.
+		interestV2 := funds["interest_expense"]
+		if aligned.InterestReason != "" {
+			interestV2 = nil
+		}
+
 		v2 := metrics.MetricInputV2{
 			SecurityID:         sec.ID,
 			Ticker:             sec.Ticker,
@@ -213,7 +247,7 @@ func runMetricsJob(ctx context.Context, pool *pgxpool.Pool, securities []storage
 			TotalDebt:          funds["total_debt"],
 			Cash:               funds["cash_and_equivalents"],
 			EBITDA:             funds["ebitda"],
-			InterestExpense:    funds["interest_expense"],
+			InterestExpense:    interestV2,
 			NormalizedTaxRate:  &tax,
 			EPSSeries:          toMetricSeries(series["eps_diluted"]),
 			FCFSeries:          toMetricSeries(series["free_cash_flow"]),

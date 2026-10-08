@@ -1,0 +1,160 @@
+{
+  "task": "abys-m6c-t1-interest-tax-w5",
+  "spec": ".ai/plans/abys-m6c-t1-interest-tax.md",
+  "sections_applied": [
+    "§3 Az2/Az3/Az4",
+    "§4 W5",
+    "§5 ADR D31/D32",
+    "§7 CA-3/CA-5/CA-6/CA-7",
+    "§7 CA-10"
+  ],
+  "verdict": "APPROVED",
+  "review_pass": 3,
+  "files_touched": [
+    "internal/quality/quality.go",
+    "internal/quality/quality_test.go",
+    "internal/quality/config.go",
+    "internal/quality/solvency.go",
+    "internal/quality/w5_taxrate_test.go",
+    "internal/pipeline/fyfacts.go",
+    "internal/pipeline/qualityrelative.go",
+    "internal/pipeline/analytics.go",
+    "internal/pipeline/growthwacc.go",
+    "internal/pipeline/w5_taxrate_test.go",
+    "internal/wacc/w5_observed_tax_test.go",
+    "test-results/tests/abys-m6c-t1-w5.json"
+  ],
+  "commands_run": [
+    "gofmt -w internal/pipeline/w5_taxrate_test.go internal/quality/w5_taxrate_test.go internal/pipeline/fyfacts.go internal/pipeline/analytics.go internal/pipeline/qualityrelative.go internal/quality/quality.go",
+    "gofmt -l .",
+    "go vet ./... && go vet -tags=integration ./... && go build ./...",
+    "go test ./internal/pipeline/... -run W5 -v -count=1",
+    "go test ./internal/quality/... -run W5 -v -count=1",
+    "go test ./internal/wacc/... -run W5 -v -count=1",
+    "go test ./internal/quality/... -count=1",
+    "go test ./... -count=1",
+    "make integration",
+    "DATABASE_URL='postgres://abys:abys@localhost:55432/abys?sslmode=disable' go run ./cmd/analytics -job quality -dry-run -tickers AAPL,NVDA,WMT,AVGO,GE,JNJ",
+    "git status --short"
+  ],
+  "test_results": {
+    "gofmt_l": "empty (0 files)",
+    "vet": "exit 0",
+    "vet_integration": "exit 0",
+    "build": "exit 0",
+    "quality_W5": "7 RUN / 7 PASS, ok 0.008s",
+    "quality_all": "ok 0.014s",
+    "pipeline_W5": "2 top-level RUN / 2 PASS (1 table test with 10 subtests + 1 invariant), ok 0.009s",
+    "wacc_W5": "1 RUN / 1 PASS, ok 0.012s",
+    "pipeline": "ok 0.355s",
+    "wacc": "ok 0.010s",
+    "all_packages": "22 ok + 2 [no test files], 0 FAIL",
+    "make_integration": "23 ok + 2 [no test files], 0 FAIL (BD abys_test, DSN redactado)"
+  },
+  "tests_added": [
+    "internal/quality/w5_taxrate_test.go::TestW5DerivedTaxRateFeedsROIC",
+    "internal/quality/w5_taxrate_test.go::TestW5TaxRateOutOfRange",
+    "internal/quality/w5_taxrate_test.go::TestW5IncompletePairConfigured",
+    "internal/quality/w5_taxrate_test.go::TestW5ConfidenceLiftedWhenDerived",
+    "internal/quality/w5_taxrate_test.go::TestW5InterestCoverageAlignedPair",
+    "internal/quality/w5_taxrate_test.go::TestW5FYMaxAgeFromEnv",
+    "internal/quality/w5_taxrate_test.go::TestW5DerivedWithoutTaxRateFallsBackToConfigured (P2-1: derived + TaxRate=nil -> configured + tax_rate_configured + ADR D26 cap medium)",
+    "internal/pipeline/w5_taxrate_test.go::TestW5AlignedTaxRateTable (10 subtests: par_completo 20719/132729, impuesto_negativo_avgo, rate_60_fuera_de_techo, pretax_cero, pareja_nil_con_motivo_stale, pareja_completa_pero_stale_no_deriva [P1-A CASO QUE MUERDE], misma_pareja_fresca_si_deriva, nan_impuesto, nan_pretax, pareja_nil_sin_motivo)",
+    "internal/pipeline/w5_taxrate_test.go::TestW5AlignedTaxRateNeverReturnsZeroRateWithoutReason (incluye par completo + stale)",
+    "internal/wacc/w5_observed_tax_test.go::TestW5ObservedTaxKeepsCapmHybrid"
+  ],
+  "review_fixes": {
+    "P1-A": "internal/pipeline/fyfacts.go::alignedTaxRate ahora lee TaxRateReason ANTES de la completitud: un ancla stale con par completo (GE 2012, JNJ 2014) devuelve (0, tax_rate_stale) y NUNCA una tasa. Test que MUERDE: pareja_completa_pero_stale_no_deriva (2534/17381 + stale -> (0, stale)) + espejo misma_pareja_fresca_si_deriva (sin motivo -> 14.579%). Los 3 call sites (qualityrelative/analytics/growthwacc) quedan protegidos por la misma función.",
+    "P1-B": "internal/pipeline/analytics.go::runMetricsJob calcula alignedFYFacts UNA vez antes de MetricInputV2 y la reutiliza para tasa y para interés. InterestExpense pasa a nil cuando aligned.InterestReason != \"\" (antes funds[] mezclaba EBIT FY2025 con interés FY2023). El engine v2 ya emitía interest_coverage NULL con reason interest_expense_unavailable (interestCoverageAlwaysEmitted): test EXISTENTE citado internal/metrics/engine_v2_test.go::TestInterestCoverageNULLCarriesReasonSnapshot (value NULL, ni 0 ni NaN). Evidencia en vivo: AAPL sale interest_coverage=NULL en el dry-run.",
+    "P2-1": "internal/quality/quality.go::taxRateSource exige in.TaxRate != nil para devolver derived; si no configured (con tax_rate_configured y el tope D26 en medium). Test nuevo TestW5DerivedWithoutTaxRateFallsBackToConfigured. Se ajustó el test PRE-EXISTENTE quality_test.go::TestConfidenceCapWithConfiguredTax (etiquetaba derived sin tasa): ahora pasa ptr(21), que era su intención declarada.",
+    "P2-4": "RunQualityJob dry-run ahora loguea reasons (CA-4) e interest_coverage por ticker. make integration verde (23 ok + 2 sin tests). go vet -tags=integration verde. Dry-run SOLO LECTURA sobre los 6 tickers confirma GE/JNJ configured+tax_rate_stale y AVGO configured+tax_rate_out_of_range."
+  },
+  "dry_run_6_tickers": {
+    "command": "DATABASE_URL='postgres://abys:abys@localhost:55432/abys?sslmode=disable' go run ./cmd/analytics -job quality -dry-run -tickers AAPL,NVDA,WMT,AVGO,GE,JNJ",
+    "AAPL": "score=77.07 coverage=0.941 confidence=high tax_rate_source=derived reasons=[] interest_coverage=NULL",
+    "NVDA": "score=83.21 coverage=1 confidence=high tax_rate_source=derived reasons=[] interest_coverage=503.424710",
+    "WMT": "score=56.74 coverage=1 confidence=high tax_rate_source=derived reasons=[] interest_coverage=12.866695",
+    "AVGO": "score=73.55 coverage=0.941 confidence=medium tax_rate_source=configured reasons=[tax_rate_configured tax_rate_out_of_range] interest_coverage=7.938941",
+    "GE": "score=71.96 coverage=0.941 confidence=medium tax_rate_source=configured reasons=[tax_rate_configured tax_rate_stale] interest_coverage=NULL",
+    "JNJ": "score=78.18 coverage=0.882 confidence=medium tax_rate_source=configured reasons=[tax_rate_configured tax_rate_stale] interest_coverage=NULL",
+    "confirma": "GE y JNJ salen configured con tax_rate_stale (CA-4 capturable); AVGO configured con tax_rate_out_of_range; AAPL/NVDA/WMT derived. interest_coverage=NULL cuando el alineador rechaza el par (AAPL: interés de otro FY)."
+  },
+  "fixes": [
+    "gofmt on internal/quality/config.go (indentation)",
+    "ConfigFromModelConfig no longer overwrites FYMaxAgeDays from env",
+    "single freshness source: analytics/growthwacc use quality.ConfigFromEnv().FYMaxAgeDays",
+    "added TaxRateReason to quality.Inputs; propagate reason when out of range or when aligned gives reason",
+    "ComputeQualityStage: out of range -> TaxRateSource configured + TaxRateReason=tax_rate_out_of_range; complete pair handled correctly",
+    "fused GetFYAnnualSeries queries (single query per call site with combined concepts)",
+    "gofmt on internal/pipeline/analytics.go and internal/quality/quality.go (gofmt -l . now empty)",
+    "extracted alignedTaxRate(f AlignedFYFacts) (float64, string) in internal/pipeline/fyfacts.go: the single tax/pretax*100 computation shared by qualityrelative.go, growthwacc.go and analytics.go (was inline in 3 places)",
+    "BUG FIXED in internal/quality/quality.go: a derived rate outside [0, maxTaxRate] fell back to cfg.TaxRate silently; Calculate now also appends ReasonTaxRateOutOfRange to Result.Reasons (test 2 asserted it)",
+    "Calculate no longer shadows maxTaxRate inside the branch: package-level const maxTaxRate = 50.0 documenting the mirror of wacc.MaxTaxRate",
+    "alignedTaxRate rejects NaN as out-of-range (positive-form range test) instead of propagating it, and never returns (0, \"\") for an incomplete pair",
+    "growthwacc.go: removed the DUPLICATE GetFYAnnualSeries(trio) call; runGrowthWaccOne now reuses `series` (step 2 already requests growthConcepts + operating_income/interest_expense/income_tax_expense/pretax_income) for alignedFYFacts -> one FY-series query per security",
+    "quality/config.go: replaced the two commented-out lines in ConfigFromModelConfig with a single live doc comment stating FYMaxAgeDays comes from env (QUALITY_FY_MAX_AGE_DAYS) and mc does not override it (no commented-out code left)",
+    "P1-A: alignedTaxRate checks TaxRateReason BEFORE pair completeness (freshness dominates)",
+    "P1-B: runMetricsJob computes alignedFYFacts once and nils InterestExpense on any InterestReason; the metrics engine v2 turns it into interest_coverage NULL (existing test TestInterestCoverageNULLCarriesReasonSnapshot)",
+    "P2-1: taxRateSource requires in.TaxRate != nil for derived; derived+nil -> configured + tax_rate_configured (pre-existing quality_test.go updated to pass ptr(21))",
+    "P2-4: quality dry-run logs reasons + interest_coverage per ticker (CA-4 capturable)"
+  ],
+  "ca7_evidence": {
+    "invariant": "passing the observed tax rate changes the number, never the source taxonomy",
+    "fixture": "wacc.base() (beta 1.2 observed, E=100, D=40) -> capm_hybrid/confidence medium",
+    "with_rate_15.61": "res.TaxRate=15.61, res.KdAfterTax=CostOfDebt*(1-15.61/100), res.Source=capm_hybrid",
+    "with_rate_nil": "res.TaxRate=21 (cfg), res.Source=capm_hybrid (identical), WACC differs -> the rate did reach the engine"
+  },
+  "contract_implemented": {
+    "quality.Inputs": [
+      "TaxRate *float64",
+      "TaxRateSource string",
+      "InterestReason string",
+      "TaxRateReason string",
+      "AlignedInterestExpense *float64",
+      "AlignedOperatingIncome *float64"
+    ],
+    "constants": [
+      "TaxRateSourceDerived=\"derived\"",
+      "ReasonTaxRateOutOfRange=\"tax_rate_out_of_range\"",
+      "maxTaxRate=50.0 (local mirror of wacc.MaxTaxRate)"
+    ],
+    "freshness": "FYMaxAgeDays single source via ConfigFromEnv; preserved by ConfigFromModelConfig",
+    "pipeline.alignedTaxRate": "internal/pipeline/fyfacts.go; (rate, reason) out; ORDER: TaxRateReason first (stale/no_anchor/unavailable DOMINATES), then nil pair -> tax_rate_unavailable, pretax==0 -> tax_rate_unavailable, range outside [0, wacc.MaxTaxRate] -> tax_rate_out_of_range; never propagates NaN",
+    "pipeline.analytics.interest": "MetricInputV2.InterestExpense=nil whenever aligned.InterestReason != \"\"; engine v2 emits interest_coverage NULL + reason interest_expense_unavailable (interestCoverageAlwaysEmitted), never 0/NaN"
+  },
+  "re_review": {
+    "rechecker": "revisión 2 tras REJECTED (P1-A/P1-B/P2-1)",
+    "p1a_verificado": "alignedTaxRate lee TaxRateReason ANTES de la completitud; casos pareja_completa_pero_stale_no_deriva y misma_pareja_fresca_si_deriva MUERDEN (con el orden antiguo devolverían (14.579,'') y el test espera (0, tax_rate_stale)); los 3 call sites (qualityrelative/growthwacc/analytics) quedan bajo la misma función",
+    "p1b_verificado": "runMetricsJob calcula alignedFYFacts UNA vez antes de MetricInputV2; InterestExpense=nil cuando aligned.InterestReason != '' (cualquier motivo: mismatch/stale/unavailable/no_anchor); la tasa usa el MISMO aligned; query fusionada única; sin mutación de vars de paquete (slices frescos: append(append([]string(nil),...)) y make(map))",
+    "p2_1_verificado": "taxRateSource exige in.TaxRate != nil para derived; test nuevo TestW5DerivedWithoutTaxRateFallsBackToConfigured; el único test pre-existente tocado es TestConfidenceCapWithConfiguredTax (+derived.TaxRate=ptr(21)): la primera mitad (configured->medium, tope D26) sigue intacta y la segunda (derived->high) conserva su intención; no hay otro test relajado (git diff internal/quality/quality_test.go)",
+    "dry_run_contrastado": {
+      "AAPL": "derived high 0.941: 16/17 >= 0.85 => high (CA-6 pide >= CoverageHigh, no ==1.0); interest_coverage=NULL porque el par de interés es de otro FY (2025 vs 2023) => coherente con CA-4; la razón vive en el sub-bloque debt_solvency",
+      "NVDA": "derived high 1.0 ic=503.42 (CA-3)",
+      "WMT": "derived high 1.0 ic=12.87 (CA-3)",
+      "AVGO": "configured medium [tax_rate_configured tax_rate_out_of_range] ic=7.94 (CA-5, tasa -1.75% rechazada, nunca clamp)",
+      "GE": "configured medium [tax_rate_configured tax_rate_stale] ic=NULL (P1-A corregido: antes habría salido derived 14.58% con ancla 2012)",
+      "JNJ": "configured medium [tax_rate_configured tax_rate_stale] ic=NULL (P1-A corregido: antes habría salido derived 20.62% con ancla 2014)"
+    },
+    "ca7_ca10": "wacc_source permanece capm_hybrid/medium con tasa observada (TestW5ObservedTaxKeepsCapmHybrid + ca7_evidence); CA-10 QUALITY_FY_MAX_AGE_DAYS [1,3650] con default 550 (TestW5FYMaxAgeFromEnv)",
+    "regresion_reproducida": [
+      "gofmt -l . -> vacío",
+      "go vet ./... -> 0",
+      "go vet -tags=integration ./... -> 0",
+      "go build ./... -> 0",
+      "go test ./... -count=1 -> 24 paquetes ok, 0 FAIL",
+      "make integration (TEST_DATABASE_URL de .env) -> 23 ok + 2 sin tests, exit 0"
+    ],
+    "ca8_nota": "el smoke de GET /metrics y GET /score debe asertar interest_coverage/tax_rate_source sobre los tickers con par fresco (NVDA/WMT/AVGO/GOOGL/META/MSFT); GE/JNJ/AAPL emiten NULL + razón en el snapshot"
+  },
+  "final_p2_p3": [
+    "P2-1: calcInterestCoverage conserva el fallback legacy a fin(in.Financials, interest_expense) (rescate de funds per-concept): solo alcanzable con Inputs a mano (la pipeline siempre pasa par alineado y reason primero). Eliminar en W6 y actualizar TestInterestCoverageFormulaExistsForM6cT1 al par alineado.",
+    "P2-2: qualityConcepts ahora incluye el trío => funds (GetLatestFYFundamentalsAsOf) arrastra valores mixed-FY de interés/impuesto por concepto; hoy ningún consumidor alcanzable los usa (calculan sobre Aligned*), pero el fallback P2-1 los leería si un caller omitiera los campos alineados. Mismo destino que P2-1 en W6.",
+    "P2-3: Calculate con derived fuera de rango conserva TaxRateSource=derived mientras usa cfg.TaxRate (solo añade ReasonTaxRateOutOfRange). La pipeline lo evita (pasa configured); conviene que el motor baje a configured en ese caso para cerrar la provenance, consistente con P2-1.",
+    "P2-4: dry-run CA-4: para AAPL el NULL de interest_coverage se ve en la línea pero la razón (interest_period_mismatch) vive en el sub-bloque; añadir InterestReason (o las reasons del sub-bloque debt_solvency) a la línea de log para captura total en una sola línea.",
+    "P2-5: growthwacc/analytics resuelven frescura con quality.ConfigFromEnv() POR seguridad (lectura de env + warnings repetibles si fuera de rango). Hoistear la config una vez por job.",
+    "P3-1: GROWTH_ANNUAL_MIN/MAX_DAYS puede divergir del 330/400 fijo de quality/analytics (defaults iguales hoy); documentar en W6.",
+    "P3-2: maxTaxRate=50 duplicado localmente en quality (espejo comentado de wacc.MaxTaxRate, sin dependencia); centralizar o mantener documentado.",
+    "P3-3: nit cosmético en analytics: tax := taxVal y &tax.",
+    "P3-4: tras cambios de W6, re-ejecutar el dry-run de los 6 tickers para mantener la evidencia CA-4 viva."
+  ]
+}

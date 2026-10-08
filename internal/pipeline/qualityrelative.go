@@ -42,6 +42,7 @@ var qualityConcepts = []string{
 	"operating_income", "shareholders_equity", "total_debt", "cash_and_equivalents",
 	"net_debt", "ebitda", "revenues", "free_cash_flow", "net_earnings",
 	"total_liabilities", "total_assets", "shares_outstanding",
+	"interest_expense", "income_tax_expense", "pretax_income",
 }
 
 // qualitySeries are the annual series of §13's stability block.
@@ -75,10 +76,11 @@ func ComputeQualityStage(ctx context.Context, pool *pgxpool.Pool, sec storage.Se
 	if err != nil {
 		return nil, fmt.Errorf("fundamentals para quality: %w", err)
 	}
-	series, err := storage.GetFYAnnualSeries(ctx, pool, sec.ID, qualitySeries, asOf, 330, 400)
+	fySeries, err := storage.GetFYAnnualSeries(ctx, pool, sec.ID, append([]string{"operating_income", "interest_expense", "income_tax_expense", "pretax_income"}, qualitySeries...), asOf, 330, 400)
 	if err != nil {
 		return nil, fmt.Errorf("series anuales para quality: %w", err)
 	}
+	series := fySeries
 	var gi quality.GrowthInputs
 	if g, err := storage.GetGrowthMetricAsOf(ctx, pool, sec.ID, asOf); err == nil {
 		gi = quality.GrowthInputs{
@@ -89,20 +91,33 @@ func ComputeQualityStage(ctx context.Context, pool *pgxpool.Pool, sec storage.Se
 	} else if err != pgx.ErrNoRows {
 		return nil, fmt.Errorf("growth_metrics para quality: %w", err)
 	}
-	// No growth row is NOT an error: the growth sub-block degrades to
-	// growth_unreliable with the coverage that says so.
+	qcfg := quality.ConfigFromModelConfig(mc)
+	aligned := alignedFYFacts(sec.Ticker, fySeries, asOf, qcfg.FYMaxAgeDays)
 	in := quality.Inputs{
-		Ticker:            sec.Ticker,
-		AsOf:              asOf,
-		Financials:        funds,
-		Series:            toQualitySeries(series),
-		Growth:            gi,
-		Price:             price,
-		SharesOutstanding: funds["shares_outstanding"],
-		MarketCap:         funds["market_cap"],
-		TaxRateSource:     quality.TaxRateSourceConfigured,
+		Ticker:                 sec.Ticker,
+		AsOf:                   asOf,
+		Financials:             funds,
+		Series:                 toQualitySeries(series),
+		Growth:                 gi,
+		Price:                  price,
+		SharesOutstanding:      funds["shares_outstanding"],
+		MarketCap:              funds["market_cap"],
+		TaxRateSource:          quality.TaxRateSourceConfigured,
+		InterestReason:         aligned.InterestReason,
+		AlignedInterestExpense: aligned.InterestExpense,
+		AlignedOperatingIncome: aligned.OperatingIncome,
 	}
-	res := quality.Calculate(in, quality.ConfigFromModelConfig(mc))
+	// Az4: the ONE observed tax rate of the ticker. The source stays
+	// `configured` (set in the literal above) for every rejected or degraded
+	// pair, and the reason travels so the score can say why.
+	if rate, rateReason := alignedTaxRate(aligned); rateReason == "" {
+		t := rate
+		in.TaxRate = &t
+		in.TaxRateSource = quality.TaxRateSourceDerived
+	} else {
+		in.TaxRateReason = rateReason
+	}
+	res := quality.Calculate(in, qcfg)
 	return &res, nil
 }
 
@@ -215,9 +230,14 @@ func RunQualityJob(ctx context.Context, pool *pgxpool.Pool, securities []storage
 		}
 		usable++
 		if dryRun {
+			// CA-4: the degradation reason of the TICKER has to be capturable from
+			// this line (GE/JNJ say tax_rate_stale here), and the interest coverage
+			// shows NULL when the aligned pair could not be used (P2-4).
 			slog.Info("quality (dry-run)", "ticker", sec.Ticker, "score", *res.Score,
 				"coverage", res.Coverage, "confidence", res.Confidence,
-				"tax_rate_source", res.TaxRateSource, "version", res.ModelVersion)
+				"tax_rate_source", res.TaxRateSource, "version", res.ModelVersion,
+				"reasons", res.Reasons,
+				"interest_coverage", formatValue(res.Metrics[quality.MetricInterestCoverage]))
 		}
 	}
 	slog.Info("job quality terminado", "usables", usable, "degradados", degraded, "total", len(securities))

@@ -9,6 +9,7 @@ import (
 
 	"github.com/miky/abys-invest/internal/growth"
 	"github.com/miky/abys-invest/internal/modelcfg"
+	"github.com/miky/abys-invest/internal/quality"
 	"github.com/miky/abys-invest/internal/storage"
 	"github.com/miky/abys-invest/internal/wacc"
 )
@@ -78,7 +79,7 @@ func runGrowthWaccOne(ctx context.Context, pool *pgxpool.Pool, sec storage.Secur
 	asOf := last.Date
 
 	// (2) Series anuales (filtro SQL: FY + 330-400 días + filing_date <= as_of).
-	series, err := storage.GetFYAnnualSeries(ctx, pool, sec.ID, growthConcepts, asOf, gcfg.AnnualMinDays, gcfg.AnnualMaxDays)
+	series, err := storage.GetFYAnnualSeries(ctx, pool, sec.ID, append(append([]string(nil), growthConcepts...), "operating_income", "interest_expense", "income_tax_expense", "pretax_income"), asOf, gcfg.AnnualMinDays, gcfg.AnnualMaxDays)
 	if err != nil {
 		return false, false, err
 	}
@@ -138,6 +139,18 @@ func runGrowthWaccOne(ctx context.Context, pool *pgxpool.Pool, sec storage.Secur
 	}
 	if beta == nil && betaReason != "" {
 		win.Reasons = []string{betaReason}
+	}
+	// Align for observed tax rate: NO second query. The `series` of step (2)
+	// was requested with growthConcepts + the trio (operating_income,
+	// interest_expense, income_tax_expense, pretax_income), so it already carries
+	// everything alignedFYFacts reads.
+	//
+	// Az4: the SAME observed rate that feeds NOPAT feeds Kd after-tax; a
+	// rejected or degraded pair simply leaves the configured rate in place.
+	fyMax := quality.ConfigFromEnv().FYMaxAgeDays
+	aligned := alignedFYFacts(sec.Ticker, series, asOf, fyMax)
+	if t, rateReason := alignedTaxRate(aligned); rateReason == "" {
+		win.TaxRate = &t
 	}
 	wr := wacc.Calculate(win, wcfg)
 

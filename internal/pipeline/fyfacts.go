@@ -4,7 +4,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/miky/abys-invest/internal/quality"
 	"github.com/miky/abys-invest/internal/storage"
+	"github.com/miky/abys-invest/internal/wacc"
 )
 
 // This file is W4 of M6c-T1: the ALIGNED fiscal-year read of the interest/tax
@@ -162,6 +164,48 @@ func alignedFYFacts(ticker string, series map[string][]storage.FYPoint, asOf tim
 
 	logAlignedFYFacts(ticker, out)
 	return out
+}
+
+// alignedTaxRate returns the observed tax rate in PERCENT when the aligned pair
+// is FRESH and complete and in [0, wacc.MaxTaxRate]; otherwise (0, reason) with
+// a closed reason. It is the single computation the three call sites share (Az4).
+//
+// The three call sites only disagree on the UNIT they consume afterwards —
+// quality and wacc keep the percent, derived_metrics normalised_tax_rate wants
+// the fraction — never on the arithmetic or on the rejection rule, so both live
+// here and nowhere else.
+//
+// ORDER MATTERS (Az2/Az3/CA-4): the alineador's reason is read BEFORE the
+// completeness of the pair. alignedFYFacts returns the VALUES of the anchor even
+// when it is stale — only the reason says so — so a complete pair on an old
+// fiscal year (GE 2012, JNJ 2014) would otherwise derive a rate from facts the
+// freshness window already rejected.
+//
+// The rate is REJECTED, never clamped (ADR D32): a negative effective rate (the
+// AVGO -1.75 % case) or one above the wacc ceiling is a broken fact, not a tax
+// type. The range test is written in its positive form so that a NaN fact is
+// rejected as well instead of propagating (NaN >= 0 is false).
+func alignedTaxRate(f AlignedFYFacts) (float64, string) {
+	// Freshness (and ANY reason from the alineador) dominates completeness: a
+	// stale anchor with a complete pair is NOT derivable.
+	if f.TaxRateReason != "" {
+		return 0, f.TaxRateReason
+	}
+	if f.IncomeTaxExpense == nil || f.PretaxIncome == nil {
+		// alignedFYFacts always fills TaxRateReason on this branch
+		// (tax_rate_unavailable / tax_rate_stale / no_anchor); the fallback only
+		// guards a hand-built struct, because a reasonless pair would otherwise
+		// read as "the observed rate is 0 %".
+		return 0, FYReasonTaxRateUnavailable
+	}
+	if *f.PretaxIncome == 0 {
+		return 0, FYReasonTaxRateUnavailable
+	}
+	rate := *f.IncomeTaxExpense / *f.PretaxIncome * 100
+	if rate >= 0 && rate <= wacc.MaxTaxRate {
+		return rate, ""
+	}
+	return 0, quality.ReasonTaxRateOutOfRange
 }
 
 // logAlignedFYFacts makes each degradation visible with the ticker and the anchor

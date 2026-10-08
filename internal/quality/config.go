@@ -14,9 +14,7 @@ import (
 // never inside a formula — so that a Parameter Set can move it (§24/§25).
 const (
 	// DefaultTaxRate is QUALITY_TAX_RATE (Az1(a)): the NORMALISED tax rate used by
-	// ROIC. It is a configured rate, not an observed one: EDGAR does not expose
-	// `income_tax_expense` in this catalogue yet (M6c-T1), so the engine cannot
-	// derive it and every run says so with TaxRateSource = "configured".
+	// ROIC.
 	DefaultTaxRate = 21.0
 
 	DefaultCoverageHigh   = 0.85
@@ -26,6 +24,9 @@ const (
 	// annual points needed before a volatility or a count of positive years means
 	// anything. §13's four stability metrics are nil below it.
 	DefaultMinStabilityYears = 4
+
+	// DefaultQualityFYMaxAgeDays is the default freshness window for FY observations (M6c-T1).
+	DefaultQualityFYMaxAgeDays = 550
 )
 
 // Sub-block names of the Quality dimension (§12 "Quality 35%", ADR D3/Az3).
@@ -55,6 +56,8 @@ type Config struct {
 	// MinStabilityYears is the minimum number of annual points for §13's
 	// stability metrics.
 	MinStabilityYears int `json:"min_stability_years"`
+	// FYMaxAgeDays is the freshness window for FY observations (M6c-T1).
+	FYMaxAgeDays int `json:"fy_max_age_days"`
 	// Bands is the calibration of every metric (ADR U2: no cut point inside a
 	// formula).
 	Bands Bands `json:"bands"`
@@ -76,6 +79,7 @@ func DefaultConfig() Config {
 		CoverageHigh:      DefaultCoverageHigh,
 		CoverageMedium:    DefaultCoverageMedium,
 		MinStabilityYears: DefaultMinStabilityYears,
+		FYMaxAgeDays:      DefaultQualityFYMaxAgeDays,
 		Bands:             DefaultBands(),
 	}
 }
@@ -101,6 +105,8 @@ func ConfigFromEnv() Config {
 	cfg.CoverageHigh = modelcfg.EnvFloatRange("QUALITY_COVERAGE_HIGH", cfg.CoverageHigh, 0, 1)
 	cfg.CoverageMedium = modelcfg.EnvFloatRange("QUALITY_COVERAGE_MEDIUM", cfg.CoverageMedium, 0, 1)
 	cfg.MinStabilityYears = modelcfg.EnvIntRange("QUALITY_STABILITY_MIN_YEARS", cfg.MinStabilityYears, 1, 20)
+	fyMax := modelcfg.EnvFloatRange("QUALITY_FY_MAX_AGE_DAYS", float64(cfg.FYMaxAgeDays), 1, 3650)
+	cfg.FYMaxAgeDays = int(fyMax)
 
 	w := cfg.SubWeights
 	w[SubProfitability] = modelcfg.EnvFloatRange("QUALITY_WEIGHT_PROFITABILITY", w[SubProfitability], 0, 1)
@@ -131,6 +137,8 @@ func ConfigFromModelConfig(mc modelcfg.ModelConfig) Config {
 	cfg.CoverageHigh = mc.QualityCoverageHigh
 	cfg.CoverageMedium = mc.QualityCoverageMedium
 	cfg.MinStabilityYears = mc.QualityStabilityMinYears
+	// FYMaxAgeDays keeps the value applied from env (QUALITY_FY_MAX_AGE_DAYS) in
+	// ConfigFromEnv: mc (parameter set) does not override it.
 
 	w := cfg.SubWeights
 	for _, name := range SubBlockNames() {

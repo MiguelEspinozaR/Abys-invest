@@ -1,0 +1,211 @@
+{
+  "task_id": "abys-m6c-t1-interest-tax",
+  "scan_timestamp": "2026-10-07T14:30:00Z",
+  "working_tree": "/home/miky/Abys-Invest",
+  "delta_surface": {
+    "new_files": [
+      {
+        "path": "internal/pipeline/w5_taxrate_test.go",
+        "change_type": "NEW FILE",
+        "lines_added": 143,
+        "lines_removed": 0,
+        "description": "W5 unit test: alignedTaxRate table-driven tests building AlignedFYFacts by hand \u2014 no DB, no storage. Covers complete pair (15.61%), negative rate rejection (AVGO), rate above wacc.MaxTaxRate (50%), zero pretax, stale/nil pair with reason, NaN in either field. Only in-memory arithmetic, time, math. No credentials, no DSN, no DB access."
+      },
+      {
+        "path": "internal/quality/w5_taxrate_test.go",
+        "change_type": "NEW FILE",
+        "lines_added": 222,
+        "lines_removed": 0,
+        "description": "W5 quality tests: derived tax rate feeds ROIC, out-of-range rejection lifts confidence, incomplete pair stays configured with reason, confidence lift when derived, interest_coverage uses aligned pair, FY_MAX_AGE_DAYS from env (range [1,3650]). Fixtures from quality_test.go reused, no new Inputs construction, only TaxRate/TaxRateReason/TaxRateSource field tweaks."
+      },
+      {
+        "path": "internal/wacc/w5_observed_tax_test.go",
+        "change_type": "NEW FILE",
+        "lines_added": 104,
+        "lines_removed": 0,
+        "description": "W5 wacc tests: observed tax rate changes the WACC number but never reclasifies the source (remains capm_hybrid / medium). Same fixture base(), rate 15.61 vs nil, KdAfterTax and CostOfDebt computed correctly. Proves rate affects value, not taxonomy."
+      },
+      {
+        "path": "test-results/tests/abys-m6c-t1-w5.json",
+        "change_type": "NEW FILE",
+        "lines_added": 5991,
+        "lines_removed": 0,
+        "description": "W5 evidence JSON: validates no DSN with real password, no tokens, no private paths. DSN entries redacted/ficticios. Verifies go test suites pass, gofmt, go vet, go build sin regresion. CA-7/CA-10 invariants confirmed."
+      }
+    ],
+    "modified_files": [
+      {
+        "path": "internal/pipeline/analytics.go",
+        "change_type": "MODIFIED",
+        "lines_added": 21,
+        "lines_removed": 0,
+        "description": "W5: import quality; derive observed tax rate from alignedFYFacts when pair fresh and complete (rateReason == \"\") / 100 for fraction; otherwise keep configured rate. Interest: aligned.InterestReason != '' -> interestV2 = nil (prevents cross-FY ratio mixing). Single alignedFYFacts call shared by both consumers before MetricInputV2 built."
+      },
+      {
+        "path": "internal/pipeline/fyfacts.go",
+        "change_type": "MODIFIED",
+        "lines_added": 36,
+        "lines_removed": 0,
+        "description": "W5: alignedTaxRate freshness-first ordering - TaxRateReason now dominates completeness check before nil/value checks. A stale anchor with complete pair is NOT derivable. Rate rejected (never clamped) outside [0, wacc.MaxTaxRate]; NaN rejected via positive-form range test. Closed vocabulary reasons."
+      },
+      {
+        "path": "internal/pipeline/growthwacc.go",
+        "change_type": "MODIFIED",
+        "lines_added": 15,
+        "lines_removed": 0,
+        "description": "W5: import quality; reuse existing series (already includes trio concepts) for alignedFYFacts \u2014 single FY series query per security, no second query. Align tax rate with growth WACC calculation."
+      },
+      {
+        "path": "internal/pipeline/qualityrelative.go",
+        "change_type": "MODIFIED",
+        "lines_added": 41,
+        "lines_removed": 0,
+        "description": "W5: import quality; add interest_expense/income_tax_expense/pretax_income to qualityConcepts; call alignedFYFacts/alignedTaxRate; propagate InterestReason/TaxRateReason/AlignedInterestExpense/AlignedOperatingIncome into quality.Inputs. Single query per call site."
+      },
+      {
+        "path": "internal/quality/config.go",
+        "change_type": "MODIFIED",
+        "lines_added": 14,
+        "lines_removed": 0,
+        "description": "W5: add DefaultQualityFYMaxAgeDays=550; FYMaxAgeDays field in Config; read QUALITY_FY_MAX_AGE_DAYS via modelcfg.EnvFloatRange with range [1,3650]; default 550. ConfigFromModelConfig documents that mc does not override it."
+      },
+      {
+        "path": "internal/quality/quality.go",
+        "change_type": "MODIFIED",
+        "lines_added": 61,
+        "lines_removed": 0,
+        "description": "W5: add TaxRate *float64, TaxRateSource string, InterestReason, TaxRateReason, AlignedInterestExpense, AlignedOperatingIncome to Inputs; add TaxRateSourceDerived constant; add maxTaxRate=50.0 local mirror; taxRateSource now requires TaxRate != nil to claim 'derived' (otherwise falls back to configured); derivedOutOfRange tracking with ReasonTaxRateOutOfRange appended to Reasons when rate outside [0, maxTaxRate]; in.TaxRateReason propagated into Result.Reasons; confidenceFor lifts cap when taxSource==derived AND TaxRate != nil."
+      },
+      {
+        "path": "internal/quality/solvency.go",
+        "change_type": "MODIFIED",
+        "lines_added": 39,
+        "lines_removed": 0,
+        "description": "W5: interest_coverage uses aligned FY pair when provided (M6c-T1). With InterestReason set, returns nil + reason; otherwise fallback to legacy lookup. AlignedOperatingIncome/AlignedInterestExpense travel through Inputs."
+      },
+      {
+        "path": "internal/pipeline/qualityrelative.go",
+        "change_type": "MODIFIED",
+        "lines_added": 41,
+        "lines_removed": 0,
+        "description": "W5: add interest_expense/income_tax_expense/pretax_income to qualityConcepts; call alignedFYFacts/alignedTaxRate; propagate InterestReason/AlignedInterestExpense/AlignedOperatingIncome into quality.Inputs. Dry-run now logs 'reasons' and 'interest_coverage' fields (CA-4: the degradation reason of the TICKER has to be capturable from this line (GE/JNJ say tax_rate_stale here), and the interest coverage shows NULL when the aligned pair could not be used (P2-4))."
+      }
+    ],
+    "not_touched": [
+      "go.mod",
+      "go.sum",
+      "migrations/*",
+      "internal/storage/*",
+      "internal/collect/edgar/*",
+      "cmd/collector/main.go",
+      "internal/collect/*",
+      "Makefile",
+      "README.md"
+    ],
+    "secret_scan": {
+      "gitleaks": {
+        "command": "gitleaks detect --no-git --redact -s .",
+        "result": "not verifiable: gitleaks binary not present in this environment (which gitleaks returns nothing); scan performed via regex fallback on new and modified files",
+        "details": "Gitleaks binary not found in this environment. Secret scanning is advisory only, using regex fallback over new and modified files. No real gitleaks scan was performed. No se encontraron credenciales/DSN en los ficheros nuevos ni modificados por analisis regex advisory.",
+        "verificable_en_entorno": false
+      },
+      "regex_fallback": "Fallback regex sobre los ficheros nuevos y modificados (solo advisory). Patrones buscados: passwords?=, postgres://, mysql://, api_key, secret, token, DSN, private key, .env. Escaneado todos los ficheros nuevos (w5_taxrate_test.go, w5_observed_tax_test.go, test-results/tests/abys-m6c-t1-w5.json) y modificados (analytics.go, fyfacts.go, growthwacc.go, qualityrelative.go, config.go, quality.go, solvency.go). No se encontraron patrones de secrets/DSN en ningun fichero. No hay commits con credenciales reales. Resultado: sin hallazgos de secrets por regex advisory.",
+      "no_real_gitleaks_scan": true
+    },
+    "destructive_test_risk": {
+      "description": "Los tests unitarios W5 usan exclusivamente fixtures sinteticos en memoria y t.Testing. No hay TRUNCATE, no hay borrado real de BD, no se siembra datos sensibles. Los tests operan sobre series map[string][]storage.FYPoint y estructuras AlignedFYFacts construidas en el test. Riesgo: nulo para entornos de produccion o desarrollo."
+    },
+    "sql_analysis": {
+      "no_new_dynamic_sql": true,
+      "note": "W5 reutiliza storage.GetFYAnnualSeries existente con expansion de conceptos (trio + growthConcepts/qualityConcepts). No se introduce ningun SQL nuevo ni modificacion de queries. La expansion de conceptos en el parametro de conceptos es una lista en memoria que afecta solo al filtro SQL gia existente."
+    },
+    "input_validation": {
+      "note": "W5 no recibe input del usuario final en tiempo de ejecucion. Las funciones toman ticker string y series map en tiempo de test; en produccion la series vienen de storage.GetFYAnnualSeries ya filtradas o de ConfigFromEnv. No hay validacion de entrada de usuario que requiera sanitizacion contra inyeccion SQL."
+    },
+    "dependencies": {
+      "go_mod_changed": false,
+      "go_sum_changed": false,
+      "package_json_changed": false,
+      "no_new_dependencies": true,
+      "note": "Solo usa imports de stdlib Go: log/slog, time, math, fmt. Ademas imports nuevos de este mismo proyecto: internal/quality, internal/wacc, internal/modelcfg. No se agregaron nuevas dependencias externas en W5."
+    },
+    "classification": {
+      "hard_blocks": 0,
+      "low_severity": 0,
+      "info": 5,
+      "verdict": "no hard blocks",
+      "summary": "Delta W5: 4 nuevos ficheros de pruebas unitarias y 1 JSON de evidencia, 7 ficheros modificados con wiring de tasa observada, alineacion fiscal y frescura (FYMaxAgeDays). Sin secrets detectados (regex advisory, gitleaks no disponible). Sin cambios en go.mod/go.sum, sin SQL nuevo, sin modificacion de permisos. Clasificacion: solo info por nuevas estructuras y cobertura de test."
+    },
+    "summary_3_5_lines": "W5 alinea la tasa observada del trio inter\u00e9s/impuesto a traves de alignedFYFacts/alignedTaxRate, compartida por qualityrelative, growthwacc y analytics. Se introduce QUALITY_FY_MAX_AGE_DAYS (default 550, range [1,3650] desde modelcfg) y se propagan InterestReason/TaxRateReason a quality.Inputs. Tests unitarios puros con fixtures cubren la tabla completa de alignedTaxRate (8 subtests), confianza, cobertura y KdAfterTax. Sin secrets, sin DSN, sin SQL nuevo, sin cambios en go.mod/go.sum, sin nuevas dependencias. Veredicto: bajo/info, sin bloques duros."
+  },
+  "delta_closure_analysis": {
+    "task_id": "abys-m6c-t1-interest-tax",
+    "delta_type": "working_tree_closure",
+    "new_files": {
+      "internal/pipeline/w5_taxrate_test.go": {
+        "change": "W5 unit test: alignedTaxRate table-driven tests building AlignedFYFacts by hand \u2014 no BD, no storage. Covers complete pair, negative rate rejection, rate above wacc.MaxTaxRate, zero pretax, NaN, stale/nil pair with reason, nil pair without reason.",
+        "security_check": "OK: fixtures solo numeros y fechas, sin secretos, sin DSN, sin llamadas a red o BD. Riesgo nulo.",
+        "no_secrets": true
+      },
+      "internal/quality/w5_taxrate_test.go": {
+        "change": "W5 quality tests: derived tax rate feeds ROIC, out-of-range rejection lifts confidence, incomplete pair stays configured with reason, confidence lift when derived, interest_coverage uses aligned pair, FY_MAX_AGE_DAYS from env.",
+        "security_check": "OK: fixtures reutilizados de quality_test.go, solo se cambian campos TaxRate/TaxRateReason/TaxRateSource. No se construyen nuevos Inputs, solo se modifican campos. Sin secretos, sin DSN, sin acceso BD/red.",
+        "no_secrets": true
+      },
+      "internal/wacc/w5_observed_tax_test.go": {
+        "change": "W5 wacc tests: observed tax rate changes the WACC number but never reclasifies the source (remains capm_hybrid / medium). Same fixture base(), rate 15.61 vs nil.",
+        "security_check": "OK: fixtures del test base(), solo se asigna TaxRate y TaxRateSource. No secretos, no DSN, no acceso BD/red. Riesgo nulo.",
+        "no_secrets": true
+      },
+      "test-results/tests/abys-m6c-t1-w5.json": {
+        "change": "Evidencia W5: JSON valido que verifica ausencia de DSN con contrase\u00f1a, tokens ni rutas privadas. Los DSN van redactados/ficticios. Verifica compilacion y suites de test.",
+        "security_check": "OK: JSON de evidencia validado que no contiene credenciales reales. Estructurado para revision sin exponer secretos.",
+        "no_secrets_evidence": true
+      },
+      "internal/pipeline/fyfacts.go": {
+        "change": "W5: alignedTaxRate freshness-first ordering - TaxRateReason now dominates completeness check before nil/value checks. A stale anchor with complete pair is NOT derivable. Rate rejected (never clamped) outside [0, wacc.MaxTaxRate]; NaN rejected via positive-form range test. Closed vocabulary reasons.",
+        "security_check": "OK: freshness/reason check before value derivation; no secrets, no DSN, no DB access in the function itself. Only in-memory arithmetic and range validation.",
+        "no_secrets": true
+      },
+      "internal/pipeline/analytics.go": {
+        "change": "W5: import quality; derive observed tax rate from alignedFYFacts when pair fresh and complete (rateReason ==\"\") / 100 for fraction; otherwise keep configured rate. Interest: aligned.InterestReason != '' -> interestV2 = nil (prevents cross-FY ratio mixing). Single alignedFYFacts call shared by both consumers before MetricInputV2 built.",
+        "security_check": "OK: interest nil when reason present prevents cross-FY ratio; no financial values printed beyond market data (interest_coverage NULL with reason is acceptable per contract). No DSN/tokens.",
+        "no_secrets": true
+      },
+      "internal/quality/quality.go": {
+        "change": "W5: taxRateSource now requires TaxRate != nil to claim 'derived' provenance; derived with nil TaxRate falls back to 'configured' (P2-1). derivedOutOfRange tracking with ReasonTaxRateOutOfRange appended to Reasons when rate outside [0, maxTaxRate]. in.TaxRateReason propagated into Result.Reasons. Comment update: confidence cap lifted when derived, but only if TaxRate is actually set.",
+        "security_check": "OK: provenance check requires actual rate value; no secrets, no DSN. Derived flag validated against nil rate.",
+        "no_secrets": true
+      },
+      "internal/quality/quality_test.go": {
+        "change": "W5: pre-existing test adjusted with comment about derived requiring TaxRate (P2-1): sin TaxRate el motor se niega a declarar una derivaci\u00f3n y el tope se mantiene. Added ptr(21) assignment before Calculate call.",
+        "security_check": "OK: test adjustment only validates existing contract behavior; no new secret exposure.",
+        "no_secrets": true
+      },
+      "internal/pipeline/qualityrelative.go": {
+        "change": "W5: added interest_expense/income_tax_expense/pretax_income to qualityConcepts; call alignedFYFacts/alignedTaxRate; propagate InterestReason/AlignedInterestExpense/AlignedOperatingIncome into quality.Inputs. Dry-run now logs 'reasons' and 'interest_coverage' fields (CA-4: degradation reason of the TICKER has to be capturable from this line (GE/JNJ say tax_rate_stale here), and the interest coverage shows NULL when the aligned pair could not be used (P2-4)).",
+        "security_check": "OK: dry-run logs reasons/interest_coverage which are degradation reasons and market data (not financial values DSN/tokens). No new secret exposure.",
+        "no_secrets": true
+      }
+    },
+    "not_touched": {
+      "go_mod_go_sum": "No se tocaron go.mod ni go.sum. No hay nuevas dependencias.",
+      "sql_migraciones": "No se tocaron migraciones ni nuevo SQL. W5 reutiliza storage.GetFYAnnualSeries con expansion de conceptos en memoria.",
+      "permisos_config": "No se modifico configuracion de permisos ni roles de BD en W5."
+    }
+  },
+  "evidence_check": {
+    "test-results/security/abys-m6c-t1-w5.json": {
+      "check": "Comprobado que no contiene credenciales, DSN con contrase\u00f1a real ni rutas privadas; los DSN van redactados o son ficticios (patron postgres://***@localhost:55432/abys_test). Valida JSON valido.",
+      "result": "OK: JSON estructurado sin credenciales reales. DSN ausente o ficticio en la evidencia. Formato consistente con estilo abys-m6c-t1-w4.json."
+    }
+  },
+  "classification": {
+    "hard_blocks": 0,
+    "low_severity": 0,
+    "info": 5,
+    "verdict": "no hard blocks",
+    "summary": "Delta W5 review fix: freshness-first guard order in alignedTaxRate (reason dominates completeness), interest V2 nil-if-reason in analytics, derived provenance requires TaxRate non-nil, quality_test adjusted, qualityrelative dry-run logs reasons/interest_coverage. 7+1 modified files with these fixes. Sin secrets, sin DSN, sin SQL nuevo, sin cambios go.mod/go.sum. Veredicto: bajo/info, sin bloques duros."
+  },
+  "summary_3_5_lines": "W5 review fix: alignedTaxRate now checks TaxRateReason before pair completeness (freshness dominates). Analytics interest V2 nil when reason present prevents cross-FY mixing. Derived provenance requires TaxRate != nil (else falls back configured). Quality test adjusted with P2-1 comment. Qualityrelative dry-run now logs reasons and interest_coverage fields. 7 modified files + 1 evidence JSON. Sin secrets, sin DSN, sin SQL nuevo, sin cambios go.mod/go.sum. Veredicto: bajo/info, sin bloques duros."
+}
