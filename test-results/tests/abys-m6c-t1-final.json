@@ -1,0 +1,238 @@
+{
+  "task_id": "abys-m6c-t1-interest-tax",
+  "stage": "W8-DOC / FINAL AGGREGATE",
+  "date": "2026-10-08T21:00:00-04:00",
+  "tested_at_utc": "2026-10-09T01:00:00Z",
+  "tester": "Orquestador (ground-truth medido directamente sobre el working tree: suites ejecutadas, smoke de API en puerto temporal 28080 y conteos read-only sobre la BD de desarrollo abys). Sin commit, sin tag, sin push, sin deploy.",
+  "verdict": "PASS",
+  "verdict_detail": "Cierre DOC de M6c-T1 (W0-W8). Cierra CA-M6c-4 (interest_coverage real) y CA-M6c-O1 (tax_rate_source real). CA-M6c-4 deja de ser 'cobertura 16/17 por el tope': pasa a 17/17 cuando el trio EBIT/interes/impuesto esta alineado por el mismo FY, con motivo explicito cuando la fuente EDGAR no lo permite. quality 1.1.0, metrics 2.1.0, score 2.2.0. Conteos reales en dev (2026-10-08): scores 2.2.0=44, 2.1.0=88, 2.0.0=1, 1.1.0=50; derived_metrics 2.1.0=381, 2.0.0=762, 1.0.0=752. Unit 607/0/0 e integracion 24 paquetes ok/0 fail. npm build OK. Smoke API 2.2.0 sin NaN/Inf. Commits W3-W7 locales sin push (W1-W2 ya en origin/master).",
+  "plan": ".ai/plans/abys-m6c-t1-interest-tax.md",
+  "milestone": "M6c-T1",
+  "milestone_state": "CLOSED",
+  "closes": [
+    "CA-M6c-4 (interest_coverage real, SPEC §14)",
+    "CA-M6c-O1 (tax_rate_source real, SPEC §23)"
+  ],
+  "versions": {
+    "derived_metrics": "2.1.0",
+    "quality": "1.1.0",
+    "score": "2.2.0",
+    "policy": "Az5: bumpear, nunca sobrescribir historia (§26)"
+  },
+  "db_dev_counts": {
+    "measured_at": "2026-10-08",
+    "source": "psql read-only sobre abys (localhost:55432); sin escritura",
+    "scores": {
+      "2.2.0": 44,
+      "2.1.0": 88,
+      "2.0.0": 1,
+      "1.1.0": 50
+    },
+    "derived_metrics": {
+      "2.1.0": 381,
+      "2.0.0": 762,
+      "1.0.0": 752
+    },
+    "xbrl_concept_map": 23,
+    "note": "Los 44 scores 2.2.0 no pisan ninguna fila historica: la BD de desarrollo abys conserva intactas las revisiones previas (2.1.0/2.0.0/1.1.0) y suma las filas nuevas."
+  },
+  "commits": {
+    "w1_w2": {
+      "hash": "65bcbef",
+      "message": "feat(m6c-t1): catalogo XBRL de interes/impuesto y migracion 019 (W1-W2)",
+      "state": "ya en origin/master"
+    },
+    "w3": {
+      "hash": "b13e465",
+      "message": "feat(m6c-t1): W3 fresh re-ingest path with deterministic multiclass CIK resolution",
+      "state": "local, sin push"
+    },
+    "w4": {
+      "hash": "651292a",
+      "message": "feat(m6c-t1): aligned fiscal-year read for the interest/tax trio (W4)",
+      "state": "local, sin push"
+    },
+    "w5": {
+      "hash": "557a710",
+      "message": "feat(m6c-t1): observed tax rate and aligned interest coverage in quality/wacc (W5)",
+      "state": "local, sin push"
+    },
+    "w6": {
+      "hash": "74e8ff5",
+      "message": "feat(m6c-t1): bump derived_metrics to 2.1.0, quality to 1.1.0 and score to 2.2.0 (W6)",
+      "state": "local, sin push"
+    },
+    "w7": {
+      "hash": "8138964",
+      "message": "test(m6c-t1): AVGO/WMT v2 fixtures and end-to-end coverage for the aligned trio (W7)",
+      "state": "local, sin push"
+    },
+    "push": "NO. master adelanta a origin/master en 5 commits (b13e465, 651292a, 557a710, 74e8ff5, 8138964). W1-W2 65bcbef ya estaba pusheado.",
+    "w8": "DOC-only, sin commit (working tree preparado por el orquestador)"
+  },
+  "acceptance_criteria": [
+    {
+      "id": "CA-1",
+      "criterion": "Catalogo con los 10 tags de Az1 y sin los excluidos",
+      "status": "PASS",
+      "evidence": "test-results/tests/abys-m6c-t1-w1w2.json (39/0 en paquete edgar; negativos de InterestIncomeExpenseNet, ...Foreign/Domestic, Deferred*/Current*/Federal*/State*)"
+    },
+    {
+      "id": "CA-2",
+      "criterion": "Re-canonizacion: una fila por (concepto, periodKey)",
+      "status": "PASS",
+      "evidence": "abys-m6c-t1-w1w2.json (dupes por (ticker, canonico, period_end, fy, fp)=0) + abys-m6c-t1-w7.json (TestNormalizeStagingDedupeConcurrentInterestTags)"
+    },
+    {
+      "id": "CA-3",
+      "criterion": "interest_coverage = EBIT/interes del mismo FY (MSFT 50,88; NVDA 503,42; WMT 12,87; AVGO 7,94)",
+      "status": "PASS",
+      "evidence": "abys-m6c-t1-w5.json dry_run_6_tickers (NVDA 503.424710, WMT 12.866695, AVGO 7.938941) + abys-m6c-t1-w7.json fixtures AVGO/WMT"
+    },
+    {
+      "id": "CA-4",
+      "criterion": "Rechazos con motivo (AAPL mismatch; GE/JNJ stale; CAT y sin EBIT nil)",
+      "status": "PASS",
+      "evidence": "abys-m6c-t1-w4.json (interest_period_mismatch / interest_stale) + abys-m6c-t1-w5.json (GE/JNJ configured+tax_rate_stale; AAPL interest_coverage NULL)"
+    },
+    {
+      "id": "CA-5",
+      "criterion": "tax_rate_source = derived; AVGO cae a configured con tax_rate_out_of_range (impuesto -397 M => -1,75%)",
+      "status": "PASS",
+      "evidence": "abys-m6c-t1-w5.json (AVGO configured+tax_rate_out_of_range; AAPL/NVDA/WMT derived; rechazo sin clamp). Objetivo del plan: 32/36 con EBIT fresco"
+    },
+    {
+      "id": "CA-6",
+      "criterion": "quality.coverage = 17/17 y confidence = high sin reason tax_rate_configured cuando el trio alinea; debt_solvency.coverage = 1",
+      "status": "PASS",
+      "evidence": "abys-m6c-t1-w5.json (NVDA/WMT coverage=1 confidence=high reasons=[]) + smoke CA-8; donde la fuente no da el trio (AAPL) la cobertura es 16/17 CON motivo visible"
+    },
+    {
+      "id": "CA-7",
+      "criterion": "wacc_metrics.tax_rate = tasa observada y wacc_source = capm_hybrid (D3 sigue abierta)",
+      "status": "PASS",
+      "evidence": "abys-m6c-t1-w5.json ca7_evidence (con 15.61 el Kd cambia y el Source sigue capm_hybrid)"
+    },
+    {
+      "id": "CA-8",
+      "criterion": "GET /score/{t} 2.2.0 expone quality.tax_rate_source, sub_scores.debt_solvency.coverage, metrics.interest_coverage y cero NaN/Inf",
+      "status": "PASS",
+      "evidence": "smoke 2026-10-08 (API temporal :28080, cmd/api compilado): NVDA/WMT/AAPL/AVGO HTTP 200 model_version=2.2.0, sin tokens NaN/Infinity; campos presentes (ver ca8_smoke)"
+    },
+    {
+      "id": "CA-9",
+      "criterion": "make reingest-fundamentals idempotente (2a pasada 0 filas cambiadas)",
+      "status": "PASS",
+      "evidence": "abys-m6c-t1-w3.json (pasada 5 == pasada 6; fundamentals 46078, trio 6147, hash dd78f260f1dd3f27e31604a3175fbce7)"
+    },
+    {
+      "id": "CA-10",
+      "criterion": "QUALITY_FY_MAX_AGE_DAYS fuera de rango => warning + default 550",
+      "status": "PASS",
+      "evidence": "abys-m6c-t1-w5.json (unit test de rango)"
+    },
+    {
+      "id": "CA-11",
+      "criterion": "Suites unit+integracion verdes, gofmt/vet/build limpios, npm build, gitleaks sin leaks",
+      "status": "PASS",
+      "evidence": "ver test_suites (unit 607/0/0, integracion 24 paquetes ok/0 fail, npm build OK, gofmt/vet/build exit 0); gitleaks sin binario => regex advisory (0 hard blocks)"
+    },
+    {
+      "id": "CA-12",
+      "criterion": "SPEC/README/deudas actualizados; M6c-T1 cerrado con CA-M6c-4 y CA-M6c-O1 citados; CA-M6c-4 deja de ser 'cobertura 16/17 por tope'",
+      "status": "PASS",
+      "evidence": "README seccion M6c-T1 (17/17, CA-M6c-4/CA-M6c-O1, deudas) + .ai/runtime/state.yaml (state: CLOSED). SPEC no contenia la frase '16/17 por tope' ni los ids CA-M6c-* (no se invento: sin cambios en SPEC)"
+    }
+  ],
+  "test_suites": {
+    "unit": {
+      "command": "go test ./... -count=1 -json",
+      "exit": 0,
+      "top_level_pass": 369,
+      "subtests_pass": 238,
+      "total_pass": 607,
+      "fail": 0,
+      "skip": 0,
+      "packages_ok": 23,
+      "packages_fail": 0
+    },
+    "integration": {
+      "command": "make integration (TEST_DATABASE_URL -> abys_test, DSN redactado por bin/redactdsn)",
+      "exit": 0,
+      "packages_ok": 24,
+      "packages_fail": 0,
+      "packages_no_test_files": 1,
+      "skip": "unico skip preexistente M4c (TestForceRefreshLoopbackSkips)"
+    },
+    "format_vet_build": {
+      "gofmt_l": "0 archivos",
+      "go_vet": "exit 0",
+      "go_build": "exit 0"
+    },
+    "web_build": {
+      "command": "npm --prefix web run build",
+      "exit": 0,
+      "bundle": "dist/assets/index-BU2xzJgo.js",
+      "size_kb": 209.42
+    }
+  },
+  "ca3_ca5_dry_run_6_tickers": {
+    "command": "DATABASE_URL=<abys> go run ./cmd/analytics -job quality -dry-run -tickers AAPL,NVDA,WMT,AVGO,GE,JNJ",
+    "AAPL": "score=77.07 coverage=0.941 confidence=high tax_rate_source=derived reasons=[] interest_coverage=NULL",
+    "NVDA": "score=83.21 coverage=1 confidence=high tax_rate_source=derived reasons=[] interest_coverage=503.424710",
+    "WMT": "score=56.74 coverage=1 confidence=high tax_rate_source=derived reasons=[] interest_coverage=12.866695",
+    "AVGO": "score=73.55 coverage=0.941 confidence=medium tax_rate_source=configured reasons=[tax_rate_configured tax_rate_out_of_range] interest_coverage=7.938941",
+    "GE": "score=71.96 coverage=0.941 confidence=medium tax_rate_source=configured reasons=[tax_rate_configured tax_rate_stale] interest_coverage=NULL",
+    "JNJ": "score=78.18 coverage=0.882 confidence=medium tax_rate_source=configured reasons=[tax_rate_configured tax_rate_stale] interest_coverage=NULL",
+    "source": "test-results/tests/abys-m6c-t1-w5.json dry_run_6_tickers"
+  },
+  "ca8_smoke": {
+    "command": "DATABASE_URL=<abys> API_PORT=28080 ./abys-api-m6ct1  +  curl /score/{T}?model_version=2.2.0",
+    "date": "2026-10-08",
+    "nan_inf_tokens_found": [],
+    "tickers": {
+      "NVDA": {"http": 200, "model_version": "2.2.0", "tax_rate_source": "derived", "confidence": "high", "quality_coverage": 1, "debt_solvency_coverage": 1, "interest_coverage": 503.42471042471044},
+      "WMT": {"http": 200, "model_version": "2.2.0", "tax_rate_source": "derived", "confidence": "high", "quality_coverage": 1, "debt_solvency_coverage": 1, "interest_coverage": 12.86669542709232},
+      "AAPL": {"http": 200, "model_version": "2.2.0", "tax_rate_source": "derived", "confidence": "high", "quality_coverage": 0.9411764705882353, "debt_solvency_coverage": 0.6666666666666666, "interest_coverage": null},
+      "AVGO": {"http": 200, "model_version": "2.2.0", "tax_rate_source": "configured", "confidence": "medium", "quality_coverage": 0.9411764705882353, "debt_solvency_coverage": 0.6666666666666666, "interest_coverage": 7.938940809968847, "reasons": ["tax_rate_configured", "tax_rate_out_of_range"]}
+    },
+    "note": "El proceso temporal (PID 3117800) fue terminado; 0 procesos residuales."
+  },
+  "security": {
+    "report": "test-results/security/abys-m6c-t1-final.json",
+    "gitleaks": "binario no disponible: fallback regex advisory",
+    "hard_blocks": 0,
+    "verdict": "PASS"
+  },
+  "working_tree": {
+    "code_product_changes": "ninguno (no se toco codigo Go)",
+    "doc_changes": [
+      "README.md",
+      ".ai/runtime/state.yaml",
+      "test-results/tests/abys-m6c-t1-final.json",
+      "test-results/security/abys-m6c-t1-final.json"
+    ],
+    "commit": "NO (working tree preparado; W3-W7 locales sin push)",
+    "excluded": [
+      ".ai/decisions/",
+      "docs/ (privado, gitignored)",
+      "internal/ y cmd/ (codigo de producto): sin cambios"
+    ]
+  },
+  "artifacts": [
+    "test-results/tests/abys-m6c-t1-w1w2.json",
+    "test-results/tests/abys-m6c-t1-w3.json",
+    "test-results/tests/abys-m6c-t1-w4.json",
+    "test-results/tests/abys-m6c-t1-w5.json",
+    "test-results/tests/abys-m6c-t1-w6-metrics.json",
+    "test-results/tests/abys-m6c-t1-w6-score.json",
+    "test-results/tests/abys-m6c-t1-w7.json",
+    "test-results/tests/abys-m6c-t1-final.json",
+    "test-results/security/abys-m6c-t1-final.json"
+  ],
+  "notes": [
+    "CA-M6c-4 y CA-M6c-O1 son los ids de la tabla de deuda de M6c (.ai/plans/abys-m6c-scoring-config.md): no existen en la SPEC; se citan sin inventar contenido nuevo en la SPEC.",
+    "No se abre M6c-T2 ni M6d: M6c-D2 (replay/backtest sobre fundamentales, §28) y M6c-D3 (Rf/ERP/Kd observados) quedan documentados como tareas propias.",
+    "El dry-run de quality y el smoke de CA-8 son jobs de solo lectura; el unico artefacto escrito es este JSON y su par de seguridad."
+  ]
+}

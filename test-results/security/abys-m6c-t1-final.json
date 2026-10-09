@@ -1,0 +1,49 @@
+{
+  "task_id": "abys-m6c-t1-interest-tax",
+  "scan_type": "security-delta-W8-final",
+  "date": "2026-10-08T21:05:00-04:00",
+  "scanner": "Orquestador (skill security-scanning; gitleaks no disponible => regex advisory, coherente con AGENTS.md)",
+  "scope_files": [
+    "README.md",
+    ".ai/runtime/state.yaml",
+    "test-results/tests/abys-m6c-t1-final.json"
+  ],
+  "findings": {
+    "exposed_secrets": {
+      "gitleaks_status": "unavailable_tool",
+      "method": "regex_advisory",
+      "hard_blocks": 0,
+      "details": "gitleaks no esta instalado en este entorno; se ejecuto el fallback regex sobre el delta DOC. No se encontro ningun secreto real (API keys, private keys, tokens, passwords)."
+    },
+    "dsn_matches": {
+      "status": "pre_existing_dev_defaults_not_introduced_here",
+      "details": "El regex detecto postgres://abys:abys@localhost:55432/abys y /abys_test en README (lineas 769 y 877). Son los defaults de desarrollo/test YA versionados (Makefile:13,16 y .env.example) y NO forman parte del delta introducido en W8: no se modificaron esas lineas.",
+      "new_dsn_with_password_in_delta": "ninguno; el JSON final usa marcadores <abys> / <abys_test>, no el DSN crudo"
+    },
+    "new_evidence_json": {
+      "description": "test-results/tests/abys-m6c-t1-final.json agrega conteos, hashes y valores de mercado/financieros ya publicos. No contiene credenciales, cabeceras de autenticacion ni rutas absolutas de usuario.",
+      "sensitivity": "none",
+      "data_type": "public_financial_numbers_and_git_hashes"
+    },
+    "state_yaml": {
+      "description": ".ai/runtime/state.yaml (infraestructura de agentes, no producto). Solo se actualizaron state, updated_at, m6c_t1_status y las listas evidences/commits_m6c_t1. Sin secretos.",
+      "sensitivity": "none"
+    },
+    "readme": {
+      "description": "README.md documenta el cierre de M6c-T1. Sin valores de entorno, sin DSN nuevo, sin credenciales.",
+      "sensitivity": "none"
+    },
+    "absolute_paths": {
+      "status": "no_new_absolute_paths",
+      "details": "El delta usa rutas relativas del repositorio."
+    }
+  },
+  "security_checks": {
+    "regex_advisory": "0 secretos reales; 2 coincidencias DSN pre-existentes de dev/test (allowlist de .gitleaks.toml).",
+    "gitleaks_primary": "no ejecutado (binario ausente); el fallback es advisory por regla global.",
+    "naive_regression": "No se introducen endpoints, permisos ni escritura en produccion; los jobs del cierre son read-only y el unico artefacto escrito son evidencias bajo test-results/."
+  },
+  "verdict": "PASS",
+  "summary": "Escaneo delta de las evidencias finales de M6c-T1: sin hard blocks ni secretos reales. Las unicas coincidencias de tipo DSN son defaults de desarrollo/test ya versionados y fuera del delta. gitleaks no disponible (fallback regex advisory, coherente con AGENTS.md). Verdict: PASS.",
+  "summary_3_5_lines": "W8 DOC final security scan: 0 hard blocks. Regex advisory sin secretos reales. DSN con password solo en defaults pre-existentes de dev/test (README 769/877, no modificados). JSON final usa marcadores <abys>. Sin endpoints/permisos nuevos. PASS."
+}

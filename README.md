@@ -2,7 +2,7 @@
 
 **Value investing analysis engine** — SEC EDGAR fundamentals → score 0-100 with buy/hold/sell signal, Graham/DCF intrinsic value, comparables & SMA backtest.
 
-> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M6. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**. **M4d ✔ (Air live-reload dev + deploy opcional) completed**. **M5 ✔ (buscador + watchlist) completed.** **M5.1 ✔ (watchlist integración: pipeline asíncrono, GET /pipeline/status, ingesta automática en 2º plano, Mi watchlist en dashboard) completed.** **M5.2 ✔ (página Health: GET /health ampliado + sidebar con secciones Finanzas/Sistema) completed** (2026-09-27; suite 276/0/1). **M6a ✔ (Growth Engine + WACC/CAPM con beta de Yahoo) completed** (growth_metrics, wacc_metrics, bloques `growth`/`wacc` en `/valuation`, etapa de pipeline `growth`, /health con 11 tablas; las fórmulas de valoración aún siguen con los defaults de M3). Suite unit 252/0/0 + integración 388/0/1. **M6b ✔ (motor de valoración 2.0.0) completed** (escenarios Bear/Base/Bull en Graham y DCF con el growth normalizado y el WACC individual de M6a, margin of safety por método, valuation uncertainty/confidence con `reasons`, sin `consensus_intrinsic` ni `upside_pct`, tabla `valuation_results` (migración 014), etapa de pipeline `valuation`, `/valuation` 2.0.0 y score 2.0.0 con 5 dimensiones, /health con 12 tablas). Suite unit 344/0/0 + integración 480/0/1.
+> **M1 ✔ (core) completed.** **M2 ✔ (prices & metrics) completed.** **M3 ✔ (valuation, score, comparables, backtest, API) completed** (hotfix M3 + calibración 2026-09-23). **M4 ✔ (dashboard + static serving + deploy systemd) completed**; alertas (CA M4-2) diferidas a M6. **M4b ✔ (consenso promedio + señal textual) completed**. **M4c ✔ (refresh de datos desde el dashboard + fix mapeo XBRL) completed**. **M4d ✔ (Air live-reload dev + deploy opcional) completed**. **M5 ✔ (buscador + watchlist) completed.** **M5.1 ✔ (watchlist integración: pipeline asíncrono, GET /pipeline/status, ingesta automática en 2º plano, Mi watchlist en dashboard) completed.** **M5.2 ✔ (página Health: GET /health ampliado + sidebar con secciones Finanzas/Sistema) completed** (2026-09-27; suite 276/0/1). **M6a ✔ (Growth Engine + WACC/CAPM con beta de Yahoo) completed** (growth_metrics, wacc_metrics, bloques `growth`/`wacc` en `/valuation`, etapa de pipeline `growth`, /health con 11 tablas; las fórmulas de valoración aún siguen con los defaults de M3). Suite unit 252/0/0 + integración 388/0/1. **M6b ✔ (motor de valoración 2.0.0) completed** (escenarios Bear/Base/Bull en Graham y DCF con el growth normalizado y el WACC individual de M6a, margin of safety por método, valuation uncertainty/confidence con `reasons`, sin `consensus_intrinsic` ni `upside_pct`, tabla `valuation_results` (migración 014), etapa de pipeline `valuation`, `/valuation` 2.0.0 y score 2.0.0 con 5 dimensiones, /health con 12 tablas). Suite unit 344/0/0 + integración 480/0/1. **M6c ✔ (scoring engine 2.1.0 + parameter sets) completed** (2026-10-03; deuda residual listada abajo). **M6c-T1 ✔ (interés e impuesto observados: `interest_coverage` 17/17, `tax_rate_source=derived`, versions `metrics` 2.1.0 / `quality` 1.1.0 / `score` 2.2.0) completed** (2026-10-08).
 
 ---
 
@@ -175,7 +175,7 @@ ingesta de watchlist) también los ejecutan sin red. `valuation` es además una 
 | `internal/backtest` | `internal/backtest/` | **Backtest SMA 50/200** sin lookahead, golden-rule crossover |
 | `internal/api` | `internal/api/` | **HTTP REST M3**: 11 endpoints + error envelope estructurado |
 | `internal/storage` | `internal/storage/` | Capa de persistencia (pgx/v5): queries, pool, modelos, migraciones |
-| `migrations/` | `migrations/*.sql` | 18 migraciones SQL (`001`-`018`): extensiones, schema, staging, concept map, daily_prices, macro_series, derived_metrics, scores (009), watchlist (010), **securities.beta (011)**, **growth_metrics (012)**, **wacc_metrics (013)**, **valuation_results (014)**, **parameter_sets + beta_history (015)**, **upgrade del seed conservative (016)**, **beta finita + backfill de MOS (017)**, **des-escape de entidades HTML de Finviz (018)** |
+| `migrations/` | `migrations/*.sql` | 19 migraciones SQL (`001`-`019`): extensiones, schema, staging, concept map, daily_prices, macro_series, derived_metrics, scores (009), watchlist (010), **securities.beta (011)**, **growth_metrics (012)**, **wacc_metrics (013)**, **valuation_results (014)**, **parameter_sets + beta_history (015)**, **upgrade del seed conservative (016)**, **beta finita + backfill de MOS (017)**, **des-escape de entidades HTML de Finviz (018)**, **catálogo XBRL de interés/impuesto (019, M6c-T1)** |
 | `docker-compose.yml` | — | PostgreSQL 16 + TimescaleDB para desarrollo local |
 | `web/` | `web/src/`, `web/dist/` | Dashboard React 18 + TS + Vite + Tailwind + react-router; consumen la API M3; build estático servido por Go FileServer (SPA fallback) |
 | `Makefile` | — | Build, test, migrate, run targets (precios, macro, analytics, scores, sector, **growth**, **valuation**, API, **build-web**, **build-all**, **deploy-local**) |
@@ -306,10 +306,10 @@ Pesos §18 (suma 0.90 deliberada, el décimo punto queda sin asignar):
   El score divide por el peso REALMENTE usado (weight_used), nunca por 1.00.
 
 Configuración en tres capas con precedencia: código < env < parameter set.
-  - Knobs por env (canónicos en .env.example); QUALITY_TAX_RATE es la única fuente de impuestos (NOPAT y Kd after-tax); WACC_TAX_RATE está deprecado y emite warning al usarse.
+  - Knobs por env (canónicos en .env.example); QUALITY_TAX_RATE es la única fuente de impuestos (NOPAT y Kd after-tax); WACC_TAX_RATE está deprecado y emite warning al usarse. Desde M6c-T1, si el emisor declara el par `income_tax_expense`/`pretax_income` del **mismo FY**, la tasa es observada (`tax_rate_source=derived`, ADR D32) y esa misma tasa alimenta NOPAT y Kd after-tax.
   - Sets en parameter_sets: "base" y "conservative" (migraciones 015 + 016). El 016 actualiza el seed viejo de conservative de forma idempotente y solo si el JSON almacenado es exactamente el anterior (respeta ediciones del operador). Tras 016: conservative ≠ base (AAPL 43 → 50).
 
-Gates: /score/{t}?model_version= 1.1.0 | 2.0.0 | 2.1.0 (2.0.0 y 1.1.0 devuelven su layout histórico; una versión desconocida devuelve 400).
+Gates: /score/{t}?model_version= 1.1.0 | 2.0.0 | 2.1.0 | 2.2.0 (2.0.0 y 1.1.0 devuelven su layout histórico; 2.1.0 y 2.2.0 comparten schema, 2.2.0 es la revisión actual; una versión desconocida devuelve 400).
 
 Backtest / verificación (NO escribe nada, NO corre migraciones):
   make run-backtest TICKERS=AAPL                     # replay del trace
@@ -325,6 +325,41 @@ Verificación (requiere -p 1; sin él los tests de integración se deadloquean p
 NaN/Inf: todos los knobs de configuración rechazan valores no finitos con warning y usan el default (nunca fallan el job). Los guards de storage, score y betahistory protegen el lado de datos.
 
 Dato de cierre del hito: las filas de score 1.1.0/2.0.0 quedan intactas y se sirven con su layout histórico; las migraciones 015+016 son idempotentes.
+
+#### M6c-T1 — interés e impuesto observados (cerrado 2026-10-08)
+
+Bloque de deuda `M6c-T1` (plan `.ai/plans/abys-m6c-t1-interest-tax.md`, W0-W8). Cierra `CA-M6c-4`
+(`interest_coverage` real, §14) y `CA-M6c-O1` (`tax_rate_source` real, §23).
+
+- **Catálogo XBRL**: 5 tags de interés + 2 de impuesto + 3 de preimpuesto (migración `019`, 23 conceptos
+  en `xbrl_concept_map`) y `make reingest-fundamentals` (`-fresh`) para re-canonizar las empresas ya
+  ingeridas (`make run-collector` NO re-canoniza: ver la sección de re-ingesta).
+- **Alineación por el mismo FY** (`QUALITY_FY_MAX_AGE_DAYS`, default 550): `interest_coverage = EBIT/interés`
+  y `tax_rate = income_tax_expense/pretax_income` del **mismo `period_end`**. Si no coincide o el ancla es
+  vieja, la métrica queda `nil`/`configured` **con motivo** (`interest_period_mismatch`, `interest_stale`,
+  `tax_rate_unavailable`, `tax_rate_stale`, `tax_rate_out_of_range`): nunca un ratio cruzado ni un `clamp` a 0.
+- **CA-4 / CA-6**: `quality.coverage` deja de ser "16/17 por el tope": es **17/17** (con
+  `debt_solvency.coverage = 1`) cuando el trío está alineado, y el `confidence` deja de estar topado a
+  `medium` cuando `tax_rate_source = derived` (ADR D26/D32). Donde el emisor no declara el trío en el FY
+  ancla (AAPL interés de otro FY; MCD, SPG, CAT, GEV, XOM), la cobertura es 16/17 **con motivo visible**:
+  limitación de la fuente EDGAR, no del catálogo.
+- **Versiones** (Az5, nunca sobrescribir): `derived_metrics` **2.1.0**, `quality` **1.1.0**, `score`
+  **2.2.0** (gate `/score?model_version=2.2.0`). Medido en dev (2026-10-08): `scores` 2.2.0=44, 2.1.0=88
+  (histórico), 2.0.0=1, 1.1.0=50; `derived_metrics` 2.1.0=381, 2.0.0=762, 1.0.0=752.
+- **Dry-run de los 6 casos límite** (`-job quality -dry-run`): NVDA `interest_coverage` 503.42 y WMT 12.87
+  (CA-3); AVGO `configured` + `tax_rate_out_of_range` (tasa −1,75 %, CA-5); GE y JNJ `configured` +
+  `tax_rate_stale` (CA-4); AAPL `derived` con `coverage 0.941` (interés de otro FY). **API 2.2.0**: smoke
+  real (puerto temporal) de NVDA/WMT/AAPL/AVGO con `quality.tax_rate_source`,
+  `sub_scores.debt_solvency.coverage` y `metrics.interest_coverage` presentes y **cero `NaN`/`Inf`** (CA-8).
+- **Suites**: unit **607/0/0** (369 top + 238 subtests, 23 paquetes), integración **24 paquetes ok / 0 fail**
+  (`make integration`; único skip preexistente M4c) y `npm run build` OK.
+- **Commits (locales, sin push)**: W3 `b13e465`, W4 `651292a`, W5 `557a710`, W6 `74e8ff5`, W7 `8138964`;
+  W1-W2 `65bcbef` ya en `origin/master`.
+- **Evidencia**: `test-results/tests/abys-m6c-t1-{w1w2,w3,w4,w5,w6-metrics,w6-score,w7}.json` +
+  `abys-m6c-t1-final.json`; `test-results/security/abys-m6c-t1-final.json`.
+
+No abre M6c-T2 ni M6d: el replay/backtest con fundamentales derivados (§28) y el proveedor de `Rf`/`ERP`/`Kd`
+observados (`M6c-D3`) quedan como tareas propias, documentadas en el plan.
 
 ---
 
@@ -378,7 +413,7 @@ O use una instancia PostgreSQL local en puerto 55432 (el entorno de test usa est
 make migrate
 ```
 
-Esto ejecuta las 18 migraciones SQL (`001`-`018`) de `migrations/` contra la DB configurada por `DATABASE_URL`. Las migraciones 006-007 crean hypertables TimescaleDB si la extensión está disponible; si no, crean tablas normales (sin compresión) — funcionalidad completa sin degradación de datos.
+Esto ejecuta las 19 migraciones SQL (`001`-`019`) de `migrations/` contra la DB configurada por `DATABASE_URL`. Las migraciones 006-007 crean hypertables TimescaleDB si la extensión está disponible; si no, crean tablas normales (sin compresión) — funcionalidad completa sin degradación de datos.
 
 ### 4. Run collector (ingest SEC EDGAR fundamentals)
 
@@ -1064,7 +1099,8 @@ make run-all-data # incluye run-growth entre sector y analytics
 - **M5.2 ✔** — Página Health (2026-09-27): `GET /health` ampliado aditivamente con `latency_ms` (ms del Ping), `postgres_version` (e.g. "18.6"), `db_size` (e.g. "21 MB") y `tables` (9 entradas en M5.2; **11 desde M6a**: + `growth_metrics`, `wacc_metrics`). 503 sin BD: solo 3 claves (`status`,`database`,`version`). Contexto con timeout 3s; status HTTP depende solo del Ping; best-effort de metadata con `slog.Warn`. Nuevo sidebar/layout con secciones "Finanzas" (Dashboard, Watchlist) y "Sistema" (Health); página `/health` con 4 tarjetas + tabla de conteos + Refrescar con spinner + "Última comprobación" es-BO. Bundle `index-BeqNKrtA.js`. Suite 276/0/1 (165/0/0 unit + integración). F5 en `/health` muestra JSON crudo (aceptado por diseño).
 - **M6a ✔** — Growth Engine + WACC/CAPM (2026-09-29): `internal/growth` (CAGR 3a/5a de revenue/EPS/FCF sobre series FY anuales, blend EPS/FCF, `normalized_growth_rate` clampado a [-10, 25] con `confidence` + `source`, `insufficient_data` en vez de 0) e `internal/wacc` (`Ke = Rf + β×ERP`, `E = close × shares_outstanding`, `D = total_debt`, `Kd·(1−t)`, taxonomía `capm_individual`/`capm_hybrid`/`configured_fallback`); beta observada de Yahoo (`defaultKeyStatistics`) en `securities` (migración 011) y tablas `growth_metrics`/`wacc_metrics` (migraciones 012/013); etapa de pipeline `growth` siempre antes de metrics/scores y BD-local (`POST /refresh` también la ejecuta); bloques aditivos `growth`/`wacc` en `GET /valuation/{ticker}`; fix §22 de consistencia de precio (`IngestQuote` ya no pisa `adjusted_close`/OHLC) y corrección del concepto `revenues`; `/health` con 11 tablas. **Las fórmulas de valoración siguen con `GROWTH_RATE_DEFAULT`/`DCF_DISCOUNT_RATE`**: cablear los motores es M6b. Suite unit 252/0/0, integración 388/0/1.
 - **M6b ✔** — Cableado del motor 2.0.0: `normalized_growth_rate` y el WACC individual entran en Graham/DCF (métodos independientes) con escenarios Bear/Base/Bull, margin of safety por método, Valuation Uncertainty expuesta cruda, Valuation Confidence por cobertura de inputs + `reasons`, PEG/P/FCF aditivos, eliminación total del consenso de M4b (`consensus_intrinsic`, `upside_pct`), tabla `valuation_results` (014), etapa `valuation` en pipeline, `/valuation` 2.0.0 (`valuation_source`), score 2.0.0 con 5 dimensiones (graham 0.15/dcf 0.20/fundamentals 0.30/comparables 0.20/trend 0.15) y cierre de deuda M6a (F1-F6, T1).
-- **M6c 🔲** — Calidad de datos + parametrización avanzada: validación de límites de envs (`envFloat`/`envInt`), hardening de integración (silenciar DSN en logs, unificar lectura de TEST_DATABASE_URL/DATABASE_URL para la vía directa), dimensiones Quality/ROIC/FCF-growth/deuda y Relative Valuation/Market Context con pesos 15/20/35/15/5, proveedor de `Rf`/`ERP` y conceptos EDGAR de impuestos/intereses para individualizar `Kd` y `tax_rate`; proveedor de beta con histórico y política de caducidad; `filing_date` real del fact EDGAR (deuda M1/M3), normalización de EPS por splits y escalado de límites de `reasons` (M6b-H1/H2/H3).
+- **M6c ✔** — Calidad de datos + parametrización avanzada: validación de límites de envs (`envFloat`/`envInt`), hardening de integración (silenciar DSN en logs, unificar lectura de TEST_DATABASE_URL/DATABASE_URL para la vía directa), dimensiones Quality/ROIC/FCF-growth/deuda y Relative Valuation/Market Context con pesos 15/20/35/15/5, proveedor de `Rf`/`ERP` y conceptos EDGAR de impuestos/intereses para individualizar `Kd` y `tax_rate`; proveedor de beta con histórico y política de caducidad; `filing_date` real del fact EDGAR (deuda M1/M3), normalización de EPS por splits y escalado de límites de `reasons` (M6b-H1/H2/H3). Cerrado 2026-10-03 (commit `dfc2db6`); los ítems no cubiertos (proveedor de `Rf`/`ERP`/`Kd`, beta con histórico, `filing_date`) siguen como deuda/tareas propias.
+- **M6c-T1 ✔** — Interés e impuesto observados (2026-10-08): catálogo XBRL de interés/impuesto (migración `019`), `interest_coverage` alineado por FY y `tax_rate_source=derived` (ADR D31/D32), versiones `metrics` 2.1.0 / `quality` 1.1.0 / `score` 2.2.0; cierra `CA-M6c-4` y `CA-M6c-O1`. No abre M6d (replay/§28 y `Rf`/`ERP`/`Kd` observados quedan como tareas propias).
 - **M6 🔲** — Alertas: `cmd/alerts/`, `internal/alerts/`, endpoint `/alerts` (prefijo reservado). Diferido a M6 por decisión del usuario (SPEC §7).
 
 ---
