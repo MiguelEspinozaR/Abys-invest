@@ -1,0 +1,38 @@
+{
+  "security_id": 2226,
+  "ticker": "AVGO",
+  "as_of": "2026-01-15T00:00:00Z",
+  "net_earnings": 23087000000,
+  "shares_outstanding": 4720000000,
+  "price": 350.0,
+  "shareholders_equity": 75000000000,
+  "total_liabilities": 90000000000,
+  "free_cash_flow": 20000000000,
+  "operating_income": 25960000000,
+  "revenue": 63900000000,
+  "total_debt": 67000000000,
+  "cash": 11000000000,
+  "ebitda": 33000000000,
+  "interest_expense": 3270000000,
+  "normalized_tax_rate": 0.21,
+  "income_tax_expense": -397000000,
+  "pretax_income": 22690000000,
+  "eps_series": [
+    { "period_end": "2023-10-29T00:00:00Z", "value": 3.0 },
+    { "period_end": "2024-11-03T00:00:00Z", "value": 4.2 },
+    { "period_end": "2025-11-02T00:00:00Z", "value": 5.1 }
+  ],
+  "fcf_series": [
+    { "period_end": "2023-10-29T00:00:00Z", "value": 15000000000 },
+    { "period_end": "2024-11-03T00:00:00Z", "value": 18000000000 },
+    { "period_end": "2025-11-02T00:00:00Z", "value": 20000000000 }
+  ],
+  "_provenance": {
+    "case": "CA-5 del plan M6c-T1 (AVGO): impuesto observado NEGATIVO",
+    "source": "Broadcom-like FY2025 10-K (cifras en USD, redondeadas); el par ancla es el del plan/dry-run W5",
+    "tax_pair": "income_tax_expense=-397000000 sobre pretax_income=22690000000 => -1.7497% fuera de [0,50]; RECHAZADO, nunca clamp",
+    "normalized_tax_rate": "0.21 = tasa configurada de fallback; la derivada negativa NO se usa y NO se convierte en 0",
+    "interest_pair": "operating_income=25960000000 / interest_expense=3270000000 del MISMO periodo => 7.9388 (dry-run AVGO 7.938941)",
+    "note": "magnitudes de apoyo no vinculantes; los valores ancla son impuesto -397e6 y el rechazo de la tasa negativa"
+  }
+}

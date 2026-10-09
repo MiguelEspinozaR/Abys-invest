@@ -1,0 +1,21 @@
+{
+  "comment": "Cálculo manual con wmt_metrics_input.json (SPEC §13/§14, fórmulas_v2.go). market_cap=100*8.03e9=8.03e11; net_debt=60e9-9e9=51e9; roic=29825e6*(1-0.17325279680122507)/(90000e6+60000e6-9000e6); interest_coverage=29825e6/2318e6=12.866695 (CA-3). La tasa normalizada se deriva del par del mismo FY (4073e6/23509e6).",
+  "model_version": "2.1.0",
+  "normalized_tax_rate": 0.17325279680122507,
+  "observed_tax_rate_percent": 17.325279680122506,
+  "observed_tax_rate_rejected": false,
+  "metrics": {
+    "eps_volatility": 0.2286243652745898,
+    "ev_ebit": 28.633696563285834,
+    "ev_ebitda": 21.35,
+    "fcf_margin": 0.01762153351395405,
+    "fcf_to_debt": 0.2,
+    "fcf_volatility": 0.13732372131620255,
+    "interest_coverage": 12.86669542709232,
+    "net_debt_to_ebitda": 1.275,
+    "operating_margin": 0.043796853087806634,
+    "positive_eps_years": 3.0,
+    "positive_fcf_years": 3.0,
+    "roic": 0.17487755557023732
+  }
+}

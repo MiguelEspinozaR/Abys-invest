@@ -1,0 +1,37 @@
+{
+  "security_id": 1049,
+  "ticker": "WMT",
+  "as_of": "2026-01-15T00:00:00Z",
+  "net_earnings": 19436000000,
+  "shares_outstanding": 8030000000,
+  "price": 100.0,
+  "shareholders_equity": 90000000000,
+  "total_liabilities": 170000000000,
+  "free_cash_flow": 12000000000,
+  "operating_income": 29825000000,
+  "revenue": 680985000000,
+  "total_debt": 60000000000,
+  "cash": 9000000000,
+  "ebitda": 40000000000,
+  "interest_expense": 2318000000,
+  "normalized_tax_rate": 0.17325279680122507,
+  "income_tax_expense": 4073000000,
+  "pretax_income": 23509000000,
+  "eps_series": [
+    { "period_end": "2023-01-31T00:00:00Z", "value": 1.53 },
+    { "period_end": "2024-01-31T00:00:00Z", "value": 1.91 },
+    { "period_end": "2025-01-31T00:00:00Z", "value": 2.42 }
+  ],
+  "fcf_series": [
+    { "period_end": "2023-01-31T00:00:00Z", "value": 12000000000 },
+    { "period_end": "2024-01-31T00:00:00Z", "value": 15100000000 },
+    { "period_end": "2025-01-31T00:00:00Z", "value": 12000000000 }
+  ],
+  "_provenance": {
+    "case": "CA-3 del plan M6c-T1 (WMT): interés solo por InterestExpenseDebt",
+    "source": "Walmart-like FY2025 10-K (cifras en USD, redondeadas); EBIT/interés son los del plan",
+    "interest_pair": "operating_income=29825000000 / interest_expense=2318000000 del MISMO ejercicio => 12.866695 (idéntico al dry-run W5)",
+    "normalized_tax_rate": "derivada de income_tax_expense/pretax_income = 4073000000/23509000000 (mismo FY)",
+    "note": "magnitudes de apoyo no vinculantes; el valor ancla es la cobertura 12.87 del plan"
+  }
+}

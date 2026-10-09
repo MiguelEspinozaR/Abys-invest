@@ -1,0 +1,42 @@
+{
+  "task_id": "abys-m6c-t1-w7",
+  "scan_type": "security-delta-W7",
+  "scope_files": [
+    "internal/metrics/fixtures/avgo_metrics_expected.json",
+    "internal/metrics/fixtures/avgo_metrics_input.json",
+    "internal/metrics/fixtures/wmt_metrics_expected.json",
+    "internal/metrics/fixtures/wmt_metrics_input.json",
+    "internal/metrics/fixtures_v2_test.go",
+    "internal/api/score_response_21_test.go",
+    "internal/storage/m6_integration_test.go",
+    "internal/collect/edgar/normalize_integration_test.go",
+    "test-results/tests/abys-m6c-t1-w7.json"
+  ],
+  "findings": {
+    "exposed_secrets": {
+      "gitleaks_status": "unavailable_tool",
+      "method": "regex_advisory",
+      "details": "gitleaks binary not found in environment; regex-based advisory scan performed instead. No hard blocks triggered."
+    },
+    "fixtures_avgo_wmt": {
+      "description": "Two JSON fixture files (AVGO, WMT) containing pure financial metrics (market cap, net debt, ROIC, interest coverage, etc.) derived from public 10-K data. No API keys, passwords, tokens, or private data observed. All values are USD-denominated public numbers.",
+      "sensitivity": "none",
+      "data_type": "public_financial_numbers"
+    },
+    "test_go_files": {
+      "description": "Go test files (fixtures_v2_test.go, score_response_21_test.go, m6_integration_test.go, normalize_integration_test.go) contain test infrastructure, DB mocks, and assertions. No hardcoded secrets, credentials, or token values found. SQL queries use parameterized patterns; no direct string-concatenated credentials.",
+      "sensitivity": "none",
+      "notes": "Integration tests require DATABASE_URL but credentials are expected via env var, not embedded in source."
+    },
+    "absolute_paths": {
+      "status": "no_new_absolute_paths",
+      "details": "No new absolute file paths introduced in the W7 delta. All paths are relative within the repository structure."
+    },
+    "evidences_tokens": {
+      "status": "no_tokens_found",
+      "details": "No secret tokens, API keys, or passwords found in any scanned file. Any placeholder identifiers are allowlisted test data, not real credentials."
+    }
+  },
+  "verdict": "PASS",
+  "summary": "W7 delta security scan complete. Fixtures contain only public financial numbers with no secrets. Test files have no embedded credentials. No gitleaks binary available (regex advisory only). No SQL injection, permission escalation, or absolute path issues detected. Verdict: PASS."
+}

@@ -1,0 +1,172 @@
+{
+  "task": "abys-m6c-t1-interest-tax-w7",
+  "spec": ".ai/plans/abys-m6c-t1-interest-tax.md",
+  "sections_applied": [
+    "§3 Az2",
+    "§3 Az3",
+    "§3 Az4",
+    "§4 W7 (fixtures + tests)",
+    "§7 CA-3/CA-5/CA-6/CA-7"
+  ],
+  "verdict": "PASS",
+  "files_touched": [
+    "internal/metrics/fixtures/avgo_metrics_input.json (nuevo)",
+    "internal/metrics/fixtures/avgo_metrics_expected.json (nuevo)",
+    "internal/metrics/fixtures/wmt_metrics_input.json (nuevo)",
+    "internal/metrics/fixtures/wmt_metrics_expected.json (nuevo)",
+    "internal/metrics/fixtures_v2_test.go (nuevo)",
+    "internal/api/score_response_21_test.go (modificado)",
+    "internal/storage/m6_integration_test.go (modificado)",
+    "internal/collect/edgar/normalize_integration_test.go (modificado)",
+    "test-results/tests/abys-m6c-t1-w7.json (este archivo)"
+  ],
+  "scope_note": "Solo tests/fixtures. No se tocó código productivo ni .ai/. No se re-testea la derivación de la tasa (W5, internal/pipeline/w5_taxrate_test.go::TestW5AlignedTaxRateTable): W7 ejercita su CONSECUENCIA en el motor de métricas y en el contrato de la API.",
+  "commands_run": [
+    "gofmt -l .",
+    "go vet ./... && go vet -tags=integration ./... && go build ./...",
+    "go test ./internal/metrics/... ./internal/api/... ./internal/pipeline/... ./internal/storage/... -count=1",
+    "go test ./... -count=1",
+    "make integration",
+    "git status --short",
+    "DATABASE_URL=... go test ./internal/storage/... -tags=integration -run TestGetFYAnnualSeries -count=1 -v",
+    "DATABASE_URL=... go test ./internal/collect/edgar/... -tags=integration -run TestNormalizeStagingDedupeConcurrentInterestTags -count=1 -v",
+    "MUTANTE 1 (fixture AVGO normalized_tax_rate=0) -> FAIL (muere)",
+    "MUTANTE 2 (normalize.go sin dedupeCanonical) -> FAIL (muere)"
+  ],
+  "test_results": {
+    "gofmt_l": "vacío (0 archivos)",
+    "vet": "exit 0",
+    "vet_integration": "exit 0",
+    "build": "exit 0",
+    "targeted": "internal/metrics ok 0.112s; internal/api ok 0.058s; internal/pipeline ok 0.356s; internal/storage ok 0.019s",
+    "full_suite": "go test ./... -count=1 -> 23 ok + 1 [no test files], 0 FAIL",
+    "make_integration": "24 ok + 1 [no test files], 0 FAIL (BD abys_test en localhost:55432, DSN redactado)"
+  },
+  "deliverable_1_fixtures_metrics": {
+    "new_test": "internal/metrics/fixtures_v2_test.go::TestCalculateMetricsV2Fixtures (subtests avgo_impuesto_negativo, wmt_interes_solo)",
+    "mechanism": "struct raw con tags snake_case -> MetricInputV2 (que NO tiene tags json, se construye en Go), CalculateMetricsV2 + BuildDerivedMetricsV2; 12/12 métricas por fixture; snapshot con model_version 2.1.0 y normalized_tax_rate; modelVersion vacío cae al default 2.1.0",
+    "avgo": {
+      "provenance": "par fiscal income_tax_expense=-397000000 / pretax_income=22690000000 = -1.7497% (FUERA de [0,50]) -> RECHAZADO, el input lleva 0.21 configurada",
+      "market_cap": 1652000000000,
+      "expected_metrics": {
+        "eps_volatility": 0.25696716470372527,
+        "ev_ebit": 65.79352850539291,
+        "ev_ebitda": 51.75757575757576,
+        "fcf_margin": 0.3129890453834116,
+        "fcf_to_debt": 0.29850746268656714,
+        "fcf_volatility": 0.14244970632586318,
+        "interest_coverage": 7.938837920489297,
+        "net_debt_to_ebitda": 1.696969696969697,
+        "operating_margin": 0.40625978090766823,
+        "positive_eps_years": 3.0,
+        "positive_fcf_years": 3.0,
+        "roic": 0.15655267175572518
+      },
+      "ca5_assert": "ROIC != oi/(eq+debt-cash) (0.19817): si el fixture clampeara la tasa a 0 el test muere; y la tasa normalizada no puede ser 0 ni igual a observed/100"
+    },
+    "wmt": {
+      "provenance": "EBIT/interés del MISMO ejercicio => 12.8667 (CA-3, idéntico al dry-run W5); tasa derivada 4073/23509",
+      "market_cap": 803000000000,
+      "expected_metrics": {
+        "eps_volatility": 0.2286243652745898,
+        "ev_ebit": 28.633696563285834,
+        "ev_ebitda": 21.35,
+        "fcf_margin": 0.01762153351395405,
+        "fcf_to_debt": 0.2,
+        "fcf_volatility": 0.13732372131620255,
+        "interest_coverage": 12.86669542709232,
+        "net_debt_to_ebitda": 1.275,
+        "operating_margin": 0.043796853087806634,
+        "positive_eps_years": 3.0,
+        "positive_fcf_years": 3.0,
+        "roic": 0.17487755557023732
+      }
+    }
+  },
+  "deliverable_2_api_quality_enriched": {
+    "new_test": "internal/api/score_response_21_test.go::TestScoreResponse21QualityEnriquecidoSubBloquesYReasons (+ helper traceFixtureQualityEnriquecida)",
+    "asserts": [
+      "struct: quality.tax_rate_source=derived (input derivado fuera de rango conserva su procedencia y añade el reason)",
+      "struct: quality.reasons con len 2 y contenido tax_rate_out_of_range + interest_expense_unavailable (round-trip)",
+      "struct: quality.sub_scores[debt_solvency].coverage=0.5 y metrics.interest_coverage=7.938837920489297",
+      "JSON: quality.tax_rate_source, quality.reasons, quality.sub_scores.debt_solvency.coverage y .metrics.interest_coverage presentes con los mismos valores"
+    ],
+    "gap": "TestScoreResponse21QualityYRelative (existente) solo asertaba profitability/growth sin metrics y no comprobaba reasons; el W6 solo comprobaba que sub_scores existe."
+  },
+  "deliverable_3_storage_trio": {
+    "new_test": "internal/storage/m6_integration_test.go::TestGetFYAnnualSeriesInteresImpuestoTrioAlineado (+ helper fyPointAt)",
+    "asserts": [
+      "el trío operating_income/interest_expense/income_tax_expense/pretax_income se lee y se ALINEA por period_end en el ancla FY2025 con sus valores",
+      "señuelos del FY2024 permanecen en su propio period_end (no se cuelan al ancla)",
+      "la tasa derivada del par alineado FY2025 es exactamente -1.749669457910974% (caso AVGO impuesto negativo), no la del par FY2024 (4%) => prueba que la alineación no mezcla ejercicios"
+    ],
+    "gap": "TestGetFYAnnualSeriesFiltraTrimestresYDeduplica (existente) usa revenues/free_cash_flow, no el trío de interés/impuesto."
+  },
+  "deliverable_4_edgar_dedupe_e2e": {
+    "new_test": "internal/collect/edgar/normalize_integration_test.go::TestNormalizeStagingDedupeConcurrentInterestTags (+ helper concurrentInterestTagsPayload)",
+    "fixture": "companyfacts sintético con InterestExpense (P1=100), InterestExpenseNonoperating (P2=150) y InterestExpenseDebt (P4=200) en el MISMO periodo (2023-01-01..2023-12-31, fy 2023, fp FY) + OperatingIncomeLoss/IncomeTaxExpenseBenefit/pretax",
+    "asserts": [
+      "NormalizeStaging -> exactamente 1 fila interest_expense para el periodo",
+      "value=100 (gana la prioridad 1; sin dedupe el batch ON CONFLICT podía fallar o dejar 200)",
+      "source_fact_id termina en #InterestExpense",
+      "operating_income=1300, income_tax_expense=210, pretax_income=1000 alineados en el mismo period_end"
+    ],
+    "gap": "conceptmap_integration_test.go solo valida los documentos del mapa en BD y concepts_test.go probaba el dedupe a nivel unitario; faltaba el camino NormalizeStaging -> DB."
+  },
+  "tests_that_bite": [
+    {
+      "mutant": "internal/metrics/fixtures/avgo_metrics_input.json: normalized_tax_rate 0.21 -> 0 (clamp de la tasa rechazada)",
+      "result": "FAIL: fixtures_v2_test.go:135 'una tasa rechazada no puede convertirse en 0 (clamp prohibido)'"
+    },
+    {
+      "mutant": "internal/collect/edgar/normalize.go: eliminado 'canon = dedupeCanonical(canon)'",
+      "result": "FAIL: TestNormalizeStagingDedupeConcurrentInterestTags: no sobrevive InterestExpense (100) (el valor de otra variante pisa la fila)"
+    }
+  ],
+  "already_covered_not_duplicated": [
+    "internal/pipeline/w5_taxrate_test.go::TestW5AlignedTaxRateTable (derivación y rechazo por rango; caso impuesto_negativo_avgo)",
+    "internal/api/m6c_w6_score_integration_test.go (existencia de sub_scores, solo configured+profitability)",
+    "internal/collect/edgar/concepts_test.go::TestM6cT1DedupeOneRowPerConceptAndPeriodKey y TestM6cT1PriorityOrderInterestTax (dedupe unitario)"
+  ],
+  "notes_for_reviewer": [
+    "Los fixtures usan magnitudes USD redondeadas; las anclas son el par AVGO -397e6/22690e6 (rechazo, CA-5) y la cobertura WMT 12.8667 (CA-3).",
+    "interest_coverage del fixture AVGO difiere en la 5ª cifra del dry-run W5 (7.9388379 vs 7.938941) porque el EBIT del dry-run es el valor exacto de la BD; documentado en el _provenance del JSON.",
+    "El test AVGO deriva del supuesto de que una tasa rechazada NO se clampea a 0: si el motor/producto cambiara esa semántica, tanto el fixture como el test deben revisarse juntos."
+  ],
+  "review": {
+    "reviewer": "review-agent",
+    "reviewed_at": "2026-10-08",
+    "decision": "APPROVED",
+    "hard_blocks": [],
+    "scope_confirmed": "Solo tests/fixtures + evidencia: 3 _test.go modificados, 4 fixtures JSON nuevos, 1 test nuevo; 0 ficheros de producto; sin .ai/ ni commit.",
+    "reproduced": {
+      "gofmt_l": "vacio",
+      "go_vet": "exit 0",
+      "go_vet_tags_integration": "exit 0",
+      "go_build": "exit 0",
+      "go_test_unit": "23 ok + 1 [no test files], 0 FAIL",
+      "make_integration_con_abys_test": "24 ok + 1 [no test files], 0 FAIL (DSN redactado)"
+    },
+    "answers": {
+      "q1_fixtures_realistas_y_CA3_CA5": "Si. AVGO: interest_coverage 25960e6/3270e6=7.9388 (CA-3 ~7.94; la 5a cifra difiere del dry-run por EBIT redondeado, documentado); tasa observada -397e6/22690e6=-1.7497% (CA-5), fuera de [0,50] => rechazo, input 0.21 (ROIC 0.15655). WMT: 29825e6/2318e6=12.8667 (CA-3 12.87) y tasa 4073e6/23509e6=17.325%. _provenance cita el plan/CA y el par ancla, pero NO cita accession EDGAR: son cifras 'Broadcom/Walmart-like' redondeadas, no payload real.",
+      "q1_mutante_AVGO": "Si muerde: fixtures_v2_test.go:133-136 hace Fatalf si la tasa rechazada llega como 0. Es un guard del FIXTURE, no de la derivacion productiva (esa vive en W5).",
+      "q2_score_contrato": "Si, en struct y JSON: qualityResponse {tax_rate_source, sub_scores, reasons} y qualitySubBlockResponse {coverage, metrics} tienen tags json, y el test asertaa ambos. NO es puramente tautologico (ejercita ParseTrace->qualityFromTrace y la conversion slice->map de metrics), pero es un test de fontaneria con un quality.Result inyectado a mano: no produce la derivacion ni golpea el motor real de quality.",
+      "q3_GetFYAnnualSeries": "Prueba la capa de almacenamiento, no la seleccion de ancla. Verifica que el trio se lee por period_end, que los senuelos FY2024 (interes 999e6, tasa 4%) no se cuelan al ancla FY2025, y que el par alineado FY2025 da -1.7497%. La alineacion productiva (alignedFYFacts: mismo FY + frescura + motivos) la cubre internal/pipeline/fyfacts_test.go. El test hace el mismo la seleccion con fyPointAt, asi que no demuestra por si solo que el pipeline no mezcle ejercicios.",
+      "q4_dedupe_e2e": "Si: exactamente 1 fila, value=100 (prioridad P1), source_fact_id termina en #InterestExpense y el trio (operating_income=1300, income_tax_expense=210, pretax_income=1000) alineado. Muerde al quitar dedupeCanonical: sobran 3 hechos del mismo (periodKey, canonical) y el upsert por lotes deja el ULTIMO en orden estable (InterestExpense=100, InterestExpenseDebt=200, InterestExpenseNonoperating=150) => valor final 150 != 100 => FAIL. Correccion a la evidencia: UpsertFundamentals usa pgx.Batch de execs independientes (no un INSERT multi-fila), asi que no falla por ON CONFLICT doble; el orden ordenado deja 150, no 200. El bite se mantiene.",
+      "q5_solo_tests": "Confirmado con git status/diff: 3 modificados, todos *_test.go; nuevos: 4 fixtures JSON + fixtures_v2_test.go + este JSON (+ un security report no listado por el usuario). 0 codigo de producto.",
+      "q6_regresion": "Reproducido en local contra abys_test (DSN redactado): gofmt vacio, vet/vet-integration/build exit 0, go test ./... 23 ok/0 FAIL, make integration 24 ok/0 FAIL."
+    },
+    "weak_or_tautological_tests": [
+      "fixtures_v2_test.go: ejercita las formulas y valida la aritmetica del fixture, pero no la logica de rechazo de la tasa (no existe en metrics): el bite es un guard del fixture. Si el pipeline dejara de rechazar, este test seguiria verde; solo W5 lo cazaria.",
+      "score_response_21_test.go: quality.Result inyectado a mano (tax_rate_source/reasons/sub_scores); no corre quality.Calculate ni un /score respaldado por BD. El estado es producible (quality.go:416-420 emite derived+out_of_range), pero es un test de round-trip/proyeccion, no de derivacion end-to-end.",
+      "m6_integration_test.go: la 'alineacion' la ejecuta el propio test (fyPointAt); prueba el contrato de GetFYAnnualSeries, no la seleccion de ancla del pipeline.",
+      "Dependencia ambiental: el test de reasons asume MODEL_MAX_REASONS>=2 (default 12); con MODEL_MAX_REASONS=1 fallaria por el cap de reason.Normalize."
+    ],
+    "non_blocking_corrections": [
+      "La evidencia dice 'sin dedupe ... podia fallar o dejar 200'; lo exacto es: no falla por ON CONFLICT (pgx.Batch de execs separados) y deja 150. El veredicto de bite no cambia.",
+      "La evidencia no lista test-results/security/abys-m6c-t1-w7.json entre los files_touched.",
+      "Seguridad: gitleaks no esta instalado (fallback regex advisory), coherente con AGENTS.md; grep propio de secretos en el delta = 0 hallazgos. Sin hard block de exposed_secret."
+    ],
+    "conclusion": "Sin violaciones de arquitectura/policy/SPEC/PLAN y sin riesgo de seguridad. Las debilidades identificadas son de alcance (contract/plumbing) y estan cubiertas por W5/pipeline; no bloquean."
+  }
+}

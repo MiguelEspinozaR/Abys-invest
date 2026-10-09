@@ -137,6 +137,99 @@ func TestGetFYAnnualSeriesFiltraTrimestresYDeduplica(t *testing.T) {
 	}
 }
 
+// fyPointAt devuelve el punto de una serie FY con ese period_end exacto.
+func fyPointAt(points []FYPoint, end time.Time) (FYPoint, bool) {
+	for _, p := range points {
+		if p.PeriodEnd.Equal(end) {
+			return p, true
+		}
+	}
+	return FYPoint{}, false
+}
+
+// TestGetFYAnnualSeriesInteresImpuestoTrioAlineado cubre el contrato que necesita
+// la tasa observada y la cobertura de intereses (M6c-T1): interest_expense,
+// income_tax_expense y pretax_income deben poder leerse y ALINEARSE por
+// period_end, y un interés de OTRO ejercicio no puede colarse en el ancla.
+// Es una prueba de la capa de almacenamiento (la derivación vive en el pipeline).
+func TestGetFYAnnualSeriesInteresImpuestoTrioAlineado(t *testing.T) {
+	pool := requirePool(t)
+	requireMigrations(t, pool)
+	truncateDataTables(t, pool)
+	ctx := context.Background()
+
+	sec, err := UpsertSecurity(ctx, pool, &Security{Ticker: "AVGO", CIK: "0001730168", Name: "Broadcom Inc", Type: "stock", Currency: "USD", Status: "active"})
+	if err != nil {
+		t.Fatalf("UpsertSecurity: %v", err)
+	}
+	asOf := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	filing := func(end time.Time) time.Time { return end.AddDate(0, 2, 0) }
+
+	fy25 := time.Date(2025, 11, 2, 0, 0, 0, 0, time.UTC)
+	fy24 := time.Date(2024, 11, 3, 0, 0, 0, 0, time.UTC)
+	rows := []Fundamental{
+		// Trío ancla del MISMO ejercicio (FY2025): EBIT/interés y el par fiscal.
+		fyAnnual(sec.ID, "operating_income", fy25, 25_960_000_000, 365, filing(fy25)),
+		fyAnnual(sec.ID, "interest_expense", fy25, 3_270_000_000, 365, filing(fy25)),
+		fyAnnual(sec.ID, "income_tax_expense", fy25, -397_000_000, 365, filing(fy25)),
+		fyAnnual(sec.ID, "pretax_income", fy25, 22_690_000_000, 365, filing(fy25)),
+		// Señuelos del ejercicio ANTERIOR: deben quedar en su propio period_end.
+		fyAnnual(sec.ID, "operating_income", fy24, 20_000_000_000, 366, filing(fy24)),
+		fyAnnual(sec.ID, "interest_expense", fy24, 999_000_000, 366, filing(fy24)),
+		fyAnnual(sec.ID, "income_tax_expense", fy24, 800_000_000, 366, filing(fy24)),
+		fyAnnual(sec.ID, "pretax_income", fy24, 20_000_000_000, 366, filing(fy24)),
+	}
+	seedFundamentals(t, pool, rows)
+
+	series, err := GetFYAnnualSeries(ctx, pool, sec.ID,
+		[]string{"operating_income", "interest_expense", "income_tax_expense", "pretax_income"}, asOf, 330, 400)
+	if err != nil {
+		t.Fatalf("GetFYAnnualSeries: %v", err)
+	}
+	for _, c := range []string{"operating_income", "interest_expense", "income_tax_expense", "pretax_income"} {
+		if len(series[c]) == 0 {
+			t.Fatalf("el concepto %s no aparece en la serie", c)
+		}
+	}
+
+	// El trío se alinea por period_end en el ancla FY2025; ningún señuelo entra.
+	anchor := map[string]float64{
+		"operating_income":   25_960_000_000,
+		"interest_expense":   3_270_000_000,
+		"income_tax_expense": -397_000_000,
+		"pretax_income":      22_690_000_000,
+	}
+	for concept, want := range anchor {
+		p, ok := fyPointAt(series[concept], fy25)
+		if !ok {
+			t.Fatalf("%s: falta el punto alineado en %s", concept, fy25.Format("2006-01-02"))
+		}
+		if p.Value != want {
+			t.Fatalf("%s en FY2025: got %v want %v (¿se coló el señuelo FY2024?)", concept, p.Value, want)
+		}
+	}
+
+	// El interés del año anterior sigue en SU period_end, no en el ancla.
+	if p, ok := fyPointAt(series["interest_expense"], fy24); !ok || p.Value != 999_000_000 {
+		t.Fatalf("el señuelo FY2024 debe conservar su propio period_end: %+v", p)
+	}
+
+	// La tasa observada se deriva del par ALINEADO del mismo ejercicio. El caso
+	// AVGO es el del impuesto NEGATIVO (-1.75%): la proporción exacta demuestra
+	// que no se mezcló el par FY2024 (que daría 4%); rechazarla por rango es
+	// trabajo del pipeline, no de esta capa.
+	tax, _ := fyPointAt(series["income_tax_expense"], fy25)
+	pretax, _ := fyPointAt(series["pretax_income"], fy25)
+	if pretax.Value == 0 {
+		t.Fatal("pretax_income ancla no puede ser 0")
+	}
+	rate := tax.Value / pretax.Value * 100
+	const wantRate = -1.749669457910974
+	if rate < wantRate-1e-9 || rate > wantRate+1e-9 {
+		t.Fatalf("la tasa del par alineado FY2025: got %v%% want %v%% (¿se colaron los señuelos FY2024?)", rate, wantRate)
+	}
+}
+
 // TestGetFYAnnualSeriesExcluyeLookAhead (CA-M6a-5, SPEC §4): un hecho con
 // filing_date > as_of no puede haber informado un valor fechado as_of.
 func TestGetFYAnnualSeriesExcluyeLookAhead(t *testing.T) {

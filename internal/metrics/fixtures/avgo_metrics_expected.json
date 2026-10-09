@@ -1,0 +1,21 @@
+{
+  "comment": "Cálculo manual con avgo_metrics_input.json (SPEC §13/§14, fórmulas_v2.go). market_cap=350*4.72e9=1.652e12; net_debt=67e9-11e9=56e9; roic=25960e6*(1-0.21)/(75000e6+67000e6-11000e6); interest_coverage=25960e6/3270e6. El input usa la tasa configurada 0.21 porque el par observado (-1.7497%) está fuera de [0,50] y se RECHAZA (no se clampea a 0).",
+  "model_version": "2.1.0",
+  "normalized_tax_rate": 0.21,
+  "observed_tax_rate_percent": -1.749669457910974,
+  "observed_tax_rate_rejected": true,
+  "metrics": {
+    "eps_volatility": 0.25696716470372527,
+    "ev_ebit": 65.79352850539291,
+    "ev_ebitda": 51.75757575757576,
+    "fcf_margin": 0.3129890453834116,
+    "fcf_to_debt": 0.29850746268656714,
+    "fcf_volatility": 0.14244970632586318,
+    "interest_coverage": 7.938837920489297,
+    "net_debt_to_ebitda": 1.696969696969697,
+    "operating_margin": 0.40625978090766823,
+    "positive_eps_years": 3.0,
+    "positive_fcf_years": 3.0,
+    "roic": 0.15655267175572518
+  }
+}

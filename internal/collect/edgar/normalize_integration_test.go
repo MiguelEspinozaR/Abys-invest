@@ -4,7 +4,10 @@ package edgar
 
 import (
 	"context"
+	"encoding/json"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -223,6 +226,127 @@ func TestNormalizeStagingAAPL(t *testing.T) {
 	}
 	if countBefore == 0 {
 		t.Fatal("sin fundamentals tras la primera pasada")
+	}
+}
+
+// concurrentInterestTagsPayload builds a companyfacts payload where several
+// eligible interest tags describe the SAME fiscal period (same start/end/fy/fp):
+// the real-world case behind ADR D31 (companies report interest under different
+// us-gaap tags, and only one row per (canonical, period) may survive).
+func concurrentInterestTagsPayload() []byte {
+	entry := func(val float64, fy int) map[string]any {
+		return map[string]any{
+			"start": "2023-01-01", "end": "2023-12-31", "val": val,
+			"accn": "0000000000-24-000001", "fy": fy, "fp": "FY",
+			"form": "10-K", "filed": "2024-02-15",
+		}
+	}
+	concept := func(vals ...float64) map[string]any {
+		entries := make([]map[string]any, 0, len(vals))
+		for _, v := range vals {
+			entries = append(entries, entry(v, 2023))
+		}
+		return map[string]any{"units": map[string]any{"USD": entries}}
+	}
+	payload := map[string]any{
+		"cik": 1, "entityName": "Dedupe Test Inc",
+		"facts": map[string]any{
+			"us-gaap": map[string]any{
+				// Tres variantes del MISMO gasto de interés en el MISMO periodo.
+				"InterestExpense":             concept(100),
+				"InterestExpenseNonoperating": concept(150),
+				"InterestExpenseDebt":         concept(200),
+				"OperatingIncomeLoss":         concept(1300),
+				"IncomeTaxExpenseBenefit":     concept(210),
+				"IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest": concept(1000),
+			},
+		},
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// TestNormalizeStagingDedupeConcurrentInterestTags cubre Az1 e2e: tres tags de
+// interés elegibles en el MISMO periodo no pueden convivir como tres filas de
+// `interest_expense`; sobrevive la variante de menor prioridad (InterestExpense
+// = 100). Antes del dedupe el batch ON CONFLICT podía fallar o pisar por orden
+// de inserción, y el valor (100 vs 200) delataría cuál ganó.
+func TestNormalizeStagingDedupeConcurrentInterestTags(t *testing.T) {
+	pool := normalizeRequirePool(t)
+	normalizeSetup(t, pool)
+	ctx := context.Background()
+
+	ticker := "DEDUP"
+	row := &storage.EdgarStaging{
+		CIK: "0000000001", Ticker: &ticker,
+		Accession: "0000000000-24-000001", FormType: "10-K",
+		FilingDate: time.Date(2024, 2, 15, 0, 0, 0, 0, time.UTC),
+		Payload:    concurrentInterestTagsPayload(), PayloadType: CompanyFactsPayloadType,
+	}
+	id, err := storage.InsertStaging(ctx, pool, row)
+	if err != nil {
+		t.Fatalf("InsertStaging: %v", err)
+	}
+	if id == nil {
+		t.Fatal("InsertStaging no devolvió id")
+	}
+	if err := NormalizeStaging(ctx, pool, *id); err != nil {
+		t.Fatalf("NormalizeStaging: %v", err)
+	}
+
+	sec, err := storage.GetSecurityByTicker(ctx, pool, ticker)
+	if err != nil {
+		t.Fatalf("GetSecurityByTicker: %v", err)
+	}
+	end := time.Date(2023, 12, 31, 0, 0, 0, 0, time.UTC)
+
+	var n int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM fundamentals WHERE security_id=$1 AND concept='interest_expense' AND period_end=$2`,
+		sec.ID, end).Scan(&n); err != nil {
+		t.Fatalf("count interest_expense: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("debe quedar UNA fila de interest_expense por periodo, hay %d", n)
+	}
+
+	var val *float64
+	var sourceFactID *string
+	if err := pool.QueryRow(ctx,
+		`SELECT value, source_fact_id FROM fundamentals WHERE security_id=$1 AND concept='interest_expense' AND period_end=$2`,
+		sec.ID, end).Scan(&val, &sourceFactID); err != nil {
+		t.Fatalf("select interest_expense: %v", err)
+	}
+	if val == nil || *val != 100 {
+		got := "nil"
+		if val != nil {
+			got = strconv.FormatFloat(*val, 'g', -1, 64)
+		}
+		t.Fatalf("debe sobrevivir InterestExpense (100), got %s", got)
+	}
+	if sourceFactID == nil || !strings.HasSuffix(*sourceFactID, "#InterestExpense") {
+		t.Fatalf("source_fact_id debe apuntar al tag de prioridad 1: %v", sourceFactID)
+	}
+
+	// El trío fiscal del mismo periodo queda alineado y con sus valores.
+	want := map[string]float64{
+		"operating_income":   1300,
+		"income_tax_expense": 210,
+		"pretax_income":      1000,
+	}
+	for concept, wantVal := range want {
+		var got *float64
+		if err := pool.QueryRow(ctx,
+			`SELECT value FROM fundamentals WHERE security_id=$1 AND concept=$2 AND period_end=$3`,
+			sec.ID, concept, end).Scan(&got); err != nil {
+			t.Fatalf("%s FY2023: %v", concept, err)
+		}
+		if got == nil || *got != wantVal {
+			t.Fatalf("%s FY2023: got %v want %v", concept, got, wantVal)
+		}
 	}
 }
 

@@ -299,3 +299,120 @@ func TestScoreResponse21HistoriaSigueLegible(t *testing.T) {
 			len(resp.Dimensions), len(actual.Dimensions))
 	}
 }
+
+// M6c: el bloque quality ENRIQUECIDO no se queda en el score — lo que traza el
+// motor (sub-bloque de solvencia con coverage y su métrica interest_coverage, y
+// los reasons de la tasa rechazada) tiene que llegar íntegro al JSON del cliente.
+// El fixture existente solo traía profitability/growth sin metrics ni reasons,
+// así que este caso cierra el contrato de campos que ninguna otra prueba tocaba.
+func traceFixtureQualityEnriquecida(t *testing.T) []byte {
+	t.Helper()
+	in := score.ScoreInput21{
+		Ticker: "QUAL", AsOf: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC), Price: 100,
+		GrahamBase: f(150), DCFBase: f(120),
+		Quality: score.QualityDetailFrom(&quality.Result{
+			Score: f(66), Coverage: 0.75, Confidence: quality.ConfidenceMedium,
+			// Un input derivado fuera de rango conserva `derived` como
+			// procedencia y añade el motivo; así se ve que el reason viaja.
+			TaxRateSource: quality.TaxRateSourceDerived,
+			Reasons:       []string{quality.ReasonTaxRateOutOfRange, quality.ReasonInterestExpenseMissing},
+			SubScores: map[string]*quality.SubScore{
+				quality.SubProfitability: {Name: quality.SubProfitability, Score: f(80), Weight: 0.20, Coverage: 1.0},
+				quality.SubSolvency: {
+					Name: quality.SubSolvency, Score: f(60), Weight: 0.20, Coverage: 0.5,
+					Metrics: []quality.Metric{
+						{Name: quality.MetricInterestCoverage, Value: f(7.938837920489297), Score: f(60)},
+					},
+				},
+			},
+		}),
+	}
+	res := score.CalculateScore21(in, modelcfg.DefaultModelConfig())
+	raw, err := score.BuildTrace21(in, res).Marshal()
+	if err != nil {
+		t.Fatalf("marshal trace: %v", err)
+	}
+	return raw
+}
+
+func TestScoreResponse21QualityEnriquecidoSubBloquesYReasons(t *testing.T) {
+	resp := newScoreResponse(storage.Score{
+		Score: 66, Signal: "mantener",
+		InputsSnapshot: traceFixtureQualityEnriquecida(t), ModelVersion: score.ModelVersion21,
+	})
+	if resp.Quality == nil {
+		t.Fatalf("falta el bloque quality")
+	}
+	if resp.Quality.TaxRateSource != quality.TaxRateSourceDerived {
+		t.Fatalf("tax_rate_source: got %q want %q", resp.Quality.TaxRateSource, quality.TaxRateSourceDerived)
+	}
+	// Los reasons deben sobrevivir round-trip (el fixture base no los traía).
+	if len(resp.Quality.Reasons) != 2 {
+		t.Fatalf("reasons: esperado 2, got %v", resp.Quality.Reasons)
+	}
+	seen := map[string]bool{}
+	for _, r := range resp.Quality.Reasons {
+		seen[r] = true
+	}
+	for _, want := range []string{quality.ReasonTaxRateOutOfRange, quality.ReasonInterestExpenseMissing} {
+		if !seen[want] {
+			t.Fatalf("falta el reason %q en %v", want, resp.Quality.Reasons)
+		}
+	}
+
+	// El sub-bloque de solvencia debe conservar coverage y su métrica.
+	sol, ok := resp.Quality.SubScores[quality.SubSolvency]
+	if !ok {
+		t.Fatalf("falta el sub-bloque %s: %+v", quality.SubSolvency, resp.Quality.SubScores)
+	}
+	if math.Abs(sol.Coverage-0.5) > 1e-9 {
+		t.Fatalf("coverage de solvencia: got %v want 0.5", sol.Coverage)
+	}
+	ic, ok := sol.Metrics[quality.MetricInterestCoverage]
+	if !ok || ic == nil {
+		t.Fatalf("falta la métrica %s en solvencia: %+v", quality.MetricInterestCoverage, sol.Metrics)
+	}
+	if math.Abs(*ic-7.938837920489297) > 1e-12 {
+		t.Fatalf("interest_coverage: got %v", *ic)
+	}
+
+	// Y la forma JSON que ve el cliente: quality.sub_scores.debt_solvency.coverage,
+	// .metrics.interest_coverage y quality.reasons.
+	raw, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	q, ok := m["quality"].(map[string]any)
+	if !ok {
+		t.Fatalf("quality ausente en el JSON: %v", m["quality"])
+	}
+	if q["tax_rate_source"] != quality.TaxRateSourceDerived {
+		t.Fatalf("quality.tax_rate_source en JSON: %v", q["tax_rate_source"])
+	}
+	reasons, ok := q["reasons"].([]any)
+	if !ok || len(reasons) != 2 {
+		t.Fatalf("quality.reasons en JSON: %v", q["reasons"])
+	}
+	subs, ok := q["sub_scores"].(map[string]any)
+	if !ok {
+		t.Fatalf("quality.sub_scores ausente: %v", q["sub_scores"])
+	}
+	solJSON, ok := subs[quality.SubSolvency].(map[string]any)
+	if !ok {
+		t.Fatalf("sub_scores.debt_solvency ausente: %v", subs)
+	}
+	if solJSON["coverage"] != 0.5 {
+		t.Fatalf("sub_scores.debt_solvency.coverage: %v", solJSON["coverage"])
+	}
+	metrics, ok := solJSON["metrics"].(map[string]any)
+	if !ok {
+		t.Fatalf("sub_scores.debt_solvency.metrics ausente: %v", solJSON)
+	}
+	if _, ok := metrics[quality.MetricInterestCoverage]; !ok {
+		t.Fatalf("sub_scores.debt_solvency.metrics.interest_coverage ausente: %v", metrics)
+	}
+}
