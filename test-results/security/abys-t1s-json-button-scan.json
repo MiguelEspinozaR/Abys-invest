@@ -1,0 +1,16 @@
+{
+  "task_id": "abys-t1s-json-button-scan",
+  "date": "2026-10-10",
+  "scanner": "gitleaks + manual code assessment",
+  "command": "/home/miky/go/bin/gitleaks detect --source . --config .gitleaks.toml --no-git",
+  "result": "no leaks found",
+  "findings": [
+    {
+      "severity": "info",
+      "location": "TickerDetailPage.tsx:79-116 (handleViewJson function)",
+      "evidence": "JSON payload assembles client-side state from useFetch data sources: security, prices, score, valuation, metrics, history, comparables. Endpoints are public read-only data endpoints (/securities, /prices, /score, /valuation, /metrics, /scores, /compare/comparables). No auth tokens, internal DSNs, or secrets included.",
+      "detail": "The payload includes: ticker symbol, generated_at timestamp, API source paths, data from each fetch state (security.data, prices.data, score.data, valuation.data, metrics.data, history.data, comparables.data), and errors record. Types analyzed: SecurityDetail (name, sector, industry only), PricePoint (market data), ScoreResponse (score, signal, justification, dimensions), ValuationResponse (valuation data, confidence), MetricsResponse (derived metrics), ScoresHistoryItem (historical scores), ComparablesResponse (peer comparables). No API keys, passwords, or connection strings found in any payload field."
+    }
+  ],
+  "verdict": "PASS"
+}

@@ -72,6 +72,56 @@ export default function TickerDetailPage() {
       : undefined;
   const currentPrice = lastClose ?? valuation.data?.price;
 
+  // T3 — "Ver JSON": reúne en un único objeto las respuestas que ya alimentan
+  // la vista (mismos endpoints y tipos que usan las secciones de arriba) y lo
+  // abre como blob JSON prettificado en una pestaña nueva. No descarga archivo
+  // ni pega al backend: reusa el estado ya cargado por cada useFetch.
+  const handleViewJson = () => {
+    const errors: Record<string, string> = {};
+    if (security.error) errors.security = security.error;
+    if (prices.error) errors.prices = prices.error;
+    if (score.error) errors.score = score.error;
+    if (valuation.error) errors.valuation = valuation.error;
+    if (metrics.error) errors.metrics = metrics.error;
+    if (history.error) errors.history = history.error;
+    if (comparables.error) errors.comparables = comparables.error;
+
+    const payload = {
+      ticker,
+      generated_at: new Date().toISOString(),
+      sources: {
+        security: ticker ? `/securities/${ticker}` : null,
+        prices: pricePath,
+        score: ticker ? `/score/${ticker}` : null,
+        valuation: ticker ? `/valuation/${ticker}` : null,
+        metrics: ticker ? `/metrics/${ticker}` : null,
+        history: ticker ? `/scores?ticker=${ticker}` : null,
+        comparables: ticker ? `/compare/comparables?ticker=${ticker}&limit=8` : null,
+      },
+      security: security.data,
+      prices: prices.data,
+      score: score.data,
+      valuation: valuation.data,
+      metrics: metrics.data,
+      history: history.data,
+      comparables: comparables.data,
+      errors,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    // Ancla con rel="noopener noreferrer": abre pestaña nueva con el JSON sin
+    // heredar `window.opener`. (window.open(url,'_blank','noopener') devuelve
+    // null en varios navegadores y confundiría un fallback por popup bloqueado.)
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener noreferrer';
+    anchor.click();
+    // Revocar tras un margen para que la pestaña nueva alcance a cargar el blob.
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  };
+
   return (
     // M5.2: el wrapper min-h-screen/bg-slate-50 y el fondo/tema los aporta el
     // <Layout/> (ruta padre en App.tsx). El "← Dashboard" del header se mantiene
@@ -113,6 +163,14 @@ export default function TickerDetailPage() {
             )}
           </div>
           <div className="text-right">
+            <button
+              type="button"
+              onClick={handleViewJson}
+              disabled={!ticker}
+              className="mb-2 rounded border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              Ver JSON
+            </button>
             <p className="text-xs uppercase tracking-wide text-slate-400">Precio actual</p>
             <p className="text-2xl font-bold tabular-nums">
               {currentPrice != null ? fmtNumber(currentPrice) : '—'}
