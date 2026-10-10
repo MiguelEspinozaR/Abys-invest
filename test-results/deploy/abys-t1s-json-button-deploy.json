@@ -1,0 +1,34 @@
+{
+  "task_id": "abys-t1s-json-button-deploy",
+  "date": "2026-10-10",
+  "target": "https://abys-invest.mikylab.com",
+  "method": "curl + systemctl is-active",
+  "commands": [
+    "curl -s https://abys-invest.mikylab.com/",
+    "curl -s https://abys-invest.mikylab.com/assets/index-Da7kAu_-.js | grep -c 'Ver JSON'",
+    "curl -s -o /dev/null -w '%{http_code}' https://abys-invest.mikylab.com/ticker/BRK-B",
+    "curl -s -o /dev/null -w '%{http_code}' https://abys-invest.mikylab.com/securities/BRK-B",
+    "curl -s -o /dev/null -w '%{http_code}' https://abys-invest.mikylab.com/score/BRK-B",
+    "curl -s -o /dev/null -w '%{http_code}' https://abys-invest.mikylab.com/valuation/BRK-B",
+    "curl -s -o /dev/null -w '%{http_code}' https://abys-invest.mikylab.com/metrics/BRK-B",
+    "curl -s -o /dev/null -w '%{http_code}' 'https://abys-invest.mikylab.com/compare/comparables?ticker=BRK-B&limit=8'",
+    "systemctl is-active abys-invest-api-air.service abys-invest-web-build.service nginx"
+  ],
+  "results": {
+    "page_status": 200,
+    "ver_json_grep_count": 1,
+    "ticker_brk_b_status": 200,
+    "securities_brk_b_status": 200,
+    "score_brk_b_status": 200,
+    "valuation_brk_b_status": 200,
+    "metrics_brk_b_status": 200,
+    "comparables_brk_b_status": 200,
+    "service_states": {
+      "abys-invest-api-air.service": "active",
+      "abys-invest-web-build.service": "active",
+      "nginx": "active"
+    }
+  },
+  "verdict": "DEPLOYED",
+  "notes": "Frontend static files served from disk per request; no restart required. All API endpoints return 200. 'Ver JSON' button text present in JS bundle."
+}
