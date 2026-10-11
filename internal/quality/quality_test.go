@@ -4,6 +4,8 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"github.com/miky/abys-invest/internal/metrics"
 )
 
 func ptr(v float64) *float64 { return &v }
@@ -26,6 +28,8 @@ func aaplInputs() Inputs {
 		Financials: map[string]*float64{
 			"operating_income":     ptr(133.050),
 			"shareholders_equity":  ptr(73.733),
+			"total_liabilities":    ptr(285.508),
+			"total_assets":         ptr(359.241),
 			"total_debt":           ptr(98.657),
 			"cash_and_equivalents": ptr(35.934),
 			"net_debt":             ptr(62.723),
@@ -436,11 +440,12 @@ func TestSolvencyMetrics(t *testing.T) {
 		t.Fatalf("interest_coverage: %+v", m)
 	}
 	// de_ratio es SECUNDARIA: se expone, no puntúa y no cuenta para coverage.
+	// W5: usa la definición única (total_liabilities / equity), no total_debt.
 	d := metricOf(t, res, SubSolvency, MetricDERatio)
 	if d.Value == nil || d.Score != nil {
 		t.Fatalf("de_ratio debe tener valor y ningún score: %+v", d)
 	}
-	if want := 98.657 / 73.733; math.Abs(*d.Value-want) > 1e-12 {
+	if want := 285.508 / 73.733; math.Abs(*d.Value-want) > 1e-12 {
 		t.Fatalf("de_ratio = %v, esperado %v", *d.Value, want)
 	}
 	if contains(MetricNames(), MetricDERatio) {
@@ -467,6 +472,39 @@ func TestSolvencyRefusesNonPositiveDenominators(t *testing.T) {
 	}
 	if got := metricOf(t, res, SubSolvency, MetricFCFToDebt).Reason; got != ReasonNonPositiveTotalDebt {
 		t.Fatalf("razón = %q", got)
+	}
+}
+
+func TestSolvencyDERatioDerivedFromAssets(t *testing.T) {
+	// W5: sin total_liabilities, el de_ratio se DERIVA de total_assets − equity
+	// con la MISMA función que el motor de métricas (metrics.DERatio).
+	in := aaplInputs()
+	delete(in.Financials, "total_liabilities")
+	res := Calculate(in, DefaultConfig())
+	d := metricOf(t, res, SubSolvency, MetricDERatio)
+	if d.Value == nil {
+		t.Fatalf("de_ratio derivado no debe ser nil: %+v", d)
+	}
+	if want := (359.241 - 73.733) / 73.733; math.Abs(*d.Value-want) > 1e-12 {
+		t.Fatalf("de_ratio derivado = %v, esperado %v", *d.Value, want)
+	}
+	if want := 285.508 / 73.733; math.Abs(*d.Value-want) > 1e-9 {
+		t.Fatalf("de_ratio derivado debe coincidir con la vía directa: got %v, want %v", *d.Value, want)
+	}
+}
+
+func TestDERatioSameDefinition(t *testing.T) {
+	// W5: la MISMA definición para los dos consumidores. Si quality volviera a
+	// recomputar su propio ratio, este test fallaría en cuanto divergieran.
+	in := aaplInputs()
+	res := Calculate(in, DefaultConfig())
+	q := metricOf(t, res, SubSolvency, MetricDERatio)
+	want := metrics.DERatio(in.Financials["total_liabilities"], in.Financials["total_assets"], in.Financials["shareholders_equity"])
+	if q.Value == nil || want == nil {
+		t.Fatalf("de_ratio nil: quality=%v metrics=%v", q.Value, want)
+	}
+	if *q.Value != *want {
+		t.Fatalf("de_ratio distinto: quality=%v metrics=%v", *q.Value, *want)
 	}
 }
 

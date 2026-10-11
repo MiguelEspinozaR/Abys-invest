@@ -106,7 +106,7 @@ func RefreshMetricsAndScores(ctx context.Context, pool *pgxpool.Pool, growth flo
 	g := runGrowthWaccJob(ctx, pool, securities, dryRun, &mc)
 	// valuation ANTES de metrics/scores: los scores leen valuation_results y,
 	// sin fila, renormalizan sus pesos sin las dimensiones de valoración.
-	v := runValuationJob(ctx, pool, securities, dryRun)
+	v := runValuationJob(ctx, pool, securities, dryRun, mc)
 
 	// mc already resolved above, reuse it
 	return ScoresResult{
@@ -211,7 +211,7 @@ func ForceRefreshWithProgress(ctx context.Context, pool *pgxpool.Pool, companies
 	res.Growth, res.WACC = g.Growth, g.WACC
 	res.Steps["growth"] = g.Growth
 	report("growth", g.Growth)
-	v := runValuationJob(ctx, pool, securities, dryRun)
+	v := runValuationJob(ctx, pool, securities, dryRun, mc)
 	res.Valuation = v.Inserted
 	res.Steps["valuation"] = v.Inserted
 	report("valuation", v.Inserted)

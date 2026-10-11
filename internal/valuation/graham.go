@@ -26,8 +26,11 @@ func grahamValue(eps, growthPct float64) *float64 {
 //
 //	EPS nil or <= 0                     → unavailable, eps_non_positive
 //	no normalised growth (legacy 7, A1) → still computed with cfg.GrowthFallback
-//	g <= 0 in a scenario                → that scenario is nil (growth_non_positive)
-//	non-finite / non-positive result    → nil (non_finite / non_positive_value)
+//	2g + 8.5 <= 0 in a scenario         → that scenario is nil
+//	                                      (graham_growth_out_of_domain)
+//	g <= 0 but 2g+8.5 > 0               → computed; growth_non_positive is
+//	                                      INFORMATIONAL only (C2)
+//	non-finite growth / non-positive    → nil (non_finite / non_positive_value)
 //
 // A degenerate scenario does NOT invalidate the method: the other two survive
 // (D10: per-method availability).
@@ -53,10 +56,22 @@ func CalcGrahamScenarios(in Inputs, cfg Config, gBase float64, fallbackUsed bool
 	}
 	for _, s := range scenarios {
 		g := gBase + s.delta
-		if !isFinite(g) || g <= 0 {
-			// g <= 0 makes the multiple (2g+8.5) economically meaningless: the
-			// scenario is dropped, NOT clipped to an invented value.
+		if !isFinite(g) {
+			m.Reasons = dedupe(m.Reasons, ReasonNonFinite)
+			continue
+		}
+		if g <= 0 {
+			// C2: a non-positive growth is no longer a reason to drop the
+			// scenario. It is recorded as INFORMATION; the scenario is dropped
+			// only when the Graham multiple leaves its domain below.
 			m.Reasons = dedupe(m.Reasons, ReasonGrowthNonPositive)
+		}
+		if 2*g+8.5 <= 0 {
+			// The multiple 2g+8.5 is non-positive: the scenario has no economic
+			// meaning, so it is dropped (never clipped to an invented value)
+			// with its own reason. This is the ONLY Graham domain condition C2
+			// keeps.
+			m.Reasons = dedupe(m.Reasons, ReasonGrahamGrowthOutOfDomain)
 			continue
 		}
 		v := grahamValue(*in.EPS, g)

@@ -465,3 +465,32 @@ func TestScore22VigenteY21ConservadaComoHistoria(t *testing.T) {
 		t.Fatalf("el trace vigente sigue teniendo las 5 dimensiones de §18, got %d", len(tr.Dimensions))
 	}
 }
+
+// C1 wiring (SPEC abys-valuation-210): a valuation method withdrawn by
+// `unit_mismatch` is persisted with a NIL base (the valuation engine clears its
+// scenarios), so the score consumer sees an invalid dimension and redistributes
+// its weight into `weight_used` — the exclusion is automatic, never a neutral 50.
+func TestScoreExcluyeMetodoSinBasePorUnitMismatch(t *testing.T) {
+	in := completeInput21()
+	in.GrahamBase = nil // the row the valuation job persisted for a withdrawn Graham
+	in.GrahamConfidence = ""
+	in.GrahamReasons = []string{"unit_mismatch"}
+
+	res := CalculateScore21(in, modelcfg.DefaultModelConfig())
+	for _, d := range res.Dimensions {
+		if d.Name == DimGrahamV21 {
+			if d.Valid {
+				t.Fatalf("la dimensión graham sin base debe ser inválida, got %v", d.Score)
+			}
+			if d.Score != nil {
+				t.Fatalf("dimensión inválida debe tener score nil, got %v", *d.Score)
+			}
+		}
+	}
+	// weight_used = dcf + quality + relative + market_context (el peso de graham
+	// 0.15 queda fuera del denominador y el score se renormaliza por el resto).
+	wantUsed := WeightDCF21 + WeightQuality21 + WeightRelative21 + WeightMarketContext21
+	if math.Abs(res.WeightUsed-wantUsed) > 1e-9 {
+		t.Fatalf("weight_used: esperado %v (sin graham), got %v", wantUsed, res.WeightUsed)
+	}
+}

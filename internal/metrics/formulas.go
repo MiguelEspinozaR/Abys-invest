@@ -87,9 +87,49 @@ func CalcROE(netEarnings, shareholdersEquity *float64) *float64 {
 	return calcRatio(netEarnings, shareholdersEquity, false)
 }
 
-// CalcDE implements §13.4: D/E = Total Liabilities / Shareholders Equity.
+// DERatio is the SINGLE §13.4/§14 definition of the leverage ratio shared by
+// every consumer (the metrics engine, quality's secondary de_ratio and any
+// reader of derived_metrics):
+//
+//	de_ratio = total_liabilities / shareholders_equity
+//
+// When the issuer does not tag `Liabilities`, total_liabilities is DERIVED as
+// `total_assets − shareholders_equity` (SPEC abys-valuation-210 C5). Equity is
+// the denominator and must be strictly positive; a missing/derived numerator or
+// a non-positive equity yields nil (never a fabricated 0, §21).
+//
+// It is the ONLY place the definition lives: a second copy is exactly how
+// quality and the metrics engine drift into two different de_ratios for the
+// same ticker/as_of (W5 acceptance).
+func DERatio(totalLiabilities, totalAssets, shareholdersEquity *float64) *float64 {
+	equity := sane(shareholdersEquity, true)
+	if equity == nil {
+		return nil
+	}
+	num := sane(totalLiabilities, false)
+	if num == nil {
+		assets := sane(totalAssets, false)
+		if assets == nil {
+			return nil
+		}
+		derived := *assets - *equity
+		if !isFinite(derived) {
+			return nil
+		}
+		num = &derived
+	}
+	return calcRatio(num, equity, false)
+}
+
+// isFinite reports whether v is a usable finite number.
+func isFinite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+
+// CalcDE is the LEGACY signature of the §13.4 ratio (Total Liabilities /
+// Shareholders Equity). It now DELEGATES to DERatio with no total_assets, so
+// the single definition is preserved; it is kept for callers that only carry a
+// liabilities numerator (and for the historical tests).
 func CalcDE(totalLiabilities, shareholdersEquity *float64) *float64 {
-	return calcRatio(totalLiabilities, shareholdersEquity, false)
+	return DERatio(totalLiabilities, nil, shareholdersEquity)
 }
 
 // CalcFCFYield implements §13.2 (as yield): FCF Yield = FCF / Market Cap,

@@ -1,0 +1,15 @@
+{
+  "ticker": "BRK-B",
+  "as_of": "2026-10-11T00:00:00Z",
+  "price": 470.0,
+  "eps": 30000.0,
+  "free_cash_flow": 42000000000,
+  "shares_outstanding": 1450000.0,
+  "net_debt": 70000000000,
+  "normalized_growth_rate": 7.2,
+  "growth_confidence": "medium",
+  "wacc": 8.0,
+  "wacc_source": "capm_individual",
+  "wacc_confidence": "medium",
+  "beta_observed": true
+}

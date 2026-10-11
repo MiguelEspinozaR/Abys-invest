@@ -1,0 +1,32 @@
+{
+  "task": "abys-valuation-210",
+  "scope": "uncommitted changes (abys-valuation-210): Go files in internal/{valuation,metrics,quality,modelcfg,pipeline,api,backtest,score}, README.md, new files internal/valuation/{plausibility,shareclass,fcfnorm,growthsignals}.go, migrations/020_add_fcf_normalization_to_parameter_sets.sql, fixtures, and test-results/tests/abys-valuation-210.json",
+  "scan_timestamp": "2026-10-11T01:29:00Z",
+  "gitleaks": {
+    "command": "gitleaks detect --source . --config .gitleaks.toml --no-git",
+    "result": "PASS: no leaks found",
+    "details": "Scanned ~4340024 bytes (4.34 MB) in 5.64s, 0 findings"
+  },
+  "sql_injection_risk": {
+    "assessment": "NO_RISK",
+    "details": "No raw SQL string construction found in any modified Go file. All database access uses pgx parameterized queries. The loader.go changes add FCF/revenue series loading and parameter set resolution, but all queries use pgx with parameterized inputs (ticker, security ID, etc.). No ticker/param interpolation into SQL."
+  },
+  "numeric_safety": {
+    "assessment": "SAFE",
+    "details": "All numeric operations go through the `sane()` guard (checks NaN/Inf, optional positivity) and `isFinite()` function. The new code in plausibility.go, shareclass.go, fcfnorm.go, and growthsignals.go all validate inputs before use. No unguarded NaN/Inf can reach API output."
+  },
+  "reason_confidence_logic": {
+    "assessment": "PASS",
+    "details": "C1 (plausibility): checkPlausibility enforces P/E < 1, MOS > 95%, FCF yield > 100%, intrinsic > 20×price with nil-safe short-circuit. C2 (share class): NormalizeShareClass uses hardcoded 1500 ratio with BRK-B detection, scalePtr returns nil on non-finite output. C3 (FCF normalisation): normalizeFCF pairs series by PeriodEnd, computes median margin, only applies when current < 0.5×median, guards against non-positive FCF/revenue, non-finite median, and current margin >= 0.5×median. C4 (growth signals diverge): growthSignalsDiverge checks opposite signs with >20pp gap, returns false for nil/zero rates. All logic is deterministic and nil-safe."
+  },
+  "migration_idempotency": {
+    "assessment": "PASS",
+    "details": "migrations/020_add_fcf_normalization_to_parameter_sets.sql uses `ALTER TABLE parameter_sets ADD COLUMN IF NOT EXISTS fcf_normalization BOOLEAN;` which is fully idempotent. Can be applied repeatedly on fresh or partially migrated databases. Column is NULLABLE on purpose with NO default; NULL means \"not set\" (precedence: column > JSONB key > code default true). No data loss risk."
+  },
+  "secret_detection": {
+    "fixtures_check": "PASS: amzn_valuation_input.json and brkb_valuation_input.json contain no secrets, only ticker and numeric fundamentals.",
+    "test_results_check": "PASS: test-results/tests/abys-valuation-210.json contains valuation results, scores, and details — no credentials, DSNs, or tokens with entropy."
+  },
+  "overall_verdict": "PASS",
+  "summary": "All security checks pass: no exposed secrets (gitleaks), no SQL injection risk (parameterized queries only), NaN/Inf-safe numeric handling, well-bounded reason/confidence logic, and idempotent migration. The abys-valuation-210 feature is security-clear for integration."
+}

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/miky/abys-invest/internal/growth"
 	"github.com/miky/abys-invest/internal/modelcfg"
 	"github.com/miky/abys-invest/internal/storage"
 	"github.com/miky/abys-invest/internal/valuation"
@@ -245,11 +246,22 @@ func LoadValuation(ctx context.Context, pool *pgxpool.Pool, params Parameters, t
 		in.EPS, in.FreeCashFlow, in.NetDebt = facts.EPS, facts.FreeCashFlow, facts.NetDebt
 		in.SharesOutstanding = funds["shares_outstanding"]
 	}
+	// C3/C4: the same FCF/revenue FY series and 5y CAGRs the pipeline supplies,
+	// so the computed fallback cannot disagree with a persisted row on the
+	// normalisation. A load failure degrades the method, it does not fail.
+	gcfg := growth.ConfigFromEnv()
+	if series, err := storage.GetFYAnnualSeries(ctx, pool, sec.ID,
+		[]string{"free_cash_flow", "revenues"}, asOf, gcfg.AnnualMinDays, gcfg.AnnualMaxDays); err == nil {
+		in.FreeCashFlowSeries = toValuationPoints(series["free_cash_flow"])
+		in.RevenueSeries = toValuationPoints(series["revenues"])
+	}
 	if gm, err := storage.GetLatestGrowthMetric(ctx, pool, sec.ID); err == nil {
 		in.NormalizedGrowthRate = gm.NormalizedGrowthRate
 		in.GrowthConfidence = valuation.Confidence(gm.Confidence)
 		in.GrowthSource = gm.Source
 		in.GrowthModelVersion = gm.ModelVersion
+		in.EPSCAGR5y = gm.EPSCAGR5y
+		in.FCFCAGR5y = gm.FCFCAGR5y
 	}
 	if wm, err := storage.GetLatestWaccMetric(ctx, pool, sec.ID); err == nil {
 		in.WACC, in.CostOfEquity = wm.Wacc, wm.CostOfEquity
@@ -258,7 +270,13 @@ func LoadValuation(ctx context.Context, pool *pgxpool.Pool, params Parameters, t
 		in.WACCModelVersion = wm.ModelVersion
 		in.BetaObserved = wm.BetaObserved
 	}
-	res := valuation.Calculate(in, valuation.ConfigFromEnv())
+	// Use the ACTIVE parameter set (same precedence as the pipeline) so the C3
+	// flag matches a persisted row; an unresolvable set falls back to the env.
+	vcfg := valuation.ConfigFromEnv()
+	if _, mc, err := modelcfg.Resolve(ctx, pool, modelcfg.DefaultParameterSetName()); err == nil {
+		vcfg = valuation.ConfigFromModelConfig(mc)
+	}
+	res := valuation.Calculate(in, vcfg)
 	detail.Value = &res
 	detail.ValuationSource = ValuationSourceComputed
 	return detail, nil
@@ -388,4 +406,17 @@ func confidenceOf(c *string) valuation.Confidence {
 		return ""
 	}
 	return valuation.Confidence(*c)
+}
+
+// toValuationPoints converts the storage FY series into the valuation engine's
+// point type for the C3/C4 computed path.
+func toValuationPoints(in []storage.FYPoint) []valuation.FYPoint {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]valuation.FYPoint, 0, len(in))
+	for _, p := range in {
+		out = append(out, valuation.FYPoint{PeriodEnd: p.PeriodEnd, Value: p.Value})
+	}
+	return out
 }

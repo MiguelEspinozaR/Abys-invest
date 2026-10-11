@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	growthpkg "github.com/miky/abys-invest/internal/growth"
+	"github.com/miky/abys-invest/internal/modelcfg"
 	"github.com/miky/abys-invest/internal/storage"
 	"github.com/miky/abys-invest/internal/valuation"
 )
@@ -35,9 +37,13 @@ type valuationResultCounts struct {
 //
 // It is network-free (fundamentals, prices, growth_metrics, wacc_metrics only),
 // which is why it is also part of POST /refresh.
-func runValuationJob(ctx context.Context, pool *pgxpool.Pool, securities []storage.Security, dryRun bool) valuationResultCounts {
+//
+// mc is the RESOLVED configuration (code < env < parameter set): the C3
+// normalised-FCF flag comes from it, never from the env in isolation, so a run
+// with a parameter set is reproducible with that set (ConfigFromModelConfig).
+func runValuationJob(ctx context.Context, pool *pgxpool.Pool, securities []storage.Security, dryRun bool, mc modelcfg.ModelConfig) valuationResultCounts {
 	var counts valuationResultCounts
-	cfg := valuation.ConfigFromEnv() // ADR D6: the engine never reads the env itself
+	cfg := valuation.ConfigFromModelConfig(mc) // ADR D6: the engine never reads the env itself
 
 	for _, sec := range securities {
 		inserted, err := runValuationOne(ctx, pool, sec, cfg, dryRun)
@@ -117,11 +123,29 @@ func runValuationOne(ctx context.Context, pool *pgxpool.Pool, sec storage.Securi
 		SharesOutstanding: funds["shares_outstanding"],
 		NetDebt:           facts.NetDebt,
 	}
+
+	// 4b) C3/C4 series: the FCF/revenue FY series (paired by period_end) is what
+	// the normalised-FCF median needs. A load failure degrades the method (it
+	// simply does not apply), it never aborts the valuation; the same window as
+	// the growth engine keeps the series aligned with the persisted CAGRs.
+	gcfg := growthpkg.ConfigFromEnv()
+	series, err := storage.GetFYAnnualSeries(ctx, pool, sec.ID,
+		[]string{"free_cash_flow", "revenues"}, asOf, gcfg.AnnualMinDays, gcfg.AnnualMaxDays)
+	if err != nil {
+		return false, fmt.Errorf("series FY as-of: %w", err)
+	}
+	in.FreeCashFlowSeries = toValuationPoints(series["free_cash_flow"])
+	in.RevenueSeries = toValuationPoints(series["revenues"])
+
 	if growth != nil {
 		in.NormalizedGrowthRate = growth.NormalizedGrowthRate
 		in.GrowthConfidence = valuation.Confidence(growth.Confidence)
 		in.GrowthSource = growth.Source
 		in.GrowthModelVersion = growth.ModelVersion
+		// C4: the 5-year signals live in growth_metrics; the valuation only
+		// consumes them.
+		in.EPSCAGR5y = growth.EPSCAGR5y
+		in.FCFCAGR5y = growth.FCFCAGR5y
 	}
 	if wacc != nil {
 		in.WACC = wacc.Wacc
@@ -277,6 +301,19 @@ func nilTime(t time.Time) *time.Time {
 		return nil
 	}
 	return &t
+}
+
+// toValuationPoints converts the storage FY series into the valuation engine's
+// point type. A nil series yields nil (the method then does not apply).
+func toValuationPoints(in []storage.FYPoint) []valuation.FYPoint {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]valuation.FYPoint, 0, len(in))
+	for _, p := range in {
+		out = append(out, valuation.FYPoint{PeriodEnd: p.PeriodEnd, Value: p.Value})
+	}
+	return out
 }
 
 // isNaN reports whether the value is NaN (the engine uses NaN internally to mark

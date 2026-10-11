@@ -79,6 +79,9 @@ const (
 	DefaultDCFYears             = 5
 	DefaultTerminalGrowth       = 2.5
 	DefaultGrowthTransition     = true
+	// DefaultFCFNormalization is the C3 default: normalisation ON, exactly as
+	// the valuation engine's own default (VALUATION_FCF_NORMALIZATION unset).
+	DefaultFCFNormalization = true
 
 	DefaultBuyThreshold  = 70.0
 	DefaultHoldThreshold = 40.0
@@ -131,6 +134,7 @@ const (
 	KeyDCFYears                 = "dcf_years"
 	KeyTerminalGrowth           = "terminal_growth"
 	KeyGrowthTransition         = "growth_transition"
+	KeyFCFNormalization         = "fcf_normalization"
 	KeyBuyThreshold             = "buy_threshold"
 	KeyHoldThreshold            = "hold_threshold"
 	KeyQualitySubWeights        = "quality_sub_weights"
@@ -174,6 +178,12 @@ type ModelConfig struct {
 	TerminalGrowth float64 `json:"terminal_growth"` // percentage/year
 	// RESERVED (§28): consumed in future optimization; today lives in ConfigFromEnv of valuation engine.
 	GrowthTransition bool `json:"growth_transition"`
+	// FCFNormalization turns the C3 normalised-FCF method of SPEC
+	// abys-valuation-210 on/off in the valuation engine. It is the FIRST
+	// valuation knob backed by a parameter_set (JSONB key `fcf_normalization`
+	// and/or the migration-020 column) instead of only the env: the decision of
+	// C3 is per-run and must be reproducible from the persisted set.
+	FCFNormalization bool `json:"fcf_normalization"`
 
 	// Signal thresholds (decision 2026-09-22 D5: >=70 comprar, >=40 mantener).
 	// RESERVED (§28): consumed in future optimization; today lives in ConfigFromEnv of score engine.
@@ -226,6 +236,7 @@ func DefaultModelConfig() ModelConfig {
 		DCFYears:             DefaultDCFYears,
 		TerminalGrowth:       DefaultTerminalGrowth,
 		GrowthTransition:     DefaultGrowthTransition,
+		FCFNormalization:     DefaultFCFNormalization,
 
 		BuyThreshold:  DefaultBuyThreshold,
 		HoldThreshold: DefaultHoldThreshold,
@@ -341,6 +352,7 @@ func ModelConfigFromEnv() ModelConfig {
 	mc.DCFYears = EnvIntRange("DCF_HORIZON_YEARS", mc.DCFYears, 1, 50)
 	mc.TerminalGrowth = EnvFloatRange("DCF_TERMINAL_GROWTH", mc.TerminalGrowth, -100, 100)
 	mc.GrowthTransition = EnvBool("VALUATION_GROWTH_TRANSITION", mc.GrowthTransition)
+	mc.FCFNormalization = EnvBool("VALUATION_FCF_NORMALIZATION", mc.FCFNormalization)
 
 	mc.MarketContextWeight = EnvFloatRange("MARKET_CONTEXT_WEIGHT", mc.MarketContextWeight, 0, 1)
 	mc.QualityCoverageHigh = EnvFloatRange("QUALITY_COVERAGE_HIGH", mc.QualityCoverageHigh, 0, 1)
@@ -535,7 +547,12 @@ type ParameterSet struct {
 	Name         string         `json:"name"`
 	ModelVersion string         `json:"model_version"`
 	Parameters   map[string]any `json:"parameters"`
-	CreatedAt    time.Time      `json:"created_at"`
+	// FCFNormalization is the migration-020 column. It is a *bool so the three
+	// states stay distinguishable: nil = column not set (the JSONB key / env /
+	// code default decide), true/false = explicit set-layer decision that WINS
+	// over the JSONB key (see Resolve).
+	FCFNormalization *bool     `json:"fcf_normalization,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // ErrParameterSetNotFound is returned by Resolve when the requested set does not
@@ -586,8 +603,8 @@ func GetParameterSetByName(ctx context.Context, q DBTX, name string) (*Parameter
 		raw []byte
 	)
 	err := q.QueryRow(ctx,
-		`SELECT id, name, model_version, parameters, created_at FROM parameter_sets WHERE name = $1`,
-		name).Scan(&ps.ID, &ps.Name, &ps.ModelVersion, &raw, &ps.CreatedAt)
+		`SELECT id, name, model_version, parameters, fcf_normalization, created_at FROM parameter_sets WHERE name = $1`,
+		name).Scan(&ps.ID, &ps.Name, &ps.ModelVersion, &raw, &ps.FCFNormalization, &ps.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, fmt.Errorf("%w: %q", ErrParameterSetNotFound, name)
 	}
@@ -636,6 +653,12 @@ func Resolve(ctx context.Context, q DBTX, name string) (ParameterSet, ModelConfi
 	}
 
 	cfg = cfg.WithParameters(ps.Parameters)
+	// The migration-020 column is the parameter-set layer's EXPLICIT value and
+	// wins over the JSONB key (which WithParameters already applied): a set can
+	// be toggled with one UPDATE without rewriting its parameters object.
+	if ps.FCFNormalization != nil {
+		cfg.FCFNormalization = *ps.FCFNormalization
+	}
 	cfg.ParameterSetID = ps.ID
 	cfg.ParameterSetName = ps.Name
 
@@ -762,6 +785,8 @@ func applyParameter(mc *ModelConfig, key string, raw any) {
 		mc.TerminalGrowth = paramFloat(mc, key, raw, mc.TerminalGrowth, -100, 100)
 	case KeyGrowthTransition:
 		mc.GrowthTransition = paramBool(mc, key, raw, mc.GrowthTransition)
+	case KeyFCFNormalization:
+		mc.FCFNormalization = paramBool(mc, key, raw, mc.FCFNormalization)
 	case KeyBuyThreshold:
 		mc.BuyThreshold = paramFloat(mc, key, raw, mc.BuyThreshold, 0, 100)
 	case KeyHoldThreshold:
@@ -918,7 +943,7 @@ var ErrUnsupportedModelVersion = errors.New("model_version no soportada")
 
 var canonicalOrder = []string{
 	KeyGrahamWeight, KeyDCFWeight, KeyQualityWeight, KeyRelativeWeight, KeyMarketContextWeight,
-	KeyTargetMarginOfSafety, KeyDCFYears, KeyTerminalGrowth, KeyGrowthTransition,
+	KeyTargetMarginOfSafety, KeyDCFYears, KeyTerminalGrowth, KeyGrowthTransition, KeyFCFNormalization,
 	KeyBuyThreshold, KeyHoldThreshold,
 	KeyQualityCoverageHigh, KeyQualityCoverageMedium, KeyQualitySubWeights, KeyQualityTaxRate,
 	KeyRelativeSectorWeight, KeyRelativeHistoricalWeight,

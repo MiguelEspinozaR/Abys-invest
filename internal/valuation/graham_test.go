@@ -108,21 +108,48 @@ func TestGrahamUnavailableCases(t *testing.T) {
 		}
 	})
 
-	t.Run("bear growth collapses to 0 but base survives", func(t *testing.T) {
-		// g=3 with a -4 delta: the bear scenario has g=-1 ⇒ dropped. The method
-		// stays available with 2 scenarios (degraded, not discarded).
+	t.Run("non-positive bear growth is computed, not dropped (C2)", func(t *testing.T) {
+		// g=3 with a -4 delta: the bear scenario has g=-1. Its multiple
+		// 2(-1)+8.5 = 6.5 is positive, so 2.1.0 COMPUTES it. The old 2.0.0
+		// behaviour dropped it just because g was non-positive; that test was
+		// deliberately updated because SPEC abys-valuation-210 C2 changes it.
 		m := CalcGrahamScenarios(Inputs{EPS: f64v(2), NormalizedGrowthRate: f64v(3)}, cfg, 3, false)
 		if m.Status != StatusAvailable {
 			t.Fatalf("status = %s, want available", m.Status)
 		}
-		if m.Bear != nil {
-			t.Error("bear must be nil when g+delta <= 0")
+		if m.Bear == nil {
+			t.Fatal("bear must be computed when 2g+8.5 > 0, even with g <= 0")
 		}
-		if m.scenarioCount() != 2 {
-			t.Errorf("scenarios = %d, want 2", m.scenarioCount())
+		nearly(t, *m.Bear, 2*6.5, "bear with g=-1")
+		if m.scenarioCount() != 3 {
+			t.Errorf("scenarios = %d, want 3", m.scenarioCount())
 		}
 		if !hasReason(m.Reasons, ReasonGrowthNonPositive) {
-			t.Errorf("reasons = %v, want %s", m.Reasons, ReasonGrowthNonPositive)
+			t.Errorf("reasons = %v, want the informational %s", m.Reasons, ReasonGrowthNonPositive)
+		}
+		if hasReason(m.Reasons, ReasonGrahamGrowthOutOfDomain) {
+			t.Errorf("reasons = %v, must NOT be out of domain", m.Reasons)
+		}
+	})
+
+	t.Run("out of domain only when the multiple is non-positive", func(t *testing.T) {
+		// g=-5: bear -9 ⇒ 2(-9)+8.5 = -9.5 <= 0 ⇒ dropped with its own reason;
+		// base -5 ⇒ -1.5 <= 0 ⇒ dropped; bull -2 ⇒ 4.5 > 0 ⇒ computed.
+		m := CalcGrahamScenarios(Inputs{EPS: f64v(2), NormalizedGrowthRate: f64v(-5)}, cfg, -5, false)
+		if m.Status != StatusAvailable {
+			t.Fatalf("status = %s, want available (bull survives)", m.Status)
+		}
+		if m.Bear != nil {
+			t.Error("bear must be nil when 2g+8.5 <= 0")
+		}
+		if m.Base != nil {
+			t.Error("base must be nil when 2g+8.5 <= 0")
+		}
+		if !hasReason(m.Reasons, ReasonGrahamGrowthOutOfDomain) {
+			t.Errorf("reasons = %v, want %s", m.Reasons, ReasonGrahamGrowthOutOfDomain)
+		}
+		if !hasReason(m.Reasons, ReasonGrowthNonPositive) {
+			t.Errorf("reasons = %v, want the informational %s", m.Reasons, ReasonGrowthNonPositive)
 		}
 	})
 

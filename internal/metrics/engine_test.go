@@ -250,17 +250,47 @@ func TestDeterminism(t *testing.T) {
 	}
 }
 
-func TestGrowthRateDefault(t *testing.T) {
+func TestPEGNullWhenGrowthNonPositive(t *testing.T) {
 	input := aaplInput(t)
-	input.GrowthRate = 0 // debe caer al default 7
+	input.GrowthRate = 0 // NO default 7 any more (W5): PEG must be nil
 
 	results := CalculateMetrics(input)
 	for _, r := range results {
 		if r.Metric == "peg_ratio" {
-			if v := r.InputsSnapshot["growth_rate"]; v != float64(7) {
-				t.Fatalf("growth_rate default esperado 7, got %v", v)
+			if r.Value != nil {
+				t.Fatalf("PEG con g <= 0 debe ser nil, got %v", r.Value)
+			}
+			if v := r.InputsSnapshot["growth_rate"]; v != float64(0) {
+				t.Fatalf("growth_rate snapshot esperado 0, got %v", v)
 			}
 		}
+	}
+
+	input.GrowthRate = -3
+	for _, r := range CalculateMetrics(input) {
+		if r.Metric == "peg_ratio" && r.Value != nil {
+			t.Fatalf("PEG con g negativo debe ser nil, got %v", r.Value)
+		}
+	}
+}
+
+func TestDERatioDerivedFromLiabilities(t *testing.T) {
+	// total_liabilities nil → derive from total_assets − equity.
+	got := DERatio(nil, f64(1000), f64(400))
+	if !approx(got, f64(1.5), 1e-9) {
+		t.Fatalf("de_ratio derivado: got %v, want 1.5", got)
+	}
+	// total_liabilities present wins over the derivation.
+	if got := DERatio(f64(600), f64(1000), f64(400)); !approx(got, f64(1.5), 0) {
+		t.Fatalf("de_ratio con liabilities presente: got %v, want 1.5", got)
+	}
+	// Neither numerator available → nil.
+	if got := DERatio(nil, nil, f64(400)); got != nil {
+		t.Fatalf("sin liabilities ni assets debe ser nil, got %v", got)
+	}
+	// Non-positive equity → nil.
+	if got := DERatio(f64(600), nil, f64(0)); got != nil {
+		t.Fatalf("equity 0 debe ser nil, got %v", got)
 	}
 }
 

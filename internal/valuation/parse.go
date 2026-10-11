@@ -32,7 +32,26 @@ import (
 // this build cannot read.
 var ErrUnsupportedModelVersion = fmt.Errorf("valuation: model_version no soportada")
 
-// ParseSnapshot decodes and validates an inputs_snapshot of valuation 2.0.0.
+// isReadableModelVersion is the closed list of valuation revisions the reader
+// decodes: the current 2.1.0 and the historical 2.0.0.
+//
+// R1 (SPEC abys-valuation-210): the 2.1.0 bump must NOT make the 2.0.0 rows
+// unreadable. PFcfFromSnapshot (used by the relative stage and the API) reads
+// persisted snapshots to project the §15 P/FCF, so a gate that only accepted the
+// current revision would silently lose the metric over the whole history.
+func isReadableModelVersion(v string) bool {
+	switch v {
+	case ModelVersion, ModelVersion20:
+		return true
+	default:
+		return false
+	}
+}
+
+// ParseSnapshot decodes and validates an inputs_snapshot of valuation 2.0.0 or
+// 2.1.0 (the current writer revision). Any other revision is refused: a snapshot
+// from a future layout read with today's assumptions would be a wrong replay
+// presented as a reproduced one.
 func ParseSnapshot(raw []byte) (*Snapshot, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%w: snapshot vacío", modelcfg.ErrSnapshotIncomplete)
@@ -46,8 +65,8 @@ func ParseSnapshot(raw []byte) (*Snapshot, error) {
 	if strings.TrimSpace(probe.ModelVersion) == "" {
 		return nil, fmt.Errorf("%w: falta model_version", modelcfg.ErrSnapshotIncomplete)
 	}
-	if probe.ModelVersion != ModelVersion {
-		return nil, fmt.Errorf("%w: %q (soportada: %q)", ErrUnsupportedModelVersion, probe.ModelVersion, ModelVersion)
+	if !isReadableModelVersion(probe.ModelVersion) {
+		return nil, fmt.Errorf("%w: %q (soportadas: %q, %q)", ErrUnsupportedModelVersion, probe.ModelVersion, ModelVersion, ModelVersion20)
 	}
 	var snap Snapshot
 	if err := json.Unmarshal(raw, &snap); err != nil {
@@ -66,6 +85,9 @@ func ParseSnapshot(raw []byte) (*Snapshot, error) {
 // column, so the only honest source is the snapshot the row already carries.
 // Returns nil when the inputs cannot produce it, which is the correct reading of
 // "not computable" and not an error.
+//
+// It reads snapshots of 2.0.0 AND 2.1.0 (R1), because ParseSnapshot accepts both
+// revisions: the historical rows must keep producing their P/FCF.
 func PFcfFromSnapshot(raw []byte) (*float64, error) {
 	snap, err := ParseSnapshot(raw)
 	if err != nil {

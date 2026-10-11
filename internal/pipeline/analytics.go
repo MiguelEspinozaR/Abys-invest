@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -92,7 +93,14 @@ func RunAnalytics(ctx context.Context, pool *pgxpool.Pool, tickersCSV string, gr
 		res.Growth, res.WACC = g.Growth, g.WACC
 	}
 	if job == AnalyticsJobValuation || job == AnalyticsJobAll {
-		v := runValuationJob(ctx, pool, securities, dryRun)
+		// The C3 flag lives in the parameter set: resolve it (never fails; falls
+		// back to env/defaults) so a set can turn the normalisation off without
+		// changing the process env.
+		vmc, err := resolveScoreConfig(ctx, pool)
+		if err != nil {
+			return AnalyticsResult{}, err
+		}
+		v := runValuationJob(ctx, pool, securities, dryRun, vmc)
 		res.Valuation = v.Inserted
 		if v.SkippedNoPrice > 0 || v.Unavailable > 0 {
 			slog.Info("valoración: sin fila para algunas securities",
@@ -137,7 +145,7 @@ func RunAnalytics(ctx context.Context, pool *pgxpool.Pool, tickersCSV string, gr
 // the gap is explicit in the code rather than an omission.
 var metricConceptsV2 = []string{
 	"net_earnings", "shares_outstanding", "shareholders_equity", "total_liabilities",
-	"free_cash_flow", "operating_income", "revenues", "total_debt",
+	"total_assets", "free_cash_flow", "operating_income", "revenues", "total_debt",
 	"cash_and_equivalents", "ebitda", "interest_expense",
 }
 
@@ -157,7 +165,7 @@ const qualityTaxRate = 0.21
 // temporal filter at all and was deleted.
 //
 // Returns the number of securities with persisted metrics.
-func runMetricsJob(ctx context.Context, pool *pgxpool.Pool, securities []storage.Security, growth float64, dryRun bool) int {
+func runMetricsJob(ctx context.Context, pool *pgxpool.Pool, securities []storage.Security, _ float64, dryRun bool) int {
 	succeeded := 0
 	for _, sec := range securities {
 		priceRow, err := storage.GetLatestPrice(ctx, pool, sec.ID)
@@ -195,8 +203,9 @@ func runMetricsJob(ctx context.Context, pool *pgxpool.Pool, securities []storage
 			Price:              priceRow.Close,
 			ShareholdersEquity: funds["shareholders_equity"],
 			TotalLiabilities:   funds["total_liabilities"],
+			TotalAssets:        funds["total_assets"],
 			FreeCashFlow:       funds["free_cash_flow"],
-			GrowthRate:         growth,
+			GrowthRate:         metricGrowthRate(ctx, pool, sec.ID, asOf),
 		}
 		rows, err := metrics.BuildDerivedMetrics(v1, metrics.DefaultModelVersion)
 		if err != nil {
@@ -300,6 +309,22 @@ func toMetricSeries(pts []storage.FYPoint) []metrics.MetricSeriesPoint {
 	return out
 }
 
+// metricGrowthRate returns the INDIVIDUAL normalized growth (percent) persisted
+// by the growth stage for the security at asOf (M6a), or 0 when there is none.
+//
+// PEG = P/E ÷ normalized_growth (SPEC abys-valuation-210 C5): the metric engine
+// has NO default 7 any more, so a missing row yields a 0 and CalcPEG returns a
+// nil PEG instead of a fabricated one. The legacy `growth` argument of
+// runMetricsJob is deliberately no longer used for the metrics: a global 7 is
+// exactly the artefact W5 removes.
+func metricGrowthRate(ctx context.Context, pool *pgxpool.Pool, securityID int64, asOf time.Time) float64 {
+	g, err := storage.GetGrowthMetricAsOf(ctx, pool, securityID, asOf)
+	if err != nil || g == nil || g.NormalizedGrowthRate == nil {
+		return 0
+	}
+	return *g.NormalizedGrowthRate
+}
+
 // runScoresJob assembles every ScoreInput from persisted M1/M2 data and
 // persists the M3 score (idempotente por (security, as_of, modelo)). En
 // dry-run solo imprime. Las métricas se leen de derived_metrics; si el ticker
@@ -368,7 +393,7 @@ func runOneScore(ctx context.Context, pool *pgxpool.Pool, sec storage.Security, 
 	vr, err := storage.GetValuationResultAsOf(ctx, pool, sec.ID, priceRow.Date, valuation.ModelVersion)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
-		slog.Warn("sin fila de valoración 2.0.0 para este as_of: el score se renormaliza sin las dimensiones de valoración (§18)",
+		slog.Warn("sin fila de valoración para este as_of: el score se renormaliza sin las dimensiones de valoración (§18)",
 			"ticker", sec.Ticker, "as_of", priceRow.Date.Format("2006-01-02"), "model_version", valuation.ModelVersion)
 	case err != nil:
 		return fmt.Errorf("valuation_results: %w", err)
@@ -499,9 +524,14 @@ func methodReasons(reasons []string, methodStatus string) []string {
 		valuation.ReasonWACCCostOfEquity:  true,
 		valuation.ReasonWACCLegacyEnv:     true,
 		valuation.ReasonNoPrice:           true,
+		// C1: the withdrawn method IS the one whose units were incoherent; the
+		// other method (if available) ignores the reason because it has values.
+		valuation.ReasonUnitMismatch: true,
 	}
 	grahamOnly := map[string]bool{
-		valuation.ReasonEPSNonPositive: true,
+		valuation.ReasonEPSNonPositive:          true,
+		valuation.ReasonGrahamGrowthOutOfDomain: true,
+		valuation.ReasonUnitMismatch:            true,
 	}
 	// Reasons that describe the valuation as a whole (growth fallback, input
 	// confidence, incomplete scenarios) are relevant to a method only when the

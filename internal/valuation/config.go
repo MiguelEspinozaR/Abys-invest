@@ -70,6 +70,13 @@ type Config struct {
 	GrowthFallback   float64 //  7.0 (GROWTH_RATE_DEFAULT) — legacy, only when
 	// there is no normalised growth (decision A1; unmarked on purpose)
 
+	// FCFNormalization turns the C3 normalised-FCF method on/off (default ON).
+	// It is set from the parameter set (modelcfg) when the caller has one, or
+	// from VALUATION_FCF_NORMALIZATION otherwise (ConfigFromEnv). A disabled
+	// normalisation must be REPRODUCIBLE from the persisted Config, which is why
+	// it lives here and not in the input data.
+	FCFNormalization bool
+
 	SensitivitySteps int // 3: points per axis of the §8 WACC x growth grid
 }
 
@@ -91,6 +98,7 @@ func DefaultConfig() Config {
 		DiscountFallback:  DefaultDiscountFallback,
 		WACCFallback:      DefaultWACCFallback,
 		GrowthFallback:    DefaultGrowthFallback,
+		FCFNormalization:  true,
 		SensitivitySteps:  DefaultSensitivitySteps,
 	}
 }
@@ -129,6 +137,7 @@ func ConfigFromEnv() Config {
 	cfg.BearTerminalDelta = modelcfg.EnvFloat("VALUATION_BEAR_TERMINAL_DELTA", cfg.BearTerminalDelta)
 	cfg.BullTerminalDelta = modelcfg.EnvFloat("VALUATION_BULL_TERMINAL_DELTA", cfg.BullTerminalDelta)
 	cfg.Transition = modelcfg.EnvBool("VALUATION_GROWTH_TRANSITION", cfg.Transition)
+	cfg.FCFNormalization = modelcfg.EnvBool("VALUATION_FCF_NORMALIZATION", cfg.FCFNormalization)
 	cfg.TransitionCapPP = modelcfg.EnvFloat("VALUATION_GROWTH_TRANSITION_CAP", cfg.TransitionCapPP)
 	cfg.SensitivitySteps = modelcfg.EnvInt("VALUATION_SENSITIVITY_STEPS", cfg.SensitivitySteps)
 
@@ -145,5 +154,21 @@ func ConfigFromEnv() Config {
 	if cfg.SensitivitySteps < 1 {
 		cfg.SensitivitySteps = 1
 	}
+	return cfg
+}
+
+// ConfigFromModelConfig overlays the valuation parameters that the resolved
+// ModelConfig owns on top of ConfigFromEnv(). Today the ONLY such parameter is
+// the C3 normalised-FCF flag: the other valuation knobs (target MOS, horizon,
+// terminal growth, transition) are still RESERVED in ModelConfig and reach the
+// engine through the env, so they are NOT read here to avoid two sources of
+// truth.
+//
+// This is the anchor the full-chain replay uses: a valuation row produced with a
+// parameter set must be recomputable with the SAME set (otherwise turning the
+// normalisation off in a set would silently reappear ON when replaying).
+func ConfigFromModelConfig(mc modelcfg.ModelConfig) Config {
+	cfg := ConfigFromEnv()
+	cfg.FCFNormalization = mc.FCFNormalization
 	return cfg
 }

@@ -484,7 +484,10 @@ func replayFullChain(ctx context.Context, pool *pgxpool.Pool, r scoredRow, mc mo
 	vIn.WACCConfidence = valuation.Confidence(wResReplay.Confidence)
 	vIn.WACCModelVersion = wacc.ModelVersion
 	vIn.BetaObserved = wResReplay.BetaObserved
-	vCfgReplay := valuation.ConfigFromEnv() // valuation config from env for now
+	// C3 (W3): the valuation config must come from the SAME resolved ModelConfig
+	// as the rest of the chain, so a normalisation turned off in the parameter
+	// set does not silently reappear ON when the row is replayed.
+	vCfgReplay := valuation.ConfigFromModelConfig(mc)
 	vResReplay := valuation.Calculate(vIn, vCfgReplay)
 	res.ChainSteps.Valuation = &vResReplay
 	computedFrom["valuation"] = "recomputed"

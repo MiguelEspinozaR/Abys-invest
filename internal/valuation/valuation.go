@@ -9,8 +9,10 @@
 //     time.Now() (AsOf travels in Inputs), no global state. Same inputs+config
 //     ⇒ byte-identical Result.
 //   - ConfigFromEnv is the only reader of the environment.
-//   - ModelVersion 2.0.0: there is NO consensus_intrinsic any more (SPEC §9,
-//     the complete reversal of M4b) and no upside_pct. The divergence between
+//   - ModelVersion 2.0.0 introduced the removal of the M4b consensus; 2.1.0
+//     adds the plausibility guard, the share-class normalisation and the
+//     always-computable bear. There is NO consensus_intrinsic (SPEC §9, the
+//     complete reversal of M4b) and no upside_pct: the divergence between
 //     Graham and DCF is information, not something to average away.
 //
 // Conservative data rule, unchanged since M3 and reinforced by §21: a nil
@@ -23,10 +25,21 @@ import (
 	"time"
 )
 
-// ModelVersion identifies the valuation formula revision (persisted as-is).
-// 2.0.0 = SPEC v2 §6-§11/§19-§21: scenarios, MOS, uncertainty, confidence and
-// the removal of the M4b consensus (a breaking contract change, ADR D3/D5).
-const ModelVersion = "2.0.0"
+// ModelVersion identifies the CURRENT valuation formula revision (persisted
+// as-is). 2.1.0 = SPEC abys-valuation-210: unit-plausibility guard + share-class
+// normalisation (C1), always-computable bear with g≤0 (C2), normalised FCF (C3),
+// growth divergence (C4) and the unified PEG/de_ratio (C5).
+//
+// The writer (SnapshotOf, Result.ModelVersion, the pipeline) uses THIS constant,
+// so every new revision is stamped 2.1.0 while the rows already written keep
+// their own version.
+const ModelVersion = "2.1.0"
+
+// ModelVersion20 is the PREVIOUS valuation revision, kept to ADDRESS the rows it
+// wrote: the snapshot gate (ParseSnapshot/PFcfFromSnapshot) and the readers must
+// keep decoding 2.0.0 (SPEC abys-valuation-210 R1) or a P/FCF over the history
+// would silently break. Same pattern as score.ModelVersion21 for score 2.1.0.
+const ModelVersion20 = "2.0.0"
 
 // Status is the availability of a method (or of the valuation as a whole).
 type Status string
@@ -77,6 +90,25 @@ const (
 	ReasonWACCConfigured      = "wacc_configured"
 	ReasonWACCLegacyEnv       = "wacc_legacy_env"
 	ReasonGrowthNotReliable   = "growth_not_reliable"
+
+	// ReasonGrahamGrowthOutOfDomain (C2): the Graham scenario is dropped ONLY
+	// when the multiple (2g+8.5) leaves its domain (2g+8.5 <= 0). A plain
+	// non-positive growth is NOT a reason to drop it any more
+	// (ReasonGrowthNonPositive becomes informational).
+	ReasonGrahamGrowthOutOfDomain = "graham_growth_out_of_domain"
+	// ReasonUnitMismatch (C1): the method value or its inputs are incoherent by
+	// orders of magnitude (P/E < 1, MOS > 95%, FCF yield > 100% or an intrinsic
+	// value over 20× the price). The method is withdrawn, never clipped.
+	ReasonUnitMismatch = "unit_mismatch"
+
+	// ReasonFCFNormalized (C3): the DCF ran on the NORMALISED FCF because the
+	// current margin was below half the 5-year median. It is informational on
+	// the result and caps the DCF confidence at medium.
+	ReasonFCFNormalized = "fcf_normalized"
+	// ReasonGrowthSignalsDiverge (C4): EPS CAGR and FCF CAGR point in opposite
+	// directions (and differ by > 20 pp), so the growth is not reliable enough
+	// to keep a high confidence. The growth VALUE is left untouched.
+	ReasonGrowthSignalsDiverge = "growth_signals_diverge"
 )
 
 // Discount-rate provenance of the DCF (plan D9). The first two are the M6a
@@ -103,6 +135,26 @@ type Inputs struct {
 	FreeCashFlow      *float64 `json:"free_cash_flow,omitempty"` // FY canonical FCF (OCF+capex fallback)
 	SharesOutstanding *float64 `json:"shares_outstanding,omitempty"`
 	NetDebt           *float64 `json:"net_debt,omitempty"` // total debt − cash; nil = unknown
+
+	// C3 (SPEC abys-valuation-210): the raw FCF is echoed in `free_cash_flow_raw`
+	// and the normalised one (when the method applies) in `free_cash_flow_norm`.
+	// The DCF uses the normalised value when it applies. FreeCashFlowRaw is a
+	// provenance echo of FreeCashFlow (kept for the §26 snapshot): no formula
+	// reads it.
+	FreeCashFlowRaw  *float64 `json:"free_cash_flow_raw,omitempty"`
+	FreeCashFlowNorm *float64 `json:"free_cash_flow_norm,omitempty"`
+
+	// The 5-year FY series the normalisation needs: FCF and revenue, paired by
+	// PeriodEnd. Empty when the caller could not load them, in which case the
+	// method simply does not apply (never an error).
+	FreeCashFlowSeries []FYPoint `json:"free_cash_flow_series,omitempty"`
+	RevenueSeries      []FYPoint `json:"revenue_series,omitempty"`
+
+	// C4 (growth-signal divergence): the 5-year CAGRs of EPS and FCF, from the
+	// growth engine. When their signs differ by more than 20 pp the valuation
+	// confidence is LOW (the growth VALUE is never changed).
+	EPSCAGR5y *float64 `json:"eps_cagr_5y,omitempty"`
+	FCFCAGR5y *float64 `json:"fcf_cagr_5y,omitempty"`
 
 	// Growth and WACC come ALREADY PERSISTED from growth_metrics / wacc_metrics
 	// (M6a); M6b wires them, it never recomputes them.
@@ -262,6 +314,38 @@ func MarshalSnapshot(in Inputs, cfg Config, res Result) ([]byte, error) {
 // value, so the enrichment of Inputs (wacc_used/discount_source) stays local to
 // the result.
 func Calculate(in Inputs, cfg Config) Result {
+	// (0) C1 share class: EPS/shares must match the class of the price. BRK-B
+	// is converted (EPS/1500, shares×1500); anything else passes through. The
+	// echo inputs below then show the values REALLY used (§27), so the snapshot
+	// replays the same result.
+	in.EPS, in.SharesOutstanding = NormalizeShareClass(in.Ticker, in.EPS, in.SharesOutstanding)
+
+	// (0a) C3 normalised FCF. The DCF runs on the normalised value ONLY when the
+	// method applies (current margin below half the 5-year median). The raw and
+	// normalised values are echoed in the inputs so the §26 snapshot carries
+	// both: `free_cash_flow` stays the raw one, `free_cash_flow_raw` echoes it
+	// and `free_cash_flow_norm` is set only when the method applied.
+	revenueNow := lastSeriesValue(in.RevenueSeries)
+	var fcfApplied bool
+	in.FreeCashFlowNorm = nil // the echo is owned by THIS run, never a stale input
+	if cfg.FCFNormalization {
+		_, in.FreeCashFlowNorm, fcfApplied = normalizeFCF(in.FreeCashFlow, revenueNow, in.FreeCashFlowSeries, in.RevenueSeries)
+	}
+	in.FreeCashFlowRaw = in.FreeCashFlow
+	dcfIn := in
+	if fcfApplied {
+		dcfIn.FreeCashFlow = in.FreeCashFlowNorm
+	}
+
+	// (0b) C4 growth-signal divergence: EPS and FCF CAGRs with opposite signs and
+	// more than 20 pp apart lower the growth confidence to low. The growth VALUE
+	// is never touched (that is growth's contract).
+	signalsDiverge := growthSignalsDiverge(in.EPSCAGR5y, in.FCFCAGR5y)
+	if signalsDiverge {
+		in.GrowthConfidence = ConfidenceLow
+		dcfIn.GrowthConfidence = ConfidenceLow
+	}
+
 	// (0) Growth: the normalised rate when it exists, the legacy global one
 	// when it does not (decision A1: current M3 behaviour, unmarked).
 	gBase, gFallback := resolveGrowth(in, cfg)
@@ -271,7 +355,23 @@ func Calculate(in Inputs, cfg Config) Result {
 
 	// (2) Methods, independent of each other (§9/§10).
 	graham := CalcGrahamScenarios(in, cfg, gBase, gFallback)
-	dcf := CalcDCFScenarios(in, cfg, gBase, rate)
+	dcf := CalcDCFScenarios(dcfIn, cfg, gBase, rate)
+	if fcfApplied {
+		// A synthetic FCF cannot support a high confidence: the DCF is capped at
+		// medium and the method records the reason (C3).
+		dcf.Confidence = cap(dcf.Confidence, ConfidenceMedium)
+		dcf.Reasons = dedupe(dcf.Reasons, ReasonFCFNormalized)
+	}
+
+	// (2b) C1 plausibility guard: an incoherent value is withdrawn, never
+	// clipped. The reason travels to the valuation level so the persisted row
+	// and the score justification can cite it (the score consumer excludes the
+	// withdrawn dimension automatically because its base is nil → weight is
+	// redistributed in weight_used).
+	pe, fcfYield := plausibilityRatios(dcfIn)
+	graham, gIssues := applyPlausibility(graham, in.Price, graham.Base, pe, nil)
+	dcf, dIssues := applyPlausibility(dcf, in.Price, dcf.Base, nil, fcfYield)
+	mismatch := union(nil, gIssues, dIssues)
 
 	// (3) §11 margin of safety for the four valuations §11 names.
 	mos := CalcMOS(in, graham, dcf, cfg)
@@ -282,13 +382,23 @@ func Calculate(in Inputs, cfg Config) Result {
 	// (5) §20/§21 confidence from input coverage/quality ONLY (A4) and the
 	// global status of D10.
 	conf, reasons := CalcConfidence(in, cfg, graham, dcf, unc, rate, gFallback)
+	if fcfApplied {
+		// C3: the valuation itself does not present more than medium when the
+		// DCF rests on a normalised FCF.
+		conf = cap(conf, ConfidenceMedium)
+		reasons = dedupe(reasons, ReasonFCFNormalized)
+	}
+	if signalsDiverge {
+		reasons = dedupe(reasons, ReasonGrowthSignalsDiverge)
+	}
+	reasons = union(reasons, mismatch)
 	status := StatusAvailable
 	if IsNoValuation(graham, dcf) {
 		status = StatusUnavailable
 	}
 
 	// (6) §8 sensitivity grid (persisted, reproducible by as_of).
-	sens := calcSensitivity(in, cfg, gBase, rate)
+	sens := calcSensitivity(dcfIn, cfg, gBase, rate)
 
 	// (7) §15 additive metrics with the individual growth (A7).
 	peg, pFcf := CalcPEG(in, gBase, gFallback)

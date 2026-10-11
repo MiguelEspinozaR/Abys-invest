@@ -18,6 +18,7 @@ type fakeRow struct {
 	name      string
 	version   string
 	raw       []byte
+	fcfNorm   *bool
 	createdAt time.Time
 	err       error
 }
@@ -26,8 +27,8 @@ func (r fakeRow) Scan(dest ...any) error {
 	if r.err != nil {
 		return r.err
 	}
-	if len(dest) != 5 {
-		return errors.New("fakeRow: se esperaban 5 destinos")
+	if len(dest) != 6 {
+		return errors.New("fakeRow: se esperaban 6 destinos")
 	}
 	if p, ok := dest[0].(*int64); ok {
 		*p = r.id
@@ -41,7 +42,10 @@ func (r fakeRow) Scan(dest ...any) error {
 	if p, ok := dest[3].(*[]byte); ok {
 		*p = r.raw
 	}
-	if p, ok := dest[4].(*time.Time); ok {
+	if p, ok := dest[4].(**bool); ok {
+		*p = r.fcfNorm
+	}
+	if p, ok := dest[5].(*time.Time); ok {
 		*p = r.createdAt
 	}
 	return nil
@@ -549,5 +553,61 @@ func TestToFloatAcceptsJSONNumberShapes(t *testing.T) {
 		if _, ok := toFloat(raw); ok {
 			t.Fatalf("tipo no numérico aceptado: %T", raw)
 		}
+	}
+}
+
+// --- W3: normalised-FCF flag (SPEC abys-valuation-210 C3) ----------------
+
+func TestFCFNormalizationDefaultIsOnAndEnvOverrides(t *testing.T) {
+	if !DefaultModelConfig().FCFNormalization {
+		t.Fatal("el default de fcf_normalization debe ser true")
+	}
+	t.Setenv("VALUATION_FCF_NORMALIZATION", "false")
+	if ModelConfigFromEnv().FCFNormalization {
+		t.Fatal("VALUATION_FCF_NORMALIZATION=false debe desactivarlo")
+	}
+	t.Setenv("VALUATION_FCF_NORMALIZATION", "true")
+	if !ModelConfigFromEnv().FCFNormalization {
+		t.Fatal("VALUATION_FCF_NORMALIZATION=true debe activarlo")
+	}
+}
+
+func TestFCFNormalizationFromParameterSetJSONKey(t *testing.T) {
+	mc := DefaultModelConfig()
+	got := mc.WithParameters(map[string]any{KeyFCFNormalization: false})
+	if got.FCFNormalization {
+		t.Fatal("la clave fcf_normalization:false del parameter set debe aplicarse")
+	}
+	// Clave ausente ⇒ no se toca (regla "la ausencia nunca es un 0/false").
+	if !mc.WithParameters(map[string]any{}).FCFNormalization {
+		t.Fatal("un set sin la clave no debe cambiar el valor")
+	}
+}
+
+func TestResolveColumnOverridesJSONKey(t *testing.T) {
+	// El JSONB dice false, la columna 020 dice true: la columna (más explícita)
+	// gana.
+	yes := true
+	db := baseDB(t)
+	db.rows["both"] = fakeRow{id: 9, name: "both", version: ModelVersion,
+		raw:     setJSON(t, map[string]any{KeyFCFNormalization: false}),
+		fcfNorm: &yes, createdAt: time.Now()}
+	_, mc, err := Resolve(context.Background(), db, "both")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if !mc.FCFNormalization {
+		t.Fatal("la columna no-NULL debe ganar sobre la clave JSONB")
+	}
+
+	// La columna NULL deja decidir a la clave JSONB.
+	db.rows["jsononly"] = fakeRow{id: 10, name: "jsononly", version: ModelVersion,
+		raw: setJSON(t, map[string]any{KeyFCFNormalization: false}), createdAt: time.Now()}
+	_, mc2, err := Resolve(context.Background(), db, "jsononly")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if mc2.FCFNormalization {
+		t.Fatal("column NULL + JSONB false ⇒ false")
 	}
 }

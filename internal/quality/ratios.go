@@ -9,6 +9,8 @@ const (
 	conceptOperatingIncome    = "operating_income"
 	conceptShareholdersEquity = "shareholders_equity"
 	conceptTotalDebt          = "total_debt"
+	conceptTotalLiabilities   = "total_liabilities"
+	conceptTotalAssets        = "total_assets"
 	conceptCash               = "cash_and_equivalents"
 	conceptNetDebt            = "net_debt"
 	conceptEBITDA             = "ebitda"

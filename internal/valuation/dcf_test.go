@@ -238,6 +238,38 @@ func TestDCFScenarios(t *testing.T) {
 	}
 }
 
+func TestDCFFlatAndNegativeGrowth(t *testing.T) {
+	cfg := DefaultConfig()
+	rate := resolveDiscountRate(Inputs{WACC: f64v(10), WACCSource: WACCSourceCAPMIndividual}, cfg)
+
+	t.Run("g = 0 is computed (C2)", func(t *testing.T) {
+		in := Inputs{FreeCashFlow: f64v(100e6), SharesOutstanding: f64v(1e9), NetDebt: f64v(0)}
+		m := CalcDCFScenarios(in, cfg, 0, rate)
+		if m.Status != StatusAvailable {
+			t.Fatalf("status = %s (%v), want available", m.Status, m.Reasons)
+		}
+		if m.Bear == nil || m.Base == nil || m.Bull == nil {
+			t.Fatalf("all scenarios must be computed with g=0: %+v", m)
+		}
+	})
+
+	t.Run("bear is computed even when g < 0 (C2)", func(t *testing.T) {
+		in := Inputs{FreeCashFlow: f64v(100e6), SharesOutstanding: f64v(1e9), NetDebt: f64v(0)}
+		m := CalcDCFScenarios(in, cfg, -1, rate)
+		if m.Status != StatusAvailable {
+			t.Fatalf("status = %s (%v), want available", m.Status, m.Reasons)
+		}
+		if m.Bear == nil {
+			t.Fatal("bear must be computed for a negative growth (the transition caps it)")
+		}
+		if !hasReason(m.Reasons, ReasonGrowthNonPositive) {
+			t.Errorf("reasons = %v, want the informational %s", m.Reasons, ReasonGrowthNonPositive)
+		}
+		// The old 2.0.0 engine returned unavailable for g <= 0; this assertion is
+		// the deliberate change of SPEC abys-valuation-210 C2.
+	})
+}
+
 func TestDCFUnavailableAndDegraded(t *testing.T) {
 	cfg := DefaultConfig()
 	rate := resolveDiscountRate(Inputs{WACC: f64v(10), WACCSource: WACCSourceCAPMIndividual}, cfg)

@@ -1,0 +1,23 @@
+-- 020: normalised-FCF flag of valuation 2.1.0 (SPEC abys-valuation-210 C3, W3).
+--
+-- C3 makes the normalised-FCF method CONFIGURABLE on/off and persisted in the
+-- parameter set (ADR 0034: "configurable on/off, persistido en parameter_set").
+-- This migration adds the explicit column; the value can ALSO be carried as the
+-- JSONB key `fcf_normalization` of parameter_sets.parameters.
+--
+-- IDEMPOTENT: ADD COLUMN IF NOT EXISTS, so the file can be applied twice and on
+-- a partially migrated database.
+--
+-- NULLABLE on purpose, and NO default, and NO backfill:
+--   · NULL  = "this set does not state it": the JSONB key, then
+--             VALUATION_FCF_NORMALIZATION, then the code default (true) decide.
+--   · true  = force the normalisation ON for this set.
+--   · false = force it OFF for this set.
+-- A DEFAULT would make every existing set an explicit `true`, silently turning
+-- the column into the source of truth and inverting the documented precedence
+-- (code < env < JSONB key < explicit column) for rows nobody edited.
+--
+-- Precedence implemented in modelcfg.Resolve: the column, when NOT NULL, wins
+-- over the JSONB key because it is the set layer's most explicit statement.
+ALTER TABLE parameter_sets
+    ADD COLUMN IF NOT EXISTS fcf_normalization BOOLEAN;

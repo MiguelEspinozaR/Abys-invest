@@ -35,8 +35,13 @@ type MetricInput struct {
 	Price              float64
 	ShareholdersEquity *float64
 	TotalLiabilities   *float64
+	TotalAssets        *float64
 	FreeCashFlow       *float64
-	GrowthRate         float64 // g, in percent (default 7.0)
+	// GrowthRate is g in percent as supplied by the caller (the persisted
+	// normalized_growth_rate of the security). There is NO default: a <= 0 value
+	// means "no reliable growth was persisted", and CalcPEG then returns nil
+	// (SPEC abys-valuation-210 C5: no path may inject 7).
+	GrowthRate float64
 }
 
 // MetricResult is the outcome of a single metric with its input snapshot.
@@ -50,10 +55,6 @@ type MetricResult struct {
 // deterministic: same input -> same output, and results are sorted by metric
 // name. marketCap = Price x SharesOutstanding is derived internally.
 func CalculateMetrics(input MetricInput) []MetricResult {
-	if input.GrowthRate <= 0 {
-		input.GrowthRate = 7 // GROWTH_RATE_DEFAULT: g = 7%
-	}
-
 	var marketCap float64
 	if so := sane(input.SharesOutstanding, true); so != nil {
 		if price := sane(&input.Price, true); price != nil {
@@ -70,6 +71,7 @@ func CalculateMetrics(input MetricInput) []MetricResult {
 			"market_cap":          marketCap,
 			"shareholders_equity": sanitize(input.ShareholdersEquity),
 			"total_liabilities":   sanitize(input.TotalLiabilities),
+			"total_assets":        sanitize(input.TotalAssets),
 			"free_cash_flow":      sanitize(input.FreeCashFlow),
 		}
 		for k, v := range extra {
@@ -84,7 +86,7 @@ func CalculateMetrics(input MetricInput) []MetricResult {
 	pcf := CalcPCF(marketCap, input.FreeCashFlow)
 	peg := CalcPEG(pe, &input.GrowthRate)
 	roe := CalcROE(input.NetEarnings, input.ShareholdersEquity)
-	de := CalcDE(input.TotalLiabilities, input.ShareholdersEquity)
+	de := DERatio(input.TotalLiabilities, input.TotalAssets, input.ShareholdersEquity)
 	fcfy := CalcFCFYield(input.FreeCashFlow, marketCap)
 
 	results := []MetricResult{
@@ -94,7 +96,7 @@ func CalculateMetrics(input MetricInput) []MetricResult {
 		{Metric: MetricPCF, Value: pcf, InputsSnapshot: snapshot(map[string]any{"formula": "market_cap / free_cash_flow"})},
 		{Metric: MetricPEG, Value: peg, InputsSnapshot: snapshot(map[string]any{"growth_rate": input.GrowthRate, "formula": "pe_ratio / g"})},
 		{Metric: MetricROE, Value: roe, InputsSnapshot: snapshot(map[string]any{"formula": "net_earnings / shareholders_equity"})},
-		{Metric: MetricDE, Value: de, InputsSnapshot: snapshot(map[string]any{"formula": "total_liabilities / shareholders_equity"})},
+		{Metric: MetricDE, Value: de, InputsSnapshot: snapshot(map[string]any{"formula": "total_liabilities / shareholders_equity (total_liabilities derived as total_assets - equity when absent)"})},
 		{Metric: MetricFCFYield, Value: fcfy, InputsSnapshot: snapshot(map[string]any{"formula": "free_cash_flow / market_cap (x100)"})},
 	}
 

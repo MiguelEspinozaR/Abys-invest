@@ -1,0 +1,694 @@
+{
+  "task": "abys-valuation-210",
+  "date": "2026-10-11",
+  "spec": ".ai/specs/abys-valuation-210.md",
+  "plan": ".ai/plans/abys-valuation-210.md",
+  "adr": ".ai/decisions/0034-valuation-210.md",
+  "decision": {
+    "C1_share_class": "cableado BRK-A/BRK-B = 1500",
+    "C3_fcf_flag": "parameter_set + migración 020"
+  },
+  "units": {
+    "valuation_model_version": "2.0.0 -> 2.1.0",
+    "score_model_version_written": "2.2.0 (real, coherente con quality 1.1.0)"
+  },
+  "verification": {
+    "commands": [
+      "go build ./...",
+      "go vet ./...",
+      "go test ./... -count=1",
+      "go test ./internal/pipeline/... ./internal/api/... ./internal/metrics/... ./internal/quality/... ./internal/modelcfg/... -tags=integration (TEST_DATABASE_URL=abys_test)",
+      "go run ./cmd/analytics -job all (recompute último as_of)"
+    ],
+    "unit": "all packages ok (25)",
+    "integration": "pipeline/api/metrics/quality/modelcfg ok",
+    "gofmt": "clean"
+  },
+  "acceptance": {
+    "C1_BRK-B": {
+      "before": {
+        "graham_mos": 99.9589,
+        "dcf_base_mos": 99.8826
+      },
+      "after": {
+        "graham_mos": 38.402,
+        "dcf_base_mos": -76.1285
+      },
+      "no_mos_99_9": true,
+      "pass": true
+    },
+    "C2_AMZN": {
+      "before": {
+        "graham_bear": null,
+        "dcf_bear": null,
+        "components": 3,
+        "reasons": [
+          "wacc_configured",
+          "incomplete_scenarios",
+          "input_confidence"
+        ]
+      },
+      "after": {
+        "graham_bear": 49.877,
+        "dcf_bear": 10.0057,
+        "components": 4,
+        "reasons": [
+          "wacc_configured",
+          "input_confidence",
+          "growth_signals_diverge"
+        ]
+      },
+      "graham_bear_approx_49_88": true,
+      "dcf_bear_computed": true,
+      "components_4": true,
+      "no_incomplete_scenarios": true,
+      "pass": true
+    }
+  },
+  "valuation_results_counts_after": {
+    "2.0.0": 91,
+    "2.1.0": 38
+  },
+  "scores_counts_after": {
+    "1.1.0": 50,
+    "2.0.0": 1,
+    "2.1.0": 132,
+    "2.2.0": 88
+  },
+  "history_preserved": {
+    "valuation_results_2.0.0": 91,
+    "note": "2.0.0 intacto; 2.1.0 sólo añade la revisión del último as_of (recompute)."
+  },
+  "score_before_after": [
+    {
+      "ticker": "AAPL",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 43,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 43,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "ABBV",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 52,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 39,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "AMT",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 33,
+        "signal": "vender"
+      },
+      "after_2.2.0": {
+        "score": 33,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "AMZN",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 31,
+        "signal": "vender"
+      },
+      "after_2.2.0": {
+        "score": 31,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "AVGO",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 39,
+        "signal": "vender"
+      },
+      "after_2.2.0": {
+        "score": 39,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "BAC",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 63,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 63,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "BRK-B",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 71,
+        "signal": "comprar"
+      },
+      "after_2.2.0": {
+        "score": 48,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "CAT",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 37,
+        "signal": "vender"
+      },
+      "after_2.2.0": {
+        "score": 37,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "COP",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 73,
+        "signal": "comprar"
+      },
+      "after_2.2.0": {
+        "score": 73,
+        "signal": "comprar"
+      }
+    },
+    {
+      "ticker": "COST",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 42,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 41,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "CVX",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 39,
+        "signal": "vender"
+      },
+      "after_2.2.0": {
+        "score": 28,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "EOG",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 69,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 69,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "EQIX",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 27,
+        "signal": "vender"
+      },
+      "after_2.2.0": {
+        "score": 27,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "GE",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 57,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 57,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "GEV",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 80,
+        "signal": "comprar"
+      },
+      "after_2.2.0": {
+        "score": 80,
+        "signal": "comprar"
+      }
+    },
+    {
+      "ticker": "GOOGL",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 85,
+        "signal": "comprar"
+      },
+      "after_2.2.0": {
+        "score": 85,
+        "signal": "comprar"
+      }
+    },
+    {
+      "ticker": "HD",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 51,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 31,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "JNJ",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 56,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 57,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "JPM",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 75,
+        "signal": "comprar"
+      },
+      "after_2.2.0": {
+        "score": 75,
+        "signal": "comprar"
+      }
+    },
+    {
+      "ticker": "KO",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 61,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 37,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "LLY",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 57,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 57,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "MA",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 85,
+        "signal": "comprar"
+      },
+      "after_2.2.0": {
+        "score": 85,
+        "signal": "comprar"
+      }
+    },
+    {
+      "ticker": "MCD",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 56,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 56,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "META",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 87,
+        "signal": "comprar"
+      },
+      "after_2.2.0": {
+        "score": 87,
+        "signal": "comprar"
+      }
+    },
+    {
+      "ticker": "MRK",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 41,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 41,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "MSFT",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 53,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 53,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "MU",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 69,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 69,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "NFLX",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 53,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 53,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "NVDA",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 57,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 57,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "PG",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 41,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 41,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "PLD",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 48,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 48,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "PM",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 42,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 43,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "RTX",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 36,
+        "signal": "vender"
+      },
+      "after_2.2.0": {
+        "score": 36,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "SPG",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 73,
+        "signal": "comprar"
+      },
+      "after_2.2.0": {
+        "score": 73,
+        "signal": "comprar"
+      }
+    },
+    {
+      "ticker": "TJX",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 56,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 56,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "TSLA",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 34,
+        "signal": "vender"
+      },
+      "after_2.2.0": {
+        "score": 25,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "UNH",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 54,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 39,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "UNP",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 37,
+        "signal": "vender"
+      },
+      "after_2.2.0": {
+        "score": 37,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "V",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 85,
+        "signal": "comprar"
+      },
+      "after_2.2.0": {
+        "score": 85,
+        "signal": "comprar"
+      }
+    },
+    {
+      "ticker": "VZ",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 60,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 59,
+        "signal": "mantener"
+      }
+    },
+    {
+      "ticker": "WELL",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 30,
+        "signal": "vender"
+      },
+      "after_2.2.0": {
+        "score": 30,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "WMB",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 40,
+        "signal": "mantener"
+      },
+      "after_2.2.0": {
+        "score": 30,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "WMT",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 31,
+        "signal": "vender"
+      },
+      "after_2.2.0": {
+        "score": 31,
+        "signal": "vender"
+      }
+    },
+    {
+      "ticker": "XOM",
+      "as_of": "2026-10-09",
+      "before_2.1.0": {
+        "score": 83,
+        "signal": "comprar"
+      },
+      "after_2.2.0": {
+        "score": 83,
+        "signal": "comprar"
+      }
+    }
+  ],
+  "valuation_detail": [
+    {
+      "ticker": "AMZN",
+      "as_of": "2026-10-09",
+      "model_version": "2.0.0",
+      "graham_bear": null,
+      "graham_base": 107.7591,
+      "dcf_bear": null,
+      "dcf_base": 13.4247,
+      "graham_mos": -143.5339,
+      "dcf_base_mos": -1854.8297,
+      "valuation_components": 3,
+      "valuation_confidence": "low",
+      "graham_status": "available",
+      "dcf_status": "available",
+      "reasons": [
+        "wacc_configured",
+        "incomplete_scenarios",
+        "input_confidence"
+      ]
+    },
+    {
+      "ticker": "AMZN",
+      "as_of": "2026-10-09",
+      "model_version": "2.1.0",
+      "graham_bear": 49.877,
+      "graham_base": 107.7591,
+      "dcf_bear": 10.0057,
+      "dcf_base": 13.4247,
+      "graham_mos": -143.5339,
+      "dcf_base_mos": -1854.8297,
+      "valuation_components": 4,
+      "valuation_confidence": "low",
+      "graham_status": "available",
+      "dcf_status": "available",
+      "reasons": [
+        "wacc_configured",
+        "input_confidence",
+        "growth_signals_diverge"
+      ]
+    },
+    {
+      "ticker": "BRK-B",
+      "as_of": "2026-10-09",
+      "model_version": "2.0.0",
+      "graham_bear": 687626.7952,
+      "graham_base": 1255608.2889,
+      "dcf_bear": 308523.5153,
+      "dcf_base": 439128.2599,
+      "graham_mos": 99.9589,
+      "dcf_base_mos": 99.8826,
+      "valuation_components": 4,
+      "valuation_confidence": "low",
+      "graham_status": "available",
+      "dcf_status": "available",
+      "reasons": [
+        "wacc_configured",
+        "net_debt_unknown",
+        "input_confidence"
+      ]
+    },
+    {
+      "ticker": "BRK-B",
+      "as_of": "2026-10-09",
+      "model_version": "2.1.0",
+      "graham_bear": 458.4179,
+      "graham_base": 837.0722,
+      "dcf_bear": 205.6823,
+      "dcf_base": 292.7522,
+      "graham_mos": 38.402,
+      "dcf_base_mos": -76.1285,
+      "valuation_components": 4,
+      "valuation_confidence": "low",
+      "graham_status": "available",
+      "dcf_status": "available",
+      "reasons": [
+        "wacc_configured",
+        "net_debt_unknown",
+        "input_confidence"
+      ]
+    }
+  ]
+}

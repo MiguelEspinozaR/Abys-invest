@@ -234,8 +234,12 @@ func CalcDCFScenarios(in Inputs, cfg Config, gBase float64, rate discountRate) M
 	if rate.reason != "" {
 		m.Reasons = dedupe(m.Reasons, rate.reason)
 	}
-	if !isFinite(gBase) || gBase <= 0 {
-		m.Reasons = dedupe(m.Reasons, ReasonGrowthNonPositive)
+	// C2: a non-positive base growth does NOT disable the DCF any more. The §7
+	// growth transition caps the jump to the terminal rate and dcfValue refuses a
+	// non-positive equity, so every scenario is either a real value or a nil with
+	// its reason — never an invented one.
+	if !isFinite(gBase) {
+		m.Reasons = dedupe(m.Reasons, ReasonNonFinite)
 		return m
 	}
 	// Equity after net debt is unknown: the value is computed assuming 0, but
@@ -256,9 +260,14 @@ func CalcDCFScenarios(in Inputs, cfg Config, gBase float64, rate discountRate) M
 		g := gBase + s.gDelta
 		w := rate.rate + s.waccDelta
 		term := cfg.TerminalGrowth + s.termDelta
-		if !isFinite(g) || g <= 0 {
-			m.Reasons = dedupe(m.Reasons, ReasonGrowthNonPositive)
+		if !isFinite(g) {
+			m.Reasons = dedupe(m.Reasons, ReasonNonFinite)
 			continue
+		}
+		if g <= 0 {
+			// C2: informational only. The scenario is computed along the §7
+			// transition (which caps the anchor towards the terminal growth).
+			m.Reasons = dedupe(m.Reasons, ReasonGrowthNonPositive)
 		}
 		if !isFinite(w) || !isFinite(term) || w <= term {
 			m.Reasons = dedupe(m.Reasons, ReasonWACCBelowTerminal)

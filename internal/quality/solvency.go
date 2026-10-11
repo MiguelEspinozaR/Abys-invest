@@ -1,5 +1,7 @@
 package quality
 
+import "github.com/miky/abys-invest/internal/metrics"
+
 // solvencyResult groups §14's debt metrics: the three applicable ones and the
 // secondary de_ratio.
 type solvencyResult struct {
@@ -14,10 +16,17 @@ type solvencyResult struct {
 //	net_debt_to_ebitda = net_debt / ebitda
 //	fcf_to_debt        = free_cash_flow / total_debt
 //	interest_coverage  = operating_income / interest_expense
-//	de_ratio           = total_debt / shareholders_equity   [SECONDARY]
+//	de_ratio           = total_liabilities / shareholders_equity   [SECONDARY]
 //
 // AAPL FY2025: 62.723 / 144.748 = 0.4333 ; 98.767 / 98.657 = 1.0011.
 // interest_coverage uses aligned FY pair when provided (M6c-T1).
+//
+// de_ratio is NOT recomputed here any more (SPEC abys-valuation-210 C5, W5): it
+// is read through the SINGLE definition shared by every consumer,
+// metrics.DERatio (total_liabilities / equity, deriving total_liabilities from
+// total_assets − equity when the issuer does not tag it). This is what makes
+// quality's de_ratio identical to the derived_metrics one for the same
+// ticker/as_of instead of a second, diverging ratio.
 func calcSolvency(in Inputs, cfg Config) solvencyResult {
 	var out solvencyResult
 
@@ -63,19 +72,21 @@ func calcSolvency(in Inputs, cfg Config) solvencyResult {
 
 	out.interestCoverage = calcInterestCoverage(in, cfg)
 
-	if debt != nil {
-		if equity := fin(in.Financials, conceptShareholdersEquity); equity != nil && *equity > 0 {
-			r := *debt / *equity
-			if finiteVal(r) {
-				out.deRatio = metricValue{Value: &r} // sin score: es secundaria
-			} else {
-				out.deRatio = mvNil(ReasonNonFiniteInput)
-			}
+	// W5: de_ratio reads the unified definition (metrics.DERatio), it does not
+	// recompute its own. The reason taxonomy of the legacy block is preserved:
+	// a non-positive/missing equity is `non_positive_equity`, a numerator that
+	// cannot be resolved (no total_liabilities AND no total_assets) is
+	// `debt_unavailable`.
+	equity := fin(in.Financials, conceptShareholdersEquity)
+	switch {
+	case equity == nil || *equity <= 0:
+		out.deRatio = mvNil(ReasonNonPositiveEquity)
+	default:
+		if r := metrics.DERatio(fin(in.Financials, conceptTotalLiabilities), fin(in.Financials, conceptTotalAssets), equity); r != nil {
+			out.deRatio = metricValue{Value: r} // sin score: es secundaria
 		} else {
-			out.deRatio = mvNil(ReasonNonPositiveEquity)
+			out.deRatio = mvNil(ReasonDebtUnavailable)
 		}
-	} else {
-		out.deRatio = mvNil(ReasonDebtUnavailable)
 	}
 	return out
 }
