@@ -1,0 +1,16 @@
+{
+  "task_id": "abys-t1s-json-download-scan",
+  "date": "2026-10-10",
+  "scanner": "gitleaks + manual code assessment",
+  "command": "/home/miky/go/bin/gitleaks detect --source . --config .gitleaks.toml --no-git",
+  "result": "no leaks found",
+  "findings": [
+    {
+      "severity": "info",
+      "location": "web/src/pages/TickerDetailPage.tsx:134-143 (handleDownloadJson function)",
+      "evidence": "Download filename interpolation with path-traversal sanitization: `const safeTicker = (ticker ?? 'ticker').replace(/[^A-Za-z0-9._-]/g, '_');` and `anchor.download = \\`${safeTicker}_${shortDate}_Abys.json\\``. The regex replaces any character not in [A-Za-z0-9._-] with `_`, eliminating `/`, `..`, and other path-separator characters. Default fallback is `'ticker'`. The endpoints are public read-only market/model data; no secrets/tokens/DSNs are expected in the JSON payload contents.",
+      "detail": "The JSON payload (buildJsonPayload) assembles client-side state from useFetch data sources (security, prices, score, valuation, metrics, history, comparables). Endpoints are public read-only data endpoints (/securities, /prices, /score, /valuation, /metrics, /scores, /compare/comparables). No auth tokens, internal DSNs, or secrets included in the payload. The payload includes: ticker symbol, generated_at timestamp, API source paths, data from each fetch state (security.data, prices.data, score.data, valuation.data, metrics.data, history.data, comparables.data), and errors record. Types: SecurityDetail (name, sector, industry only), PricePoint (market data), ScoreResponse (score, signal, justification, dimensions), ValuationResponse (valuation data, confidence), MetricsResponse (derived metrics), ScoresHistoryItem (historical scores), ComparablesResponse (peer comparables). No API keys, passwords, or connection strings found in any payload field."
+    }
+  ],
+  "verdict": "PASS"
+}
