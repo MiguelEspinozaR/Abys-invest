@@ -1,0 +1,32 @@
+{
+  "task_id": "abys-t1s-json-download-deploy",
+  "date": "2026-10-10",
+  "target": "https://abys-invest.mikylab.com",
+  "method": "curl + grep + systemctl is-active",
+  "commands": [
+    "curl -s https://abys-invest.mikylab.com/",
+    "grep -c 'Ver JSON' /home/miky/Abys-Invest/web/dist/assets/index-Bwkc8hKT.js",
+    "grep -c 'Descargar JSON' /home/miky/Abys-Invest/web/dist/assets/index-Bwkc8hKT.js",
+    "curl -s -o /dev/null -w '%{http_code}' https://abys-invest.mikylab.com/ticker/BRK-B",
+    "curl -s -o /dev/null -w '%{http_code}' https://abys-invest.mikylab.com/securities/BRK-B",
+    "curl -s -o /dev/null -w '%{http_code}' https://abys-invest.mikylab.com/score/BRK-B",
+    "curl -s -o /dev/null -w '%{http_code}' https://abys-invest.mikylab.com/valuation/BRK-B",
+    "curl -s -o /dev/null -w '%{http_code}' https://abys-invest.mikylab.com/metrics/BRK-B",
+    "systemctl is-active abys-invest-api-air.service abys-invest-web-build.service nginx"
+  ],
+  "results": {
+    "asset_hash_js": "8abb7bc5c544e7d71eac922a44dc1deec9266192bb2d1c2e4f2f1a97bcbc69da",
+    "asset_hash_css": "9d8bf7a20cb00df9872bd43a88f1cac8c3a0f56abc2c62a035ba030e4596ba7c",
+    "grep_ver_json": 1,
+    "grep_descargar_json": 1,
+    "http_ticker_BRK-B": 200,
+    "http_securities_BRK-B": 200,
+    "http_score_BRK-B": 200,
+    "http_valuation_BRK-B": 200,
+    "http_metrics_BRK-B": 200,
+    "service_abys-invest-api-air": "active",
+    "service_abys-invest-web-build": "active",
+    "service_nginx": "active"
+  },
+  "verdict": "DEPLOYED"
+}
