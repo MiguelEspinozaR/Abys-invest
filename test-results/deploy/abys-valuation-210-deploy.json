@@ -1,0 +1,30 @@
+{
+  "task": "abys-valuation-210",
+  "stage": "deploy-dev",
+  "date": "2026-10-11",
+  "target": "abys-invest-api-air.service (:8082 -> nginx -> https://abys-invest.mikylab.com)",
+  "method": "systemctl restart abys-invest-api-air.service (autorizado por el usuario)",
+  "trigger": "El binario de air se reconstruia pero no podia hacer bind en :8082 porque el proceso viejo lo retenia; la API servia con binario obsoleto.",
+  "result": {
+    "service_active": true,
+    "main_pid": 3622842,
+    "listen_8082": "api pid=3622842",
+    "health_http": 200,
+    "frontend_rebuilt_by_air": "index-Bwkc8hKT.js",
+    "checks": {
+      "GET /score/BRK-B": {"model_version": "2.2.0", "quality_present": true, "tax_rate_source": "configured"},
+      "GET /valuation/BRK-B": {"model_version": "2.1.0"},
+      "GET https://abys-invest.mikylab.com/ticker/BRK-B": {"http": 200},
+      "GET https://abys-invest.mikylab.com/score/BRK-B": {"model_version": "2.2.0", "quality_present": true}
+    }
+  },
+  "before": {
+    "score_quality_block": "ausente (binario obsoleto, model_version 2.2.0 sin quality)",
+    "public": "502 durante el rebuild"
+  },
+  "after": {
+    "score_quality_block": "presente",
+    "public": "200"
+  },
+  "verdict": "DEPLOYED"
+}
